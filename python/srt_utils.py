@@ -1,4 +1,12 @@
+import math
 from pathlib import Path
+
+
+def format_timestamp(seconds: float) -> str:
+    hours, remainder = divmod(seconds, 3600)
+    minutes, secs = divmod(remainder, 60)
+    milliseconds = math.floor((secs % 1) * 1000)
+    return f"{int(hours):02}:{int(minutes):02}:{int(secs):02},{milliseconds:03}"
 
 
 def parse_srt(path: str) -> list[tuple[str, str, str]]:

@@ -9,17 +9,6 @@ import subtitle_validation
 import translation_postprocess
 
 
-def _format_ass_free_timestamp(seconds: float) -> str:
-    # Reusa o mesmo formato HH:MM:SS,mmm do resto do projeto (srt_utils.write_srt
-    # so formata o texto — o timestamp aqui precisa estar pronto antes de chamar).
-    import math
-
-    hours, remainder = divmod(seconds, 3600)
-    minutes, secs = divmod(remainder, 60)
-    millis = math.floor((secs % 1) * 1000)
-    return f"{int(hours):02}:{int(minutes):02}:{int(secs):02},{millis:03}"
-
-
 def traduzir_cards(
     cards: list[dict[str, Any]],
     translator: Any,
@@ -61,7 +50,7 @@ def traduzir_cards(
     glossary_service.merge_into_channel_glossary(video_glossary, channel_glossary_path)
 
     entries = [
-        (_format_ass_free_timestamp(g["start"]), _format_ass_free_timestamp(g["end"]), g["zh"])
+        (srt_utils.format_timestamp(g["start"]), srt_utils.format_timestamp(g["end"]), g["zh"])
         for g in groups
     ]
     srt_utils.write_srt(entries, output_path)
