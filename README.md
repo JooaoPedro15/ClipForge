@@ -30,7 +30,16 @@ O escopo atual e simples: preparar material bruto com rapidez, gerar legendas e 
 
 ### Traducao de legendas (SubtitleForge)
 
-O SubtitleForge tem duas opcoes opcionais para traduzir a legenda gerada, alem do `.srt` original: **"Traduzir p/ ingles"** e **"Traduzir p/ chines (simplificado)"**. Ao marcar uma ou ambas, o app gera arquivos adicionais (`arquivo.en.srt`, `arquivo.zh.srt`) ao lado do `.srt` original, usando o modelo NLLB para traducao. No primeiro uso, o app baixa o modelo NLLB (~600MB) do HuggingFace — e necessario ter internet nessa primeira vez; depois disso o modelo fica em cache local e as traducoes seguintes funcionam offline.
+O SubtitleForge tem duas opcoes opcionais para traduzir a legenda gerada, alem do `.srt` original: **"Traduzir p/ ingles"** e **"Traduzir p/ chines (simplificado)"**. Ao marcar uma ou ambas, o app gera arquivos adicionais (`arquivo.en.srt`, `arquivo.zh.srt`) ao lado do `.srt` original, usando o modelo NLLB para traducao.
+
+O modelo NLLB precisa ser convertido pra ctranslate2 **localmente**, uma unica vez (mirrors prontos de terceiros no HuggingFace se mostraram instaveis — um foi removido, outro gerava traducao degenerada por tokenizer incompativel com os pesos). Com o ambiente do SubtitleForge ativado:
+
+```bash
+pip install transformers torch
+ct2-transformers-converter --model facebook/nllb-200-distilled-600M --output_dir D:\Projetos\subtitle-forge\models\nllb-200-distilled-600M-ct2 --quantization int8 --copy_files sentencepiece.bpe.model
+```
+
+Isso baixa o modelo original do Facebook (~2,4GB) e gera a versao ctranslate2 em `D:\Projetos\subtitle-forge\models\nllb-200-distilled-600M-ct2` (caminho fixo, sem acento — sentencepiece nao le corretamente caminhos do Windows com caracteres acentuados, como `C:\Users\<usuario com acento>`). Depois da conversao, `transformers`/`torch` podem ser removidos; so `ctranslate2` e `sentencepiece` sao necessarios em tempo de execucao. Para usar outro caminho, defina `CLIPFORGE_NLLB_MODEL_DIR`.
 
 ### Queima de legenda no video (hardsub)
 
@@ -75,6 +84,7 @@ cp .env.example .env
 Variaveis opcionais:
 
 - `CLIPFORGE_SUBTITLE_FORGE_PATH`: caminho do ambiente Python usado pelo SubtitleForge.
+- `CLIPFORGE_NLLB_MODEL_DIR`: caminho do modelo NLLB ja convertido pra ctranslate2 (ver secao "Traducao de legendas" acima). Padrao: `D:\Projetos\subtitle-forge\models\nllb-200-distilled-600M-ct2`.
 - `CLIPFORGE_CLIP_SPLITTER_PATH`: caminho do projeto externo usado pelo Pre-Editor.
 - `CLIPFORGE_TEMP`: pasta temporaria curta usada pelo Pre-Editor (ex.: `D:\cs_tmp`). Evita [WinError 206] quando o input/output esta em caminho profundo. Se nao definido, o app tenta `<drive>:\cs_tmp` e cai para a pasta do video como fallback.
 - `GEMINI_API_KEY`: opcional para recursos de IA do Pre-Editor externo, quando habilitados.

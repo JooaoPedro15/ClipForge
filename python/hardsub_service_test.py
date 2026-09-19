@@ -82,14 +82,107 @@ class EnsureSrtForLangTest(unittest.TestCase):
             )
 
 
+class ResolveFormatProfileTest(unittest.TestCase):
+    def test_portrait_video_resolves_to_shorts(self):
+        self.assertEqual(hardsub_service.resolve_format_profile(video_width=1080, video_height=1920), "shorts")
+
+    def test_landscape_video_resolves_to_long(self):
+        self.assertEqual(hardsub_service.resolve_format_profile(video_width=1920, video_height=1080), "long")
+
+    def test_square_video_resolves_to_long(self):
+        self.assertEqual(hardsub_service.resolve_format_profile(video_width=1080, video_height=1080), "long")
+
+
+class ResolveLayerStyleTest(unittest.TestCase):
+    def test_shorts_single_layer_uses_base_font_and_margin_minus_fixed_nudge(self):
+        fontsize, margin_v = hardsub_service.resolve_layer_style("shorts", video_height=1920, is_top=False)
+
+        self.assertEqual(fontsize, round(1920 * hardsub_service.FONT_SCALE["shorts"]))
+        expected_margin = round(1920 * hardsub_service.BASE_MARGIN_SCALE["shorts"]) - hardsub_service.SHORTS_MARGIN_NUDGE_PX
+        self.assertEqual(margin_v, expected_margin)
+
+    def test_long_layer_is_not_affected_by_shorts_nudge(self):
+        _, margin_v = hardsub_service.resolve_layer_style("long", video_height=1080, is_top=False)
+
+        self.assertEqual(margin_v, round(1080 * hardsub_service.BASE_MARGIN_SCALE["long"]))
+
+    def test_top_layer_gets_extra_margin_to_clear_bottom_layer(self):
+        _, bottom_margin = hardsub_service.resolve_layer_style("long", video_height=1080, is_top=False)
+        _, top_margin = hardsub_service.resolve_layer_style("long", video_height=1080, is_top=True)
+
+        self.assertGreater(top_margin, bottom_margin)
+
+
+class SrtTimestampToAssTest(unittest.TestCase):
+    def test_converts_milliseconds_to_centiseconds(self):
+        self.assertEqual(hardsub_service._srt_timestamp_to_ass("00:01:23,456"), "0:01:23.45")
+
+    def test_keeps_multi_digit_hours(self):
+        self.assertEqual(hardsub_service._srt_timestamp_to_ass("01:00:00,000"), "1:00:00.00")
+
+
+class BuildAssContentTest(unittest.TestCase):
+    def test_play_res_matches_real_video_dimensions(self):
+        content = hardsub_service.build_ass_content(
+            entries=[("00:00:00,000", "00:00:01,000", "ola")],
+            fontsize=70,
+            margin_v=576,
+            video_width=1080,
+            video_height=1920,
+        )
+
+        self.assertIn("PlayResX: 1080", content)
+        self.assertIn("PlayResY: 1920", content)
+        self.assertIn(",70,", content)
+        self.assertIn(",576,1", content)
+
+    def test_escapes_braces_and_converts_newlines(self):
+        content = hardsub_service.build_ass_content(
+            entries=[("00:00:00,000", "00:00:01,000", "linha 1\nlinha {2}")],
+            fontsize=40,
+            margin_v=10,
+            video_width=100,
+            video_height=100,
+        )
+
+        self.assertIn("linha 1\\Nlinha \\{2\\}", content)
+
+
+class RunHardsubAutoDetectFormatTest(unittest.TestCase):
+    def test_uses_detected_orientation_instead_of_passed_format_profile(self):
+        portrait_info = types.SimpleNamespace(duration_sec=5.0, width=1080, height=1920)
+
+        with mock.patch("hardsub_service.ffmpeg_utils.resolve_ffmpeg_path", return_value="ffmpeg"), \
+                mock.patch("hardsub_service.ffmpeg_utils.probe_video", return_value=portrait_info), \
+                mock.patch("hardsub_service.ffmpeg_utils.assert_safe_path_length"), \
+                mock.patch("hardsub_service.ffmpeg_utils.ensure_short_srt_path", side_effect=lambda p: p), \
+                mock.patch("hardsub_service.ffmpeg_utils.run_ffmpeg_with_progress"), \
+                mock.patch("hardsub_service.ensure_srt_for_lang", return_value="C:/videos/clip.srt"), \
+                mock.patch("hardsub_service.write_ass_for_srt") as mock_write_ass, \
+                mock.patch("hardsub_service.build_ffmpeg_burn_command", return_value=["ffmpeg"]), \
+                mock.patch.object(Path, "exists", return_value=True):
+            hardsub_service.run_hardsub(
+                video_path="C:/videos/clip.mp4",
+                original_srt_path="C:/videos/clip.srt",
+                source_language="pt",
+                mode="zh-original",
+                format_profile="long",  # simula a UI mandando o preset errado
+                output_path="C:/videos/out.mp4",
+            )
+
+        # write_ass_for_srt(srt_path, ass_path, fontsize, margin_v, video_width, video_height)
+        called_fontsizes = [call.args[2] for call in mock_write_ass.call_args_list]
+        expected_fontsize_shorts = round(1920 * hardsub_service.FONT_SCALE["shorts"])
+        self.assertTrue(called_fontsizes)
+        self.assertTrue(all(fontsize == expected_fontsize_shorts for fontsize in called_fontsizes))
+
+
 class BuildFfmpegBurnCommandTest(unittest.TestCase):
     def test_single_language_uses_one_subtitles_filter(self):
         args = hardsub_service.build_ffmpeg_burn_command(
             ffmpeg_path="ffmpeg",
             video_path="C:/videos/clip.mp4",
-            srt_paths_top_to_bottom=["C:/videos/clip.zh.srt"],
-            video_height=1080,
-            format_profile="long",
+            ass_paths_top_to_bottom=["C:/videos/clip.zh.burn-0.ass"],
             output_path="C:/videos/clip.hardsub.zh.mp4",
         )
 
@@ -98,13 +191,11 @@ class BuildFfmpegBurnCommandTest(unittest.TestCase):
         self.assertEqual(joined.count("subtitles="), 1)
         self.assertIn("clip.hardsub.zh.mp4", args[-1])
 
-    def test_dual_language_chains_two_subtitles_filters_with_different_marginv(self):
+    def test_dual_language_chains_two_subtitles_filters(self):
         args = hardsub_service.build_ffmpeg_burn_command(
             ffmpeg_path="ffmpeg",
             video_path="C:/videos/clip.mp4",
-            srt_paths_top_to_bottom=["C:/videos/clip.zh.srt", "C:/videos/clip.en.srt"],
-            video_height=1080,
-            format_profile="long",
+            ass_paths_top_to_bottom=["C:/videos/clip.zh.burn-0.ass", "C:/videos/clip.en.burn-1.ass"],
             output_path="C:/videos/clip.hardsub.zh-en.mp4",
         )
 
@@ -112,13 +203,6 @@ class BuildFfmpegBurnCommandTest(unittest.TestCase):
         filter_value = args[vf_index + 1]
 
         self.assertEqual(filter_value.count("subtitles="), 2)
-        margins = [
-            int(part.split("=")[1].rstrip("'"))
-            for part in filter_value.split(",")
-            if "MarginV" in part
-        ]
-        self.assertEqual(len(margins), 2)
-        self.assertGreater(margins[0], margins[1])  # top tem MarginV maior que o de baixo
 
 
 if __name__ == "__main__":

@@ -4,6 +4,7 @@ import types
 import unittest
 from dataclasses import dataclass
 from pathlib import Path
+from unittest import mock
 
 
 def load_subtitle_service():
@@ -49,6 +50,38 @@ class NaturalSubtitleSegmentationTest(unittest.TestCase):
         segments = self.service.segment_words_naturally(words, target_words=3)
 
         self.assertEqual(self.segment_text(segments), ["pegar aquela chave ali"])
+
+
+class ResolveMaxWordsForVideoTest(unittest.TestCase):
+    def setUp(self):
+        self.service = load_subtitle_service()
+
+    def test_portrait_video_upgrades_zero_to_shorts_default(self):
+        portrait_info = types.SimpleNamespace(duration_sec=5.0, width=1080, height=1920)
+        with mock.patch.object(self.service.ffmpeg_utils, "probe_video", return_value=portrait_info):
+            result = self.service.resolve_max_words_for_video("video.mp4", max_words=0)
+
+        self.assertEqual(result, self.service.DEFAULT_MAX_WORDS_SHORTS)
+
+    def test_landscape_video_keeps_zero(self):
+        landscape_info = types.SimpleNamespace(duration_sec=5.0, width=1920, height=1080)
+        with mock.patch.object(self.service.ffmpeg_utils, "probe_video", return_value=landscape_info):
+            result = self.service.resolve_max_words_for_video("video.mp4", max_words=0)
+
+        self.assertEqual(result, 0)
+
+    def test_explicit_max_words_is_never_overridden(self):
+        portrait_info = types.SimpleNamespace(duration_sec=5.0, width=1080, height=1920)
+        with mock.patch.object(self.service.ffmpeg_utils, "probe_video", return_value=portrait_info):
+            result = self.service.resolve_max_words_for_video("video.mp4", max_words=5)
+
+        self.assertEqual(result, 5)
+
+    def test_probe_failure_keeps_max_words_unchanged(self):
+        with mock.patch.object(self.service.ffmpeg_utils, "probe_video", side_effect=RuntimeError("sem ffprobe")):
+            result = self.service.resolve_max_words_for_video("audio.mp3", max_words=0)
+
+        self.assertEqual(result, 0)
 
 
 class TranscribeVideoTranslationTest(unittest.TestCase):
@@ -155,6 +188,47 @@ class TranscribeVideoTranslationTest(unittest.TestCase):
             self.assertTrue(Path(output_path).exists())
             en_path = Path(output_path).with_suffix(".en.srt")
             self.assertFalse(en_path.exists())
+
+    def test_long_natural_segment_without_max_words_gets_split_by_duration(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            input_path = Path(tmp_dir) / "video.mp4"
+            input_path.write_bytes(b"fake")
+
+            sentence = (
+                "isso e uma fala continua que nao tem pausa detectada pelo vad "
+                "e dura mais de dez segundos no total"
+            ).split()
+            words = [WordInfo(word=word, start=float(i), end=float(i) + 0.9) for i, word in enumerate(sentence)]
+
+            @dataclass
+            class FakeSegment:
+                start: float
+                end: float
+                text: str
+                words: list
+
+            fake_segments = [
+                FakeSegment(start=0.0, end=words[-1].end, text=" ".join(w.word for w in words), words=words)
+            ]
+            fake_info = types.SimpleNamespace(language="pt", language_probability=0.99, duration=words[-1].end)
+
+            class FakeWhisperModel:
+                def __init__(self, *args, **kwargs):
+                    pass
+
+                def transcribe(self, *args, **kwargs):
+                    return fake_segments, fake_info
+
+            self.service.WhisperModel = FakeWhisperModel
+
+            output_path = self.service.transcribe_video(input_path=str(input_path), max_words=0)
+
+            srt_content = Path(output_path).read_text(encoding="utf-8")
+            # Sem o fallback, isso viraria UMA legenda estatica cobrindo os ~19s inteiros
+            # da fala continua. Com o fallback, deve virar varios blocos menores.
+            self.assertGreater(srt_content.count(" --> "), 1)
 
 
 if __name__ == "__main__":

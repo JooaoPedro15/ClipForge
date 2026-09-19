@@ -8,6 +8,7 @@ import unicodedata
 from pathlib import Path
 from typing import Any
 
+import ffmpeg_utils
 import translate_service
 
 try:
@@ -36,6 +37,26 @@ DEFAULT_MIN_SUBTITLE_DURATION = 0.45
 DEFAULT_MAX_SUBTITLE_DURATION = 2.0
 DEFAULT_IDEAL_SUBTITLE_DURATION_MIN = 0.8
 DEFAULT_IDEAL_SUBTITLE_DURATION_MAX = 1.4
+
+# max_words padrao aplicado automaticamente a videos verticais (retrato) quando o
+# chamador nao pede um valor explicito (max_words=0) — ver resolve_max_words_for_video.
+DEFAULT_MAX_WORDS_SHORTS = 3
+
+# Alguns segmentos "naturais" do Whisper (max_words=0, sem quebra por contagem de
+# palavras) podem ficar longos demais quando a fala e continua e a VAD nao detecta
+# pausa — sem limite, a legenda fica parada na tela por varios segundos (ou o video
+# inteiro) em vez de acompanhar a fala. Acima desse limite, refatia o segmento em
+# blocos menores usando os timestamps por palavra, com parametros mais soltos que o
+# modo "shorts" (frases mais longas, tipico de legenda de video horizontal).
+NATURAL_SPLIT_MAX_DURATION = 7.0
+NATURAL_SPLIT_TARGET_WORDS = 8
+NATURAL_SPLIT_MIN_WORDS = 3
+NATURAL_SPLIT_MAX_WORDS = 14
+NATURAL_SPLIT_MAX_WORDS_FAST = 18
+NATURAL_SPLIT_MIN_SUBTITLE_DURATION = 1.0
+NATURAL_SPLIT_IDEAL_DURATION_MIN = 2.5
+NATURAL_SPLIT_IDEAL_DURATION_MAX = 5.0
+
 WEAK_TRAILING_WORDS = {
     "que",
     "de",
@@ -212,6 +233,55 @@ def split_text_into_lines(text: str, max_width: int) -> str:
     return "\n".join(lines)
 
 
+# Deteta a orientacao real do video (retrato x paisagem) pra pre-definir max_words sem
+# depender do usuario lembrar de trocar o preset "Formato" na UI. So atua quando o
+# chamador nao pediu um max_words explicito (0 = "automatico/sem preferencia"); se o
+# probe falhar (ex.: arquivo e so audio, sem stream de video), mantem o comportamento
+# anterior sem quebrar a transcricao.
+def resolve_max_words_for_video(input_path: str, max_words: int) -> int:
+    if max_words > 0:
+        return max_words
+
+    try:
+        video_info = ffmpeg_utils.probe_video(input_path)
+    except Exception:
+        return max_words
+
+    if video_info.height > video_info.width:
+        return DEFAULT_MAX_WORDS_SHORTS
+
+    return max_words
+
+
+# Monta e adiciona ao .srt uma entrada curta (grupo de poucas palavras), usada tanto no
+# modo "shorts" (max_words explicito) quanto no fallback de segmentos naturais longos.
+def append_word_group_entry(
+    words_group: list[Any],
+    segment_count: int,
+    srt_content: list[str],
+    subtitle_entries: list[tuple[str, str, str]],
+    no_accents: bool,
+    no_punctuation: bool,
+    uppercase: bool,
+    lowercase: bool,
+) -> None:
+    sub_start = format_timestamp(words_group[0].start)
+    sub_end = format_timestamp(words_group[-1].end)
+    text = " ".join(word.word.strip() for word in words_group)
+    text = clean_text(text, no_accents, no_punctuation)
+    if uppercase:
+        text = text.upper()
+    elif lowercase:
+        text = text.lower()
+
+    subtitle_entries.append((sub_start, sub_end, text))
+
+    srt_content.append(f"{segment_count}")
+    srt_content.append(f"{sub_start} --> {sub_end}")
+    srt_content.append(text)
+    srt_content.append("")
+
+
 # Gera um progresso aproximado mesmo quando o Whisper ainda nao terminou tudo.
 def estimate_progress(segment_end: float | None, total_duration: float | None, segment_count: int) -> int:
     if total_duration and total_duration > 0 and segment_end is not None:
@@ -254,6 +324,8 @@ def transcribe_video(
         output_file = input_file.with_suffix(".srt")
     else:
         output_file = Path(output_path)
+
+    max_words = resolve_max_words_for_video(str(input_file), max_words)
 
     emit(
         "status",
@@ -332,21 +404,29 @@ def transcribe_video(
             # Neste modo, usa timestamps por palavra para fatiar legendas por ritmo e limites naturais.
             for words_group in segment_words_naturally(segment.words, target_words=max_words):
                 segment_count += 1
-                sub_start = format_timestamp(words_group[0].start)
-                sub_end = format_timestamp(words_group[-1].end)
-                text = " ".join(word.word.strip() for word in words_group)
-                text = clean_text(text, no_accents, no_punctuation)
-                if uppercase:
-                    text = text.upper()
-                elif lowercase:
-                    text = text.lower()
+                append_word_group_entry(
+                    words_group, segment_count, srt_content, subtitle_entries, no_accents, no_punctuation, uppercase, lowercase
+                )
 
-                subtitle_entries.append((sub_start, sub_end, text))
-
-                srt_content.append(f"{segment_count}")
-                srt_content.append(f"{sub_start} --> {sub_end}")
-                srt_content.append(text)
-                srt_content.append("")
+            segment_end = getattr(segment, "end", None)
+        elif word_timestamps and segment.words and (segment.end - segment.start) > NATURAL_SPLIT_MAX_DURATION:
+            # Segmento natural longo demais (fala continua sem pausa detectada pela VAD) —
+            # refatia em blocos menores em vez de deixar uma legenda estatica na tela.
+            for words_group in segment_words_naturally(
+                segment.words,
+                target_words=NATURAL_SPLIT_TARGET_WORDS,
+                min_words=NATURAL_SPLIT_MIN_WORDS,
+                max_words=NATURAL_SPLIT_MAX_WORDS,
+                max_words_fast_speech=NATURAL_SPLIT_MAX_WORDS_FAST,
+                min_duration=NATURAL_SPLIT_MIN_SUBTITLE_DURATION,
+                max_duration=NATURAL_SPLIT_MAX_DURATION,
+                ideal_duration_min=NATURAL_SPLIT_IDEAL_DURATION_MIN,
+                ideal_duration_max=NATURAL_SPLIT_IDEAL_DURATION_MAX,
+            ):
+                segment_count += 1
+                append_word_group_entry(
+                    words_group, segment_count, srt_content, subtitle_entries, no_accents, no_punctuation, uppercase, lowercase
+                )
 
             segment_end = getattr(segment, "end", None)
         else:

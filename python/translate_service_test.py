@@ -1,5 +1,6 @@
 import importlib.util
 import sys
+import tempfile
 import types
 import unittest
 from pathlib import Path
@@ -21,8 +22,8 @@ class FakeTranslator:
     def translate_batch(self, source, target_prefix):
         results = []
         for tokens, prefix in zip(source, target_prefix):
-            # tokens = [source_lang_code, *words]; devolve [target_lang_code, *TRANSLATED:words]
-            words = tokens[1:]
+            # tokens = [source_lang_code, *words, "</s>"]; devolve prefix + [TRANSLATED:words]
+            words = tokens[1:-1]
             translated = [f"TRANSLATED:{word}" for word in words]
             results.append(FakeTranslationResult(prefix + translated))
         return results
@@ -42,23 +43,27 @@ class FakeSentencePieceProcessor:
 def load_translate_service(tmp_model_dir: str):
     fake_ctranslate2 = types.SimpleNamespace(Translator=FakeTranslator)
     fake_sentencepiece = types.SimpleNamespace(SentencePieceProcessor=FakeSentencePieceProcessor)
-    fake_huggingface_hub = types.SimpleNamespace(snapshot_download=lambda repo_id: tmp_model_dir)
 
     sys.modules["ctranslate2"] = fake_ctranslate2
     sys.modules["sentencepiece"] = fake_sentencepiece
-    sys.modules["huggingface_hub"] = fake_huggingface_hub
 
     module_path = Path(__file__).with_name("translate_service.py")
     spec = importlib.util.spec_from_file_location("translate_service_for_test", module_path)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     spec.loader.exec_module(module)
+    module.resolve_model_dir = lambda: tmp_model_dir
     return module
 
 
 class TranslateSegmentsTest(unittest.TestCase):
     def setUp(self):
-        self.service = load_translate_service(tmp_model_dir="/fake/model/dir")
+        self.tmp_dir = tempfile.TemporaryDirectory()
+        (Path(self.tmp_dir.name) / "model.bin").write_bytes(b"fake")
+        self.service = load_translate_service(tmp_model_dir=self.tmp_dir.name)
+
+    def tearDown(self):
+        self.tmp_dir.cleanup()
 
     def test_translates_batch_preserving_order(self):
         translator = self.service.Translator(device="cpu", compute_type="default")
@@ -84,6 +89,15 @@ class TranslateSegmentsTest(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             translator.translate_segments(["oi"], source_lang="xx", target_lang="en")
+
+    def test_missing_model_dir_raises_clear_error_with_convert_command(self):
+        service = load_translate_service(tmp_model_dir=str(Path(self.tmp_dir.name) / "nao-existe"))
+        translator = service.Translator(device="cpu", compute_type="default")
+
+        with self.assertRaises(FileNotFoundError) as ctx:
+            translator.translate_segments(["oi"], source_lang="pt", target_lang="en")
+
+        self.assertIn("ct2-transformers-converter", str(ctx.exception))
 
 
 if __name__ == "__main__":
