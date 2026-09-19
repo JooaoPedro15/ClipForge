@@ -35,7 +35,13 @@ def validate_translation_output(
         if target_lang == "zh" and any("a" <= ch.lower() <= "z" for ch in zh):
             erros.append(f"grupo {grupo_ref}: caractere latino em '{zh}'")
 
-        if len(zh) > max_chars:
+        # Mesma logica do caractere latino acima: o teto de caracteres modela
+        # "cabe numa linha de video vertical" pro chines (hanzi denso, poucos
+        # caracteres por frase). Ingles/portugues precisam de bem mais
+        # caracteres pra dizer a mesma coisa — aplicar o mesmo teto rejeitaria
+        # quase toda traducao pro ingles (ex.: modo "Chines + ingles" na
+        # queima, que falharia inteiro por causa da perna em ingles).
+        if target_lang == "zh" and len(zh) > max_chars:
             erros.append(f"grupo {grupo_ref}: {len(zh)} chars (max {max_chars}) '{zh}'")
 
         duration = group["end"] - group["start"]

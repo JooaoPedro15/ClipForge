@@ -40,6 +40,25 @@ class ValidateTranslationOutputTest(unittest.TestCase):
 
         v.validate_translation_output(groups, cards, glossary={"characters": []}, target_lang="en")  # nao deve levantar
 
+    def test_long_line_is_fine_for_english_target(self):
+        # O teto de 20 caracteres modela "cabe numa linha de video vertical"
+        # pro chines (hanzi denso). Ingles precisa de bem mais caracteres pra
+        # dizer a mesma coisa — aplicar o mesmo teto rejeitaria quase toda
+        # frase em ingles (ex.: quebraria o modo "Chines + ingles" da queima
+        # inteiro por causa so da perna em ingles).
+        cards = [{"i": 0, "start": 0.0, "end": 2.0, "text": "frase bem mais longa do que o normal"}]
+        groups = [
+            {
+                "cards": [0],
+                "start": 0.0,
+                "end": 2.0,
+                "zh": "this is a much longer sentence than usual, well over twenty characters",
+                "flag": "",
+            }
+        ]
+
+        v.validate_translation_output(groups, cards, glossary={"characters": []}, target_lang="en")  # nao deve levantar
+
     def test_line_over_20_chars_raises(self):
         cards = [{"i": 0, "start": 0.0, "end": 2.0, "text": "frase longa"}]
         groups = [{"cards": [0], "start": 0.0, "end": 2.0, "zh": "这" * 21, "flag": ""}]
