@@ -107,6 +107,18 @@ class BuildVideoGlossaryTest(unittest.TestCase):
         self.assertEqual(edgar["zh"], "埃德加")
         translator.translate_segments.assert_called_once()
 
+    def test_known_short_name_is_not_falsely_reused_as_substring_of_another_name(self):
+        # "Ana" (conhecido) nao pode "aparecer" so por ser substring de
+        # "Anacleto" (personagem diferente, nao mencionado de verdade).
+        translator = mock.Mock()
+        translator.translate_segments.return_value = ["安纳克莱托"]
+        channel_glossary = {"characters": [{"source_name": "Ana", "zh": "安娜", "gender": "female", "variants": []}], "terms": []}
+        cards_text = ["o Anacleto chegou", "e o Anacleto saiu"]
+
+        result = glossary_service.build_video_glossary(cards_text, channel_glossary, translator, source_lang="pt", target_lang="zh")
+
+        self.assertNotIn("Ana", [c["source_name"] for c in result["characters"]])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -12,6 +12,14 @@ STOPWORDS_CAPITALIZADAS = {
 DEFAULT_CHANNEL_GLOSSARY_PATH = "D:\\Projetos\\subtitle-forge\\glossario_canal.json"
 
 
+def _mentions_name(name: str, text: str) -> bool:
+    """Checa se `name` aparece como PALAVRA INTEIRA em `text` (nao substring).
+    Substring simples (`name in text`) dava falso positivo: um nome curto
+    conhecido tipo "Ana" "aparecia" dentro de "Anacleto", um personagem
+    diferente que so por acaso comeca com as mesmas letras."""
+    return re.search(rf"\b{re.escape(name)}\b", text, re.IGNORECASE) is not None
+
+
 def extract_candidate_names(cards_text: list[str]) -> set[str]:
     """Extrai nomes proprios candidatos via heuristica: palavra capitalizada,
     que aparece em posicao NAO-inicial de pelo menos um card (pra nao pegar
@@ -46,7 +54,7 @@ def infer_gender(name: str, cards_text: list[str]) -> str:
     female_score = 0
 
     for text in cards_text:
-        if name.lower() not in text.lower():
+        if not _mentions_name(name, text):
             continue
         male_score += len(_MALE_SIGNALS.findall(text))
         female_score += len(_FEMALE_SIGNALS.findall(text))
@@ -101,7 +109,7 @@ def build_video_glossary(
     # ser reaproveitado (senao um personagem recorrente que so e citado uma
     # vez neste video especifico ficaria de fora da lista).
     candidates = extract_candidate_names(cards_text) | {
-        name for name in known_by_name if any(name in text for text in cards_text)
+        name for name in known_by_name if any(_mentions_name(name, text) for text in cards_text)
     }
 
     characters: list[dict[str, Any]] = []

@@ -52,6 +52,16 @@ class FixGenderAndMarriageVerbTest(unittest.TestCase):
 
         self.assertEqual(result, "她嫁给了他")
 
+    def test_short_name_substring_of_another_name_does_not_trigger_fix(self):
+        # "Ana" (conhecida) nao pode "aparecer" so por ser substring de
+        # "Anacleto" (personagem diferente, nao mencionado de verdade) —
+        # senao corrigiria genero errado numa frase que nem fala da Ana.
+        glossary = {"characters": [{"source_name": "Ana", "zh": "安娜", "gender": "female"}]}
+
+        result = pp.fix_gender_and_marriage_verb("他死了", source_text="o Anacleto morreu", glossary=glossary)
+
+        self.assertEqual(result, "他死了")
+
 
 class LowConfidenceFlagTest(unittest.TestCase):
     def test_flags_group_below_threshold(self):

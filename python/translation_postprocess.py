@@ -1,6 +1,13 @@
+import re
 from typing import Any
 
 DEFAULT_LOW_CONFIDENCE_THRESHOLD = -0.6
+
+
+def _mentions_name(name: str, text: str) -> bool:
+    """Checa se `name` aparece como PALAVRA INTEIRA em `text` (nao substring
+    simples — "Ana" nao deveria "aparecer" dentro de "Anacleto")."""
+    return re.search(rf"\b{re.escape(name)}\b", text, re.IGNORECASE) is not None
 
 
 def normalize_names(zh_text: str, glossary: dict[str, Any]) -> str:
@@ -26,7 +33,7 @@ def fix_gender_and_marriage_verb(zh_text: str, source_text: str, glossary: dict[
     errado numa frase com dois personagens de generos diferentes)."""
     mentioned = [
         c for c in glossary.get("characters", [])
-        if c.get("gender") in ("male", "female") and c["source_name"].lower() in source_text.lower()
+        if c.get("gender") in ("male", "female") and _mentions_name(c["source_name"], source_text)
     ]
     if len(mentioned) != 1:
         return zh_text
