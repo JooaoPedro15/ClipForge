@@ -1,4 +1,3 @@
-import re
 from typing import Any
 
 DEFAULT_LOW_CONFIDENCE_THRESHOLD = -0.6
@@ -19,7 +18,6 @@ def normalize_names(zh_text: str, glossary: dict[str, Any]) -> str:
 _SHE = "她"
 _HE = "他"
 _MARRIAGE_VERBS = ("嫁给", "娶")
-_NEUTRAL_MARRIAGE = "和{name}结婚"
 
 
 def fix_gender_and_marriage_verb(zh_text: str, source_text: str, glossary: dict[str, Any]) -> str:
