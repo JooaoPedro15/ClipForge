@@ -555,6 +555,8 @@ def transcribe_video(
                     target_lang=target_lang,
                     output_path=translated_output,
                     channel_glossary_path=channel_glossary_path,
+                    uppercase=uppercase,
+                    lowercase=lowercase,
                 )
 
                 emit(

@@ -16,6 +16,8 @@ def traduzir_cards(
     target_lang: str,
     output_path: str,
     channel_glossary_path: str = glossary_service.DEFAULT_CHANNEL_GLOSSARY_PATH,
+    uppercase: bool = False,
+    lowercase: bool = False,
 ) -> str:
     """Recebe os cards JA CARREGADOS em memoria (usado por uma task futura, que
     chama isso no mesmo processo que acabou de transcrever — sem round-trip por
@@ -49,8 +51,18 @@ def traduzir_cards(
 
     glossary_service.merge_into_channel_glossary(video_glossary, channel_glossary_path)
 
+    # Aplicado so na exibicao final, depois da validacao — uppercase/lowercase
+    # em chines e um no-op (CJK nao tem caixa), entao e seguro aplicar sempre,
+    # igual o comportamento que o fluxo antigo ja tinha pro .srt traduzido.
+    def _apply_case(text: str) -> str:
+        if uppercase:
+            return text.upper()
+        if lowercase:
+            return text.lower()
+        return text
+
     entries = [
-        (srt_utils.format_timestamp(g["start"]), srt_utils.format_timestamp(g["end"]), g["zh"])
+        (srt_utils.format_timestamp(g["start"]), srt_utils.format_timestamp(g["end"]), _apply_case(g["zh"]))
         for g in groups
     ]
     srt_utils.write_srt(entries, output_path)
@@ -65,9 +77,13 @@ def traduzir_video(
     target_lang: str,
     channel_glossary_path: str = glossary_service.DEFAULT_CHANNEL_GLOSSARY_PATH,
     output_path: str | None = None,
+    uppercase: bool = False,
+    lowercase: bool = False,
 ) -> str:
     """Usado pela queima: le os cards de um cards.json ja gravado em disco por
     uma transcricao ANTERIOR (processo Python diferente)."""
     cards = json.loads(Path(cards_path).read_text(encoding="utf-8"))
     output = output_path or str(Path(original_srt_path).with_suffix(f".{target_lang}.srt"))
-    return traduzir_cards(cards, translator, source_lang, target_lang, output, channel_glossary_path)
+    return traduzir_cards(
+        cards, translator, source_lang, target_lang, output, channel_glossary_path, uppercase, lowercase
+    )

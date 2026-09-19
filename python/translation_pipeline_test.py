@@ -10,6 +10,35 @@ import translation_pipeline  # noqa: E402
 
 
 class TraduzirVideoTest(unittest.TestCase):
+    def test_uppercase_applies_to_translated_text_before_writing(self):
+        # O fluxo antigo (card a card) aplicava uppercase/lowercase no texto
+        # traduzido antes de gravar o .srt — o pipeline novo precisa manter
+        # isso, senao o toggle "uppercase" da UI para de valer so pra
+        # legenda traduzida.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            cards = [{"i": 0, "start": 0.0, "end": 2.0, "text": "ola mundo", "segment_id": 0, "avg_logprob": -0.1}]
+            srt_path = tmp_path / "video.srt"
+            cards_path = tmp_path / "video.cards.json"
+            cards_path.write_text(json.dumps(cards), encoding="utf-8")
+            channel_glossary_path = tmp_path / "glossario_canal.json"
+
+            translator = mock.Mock()
+            translator.translate_segments.return_value = ["hello world"]
+
+            output_srt = translation_pipeline.traduzir_video(
+                cards_path=str(cards_path),
+                original_srt_path=str(srt_path),
+                translator=translator,
+                source_lang="pt",
+                target_lang="en",
+                channel_glossary_path=str(channel_glossary_path),
+                uppercase=True,
+            )
+
+            content = Path(output_srt).read_text(encoding="utf-8")
+            self.assertIn("HELLO WORLD", content)
+
     def test_full_pipeline_produces_grouped_srt_and_persists_glossary(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
