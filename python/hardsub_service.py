@@ -7,6 +7,7 @@ from typing import Any
 import ffmpeg_utils
 import srt_utils
 import translate_service
+import translation_pipeline
 
 MODE_LANGS = {
     "zh": ["zh"],
@@ -76,6 +77,18 @@ def ensure_srt_for_lang(
     if Path(candidate_path).exists():
         return candidate_path
 
+    cards_path = Path(original_srt_path).with_suffix(".cards.json")
+    if cards_path.exists():
+        return translation_pipeline.traduzir_video(
+            cards_path=str(cards_path),
+            original_srt_path=original_srt_path,
+            translator=translator,
+            source_lang=source_language,
+            target_lang=lang,
+            output_path=candidate_path,
+        )
+
+    # Fallback pra videos transcritos antes do sidecar cards.json existir.
     entries = srt_utils.parse_srt(original_srt_path)
     texts = [entry[2] for entry in entries]
     translated_texts = translator.translate_segments(texts, source_lang=source_language, target_lang=lang)
