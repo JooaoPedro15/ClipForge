@@ -532,6 +532,12 @@ def transcribe_video(
     cards_path.write_text(json.dumps(card_records, ensure_ascii=False, indent=2), encoding="utf-8")
 
     if translate_to:
+        # Um Translator so pro loop inteiro: o construtor e leve, mas
+        # _ensure_loaded carrega o modelo NLLB do disco na primeira chamada e
+        # guarda em self._translator — instanciar de novo a cada idioma
+        # recarregaria o modelo do zero pra cada target_lang extra.
+        translator = translate_service.Translator(device=device, compute_type=compute_type)
+
         for target_lang in translate_to:
             emit(
                 "status",
@@ -541,7 +547,6 @@ def transcribe_video(
                 progress=98,
             )
             try:
-                translator = translate_service.Translator(device=device, compute_type=compute_type)
                 translated_output = str(output_file.with_suffix(f".{target_lang}.srt"))
                 translation_pipeline.traduzir_cards(
                     cards=card_records,
