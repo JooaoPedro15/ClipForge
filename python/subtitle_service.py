@@ -264,11 +264,14 @@ def append_word_group_entry(
     no_punctuation: bool,
     uppercase: bool,
     lowercase: bool,
+    card_records: list[dict[str, Any]],
+    segment_index: int,
+    avg_logprob: float | None,
 ) -> None:
     sub_start = format_timestamp(words_group[0].start)
     sub_end = format_timestamp(words_group[-1].end)
-    text = " ".join(word.word.strip() for word in words_group)
-    text = clean_text(text, no_accents, no_punctuation)
+    raw_text = " ".join(word.word.strip() for word in words_group)
+    text = clean_text(raw_text, no_accents, no_punctuation)
     if uppercase:
         text = text.upper()
     elif lowercase:
@@ -280,6 +283,17 @@ def append_word_group_entry(
     srt_content.append(f"{sub_start} --> {sub_end}")
     srt_content.append(text)
     srt_content.append("")
+
+    card_records.append(
+        {
+            "i": len(card_records),
+            "start": words_group[0].start,
+            "end": words_group[-1].end,
+            "text": raw_text,
+            "segment_id": segment_index,
+            "avg_logprob": avg_logprob,
+        }
+    )
 
 
 # Gera um progresso aproximado mesmo quando o Whisper ainda nao terminou tudo.
@@ -398,14 +412,27 @@ def transcribe_video(
     srt_content: list[str] = []
     subtitle_entries: list[tuple[str, str, str]] = []
     segment_count = 0
+    card_records: list[dict[str, Any]] = []
+    segment_index = -1
 
     for segment in segments:
+        segment_index += 1
         if max_words > 0 and word_timestamps and segment.words:
             # Neste modo, usa timestamps por palavra para fatiar legendas por ritmo e limites naturais.
             for words_group in segment_words_naturally(segment.words, target_words=max_words):
                 segment_count += 1
                 append_word_group_entry(
-                    words_group, segment_count, srt_content, subtitle_entries, no_accents, no_punctuation, uppercase, lowercase
+                    words_group,
+                    segment_count,
+                    srt_content,
+                    subtitle_entries,
+                    no_accents,
+                    no_punctuation,
+                    uppercase,
+                    lowercase,
+                    card_records=card_records,
+                    segment_index=segment_index,
+                    avg_logprob=getattr(segment, "avg_logprob", None),
                 )
 
             segment_end = getattr(segment, "end", None)
@@ -425,21 +452,42 @@ def transcribe_video(
             ):
                 segment_count += 1
                 append_word_group_entry(
-                    words_group, segment_count, srt_content, subtitle_entries, no_accents, no_punctuation, uppercase, lowercase
+                    words_group,
+                    segment_count,
+                    srt_content,
+                    subtitle_entries,
+                    no_accents,
+                    no_punctuation,
+                    uppercase,
+                    lowercase,
+                    card_records=card_records,
+                    segment_index=segment_index,
+                    avg_logprob=getattr(segment, "avg_logprob", None),
                 )
 
             segment_end = getattr(segment, "end", None)
         else:
             # Sem max_words, cada segmento do Whisper vira uma entrada do .srt.
             segment_count += 1
-            text = segment.text.strip()
-            text = clean_text(text, no_accents, no_punctuation)
+            raw_text = segment.text.strip()
+            text = clean_text(raw_text, no_accents, no_punctuation)
             if uppercase:
                 text = text.upper()
             elif lowercase:
                 text = text.lower()
 
             subtitle_entries.append((format_timestamp(segment.start), format_timestamp(segment.end), text))
+
+            card_records.append(
+                {
+                    "i": len(card_records),
+                    "start": segment.start,
+                    "end": segment.end,
+                    "text": raw_text,
+                    "segment_id": segment_index,
+                    "avg_logprob": getattr(segment, "avg_logprob", None),
+                }
+            )
 
             text = split_text_into_lines(text, max_line_width)
 
@@ -476,6 +524,9 @@ def transcribe_video(
 
     with open(output_file, "w", encoding="utf-8") as file_handle:
         file_handle.write("\n".join(srt_content))
+
+    cards_path = output_file.with_suffix(".cards.json")
+    cards_path.write_text(json.dumps(card_records, ensure_ascii=False, indent=2), encoding="utf-8")
 
     if translate_to:
         translator = translate_service.Translator(device=device, compute_type=compute_type)

@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import sys
 import types
 import unittest
@@ -229,6 +230,97 @@ class TranscribeVideoTranslationTest(unittest.TestCase):
             # Sem o fallback, isso viraria UMA legenda estatica cobrindo os ~19s inteiros
             # da fala continua. Com o fallback, deve virar varios blocos menores.
             self.assertGreater(srt_content.count(" --> "), 1)
+
+    def test_writes_cards_json_sidecar_with_segment_id_and_confidence(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            input_path = Path(tmp_dir) / "video.mp4"
+            input_path.write_bytes(b"fake")
+
+            @dataclass
+            class FakeSegment:
+                start: float
+                end: float
+                text: str
+                words: list
+                avg_logprob: float
+
+            fake_segments = [
+                FakeSegment(start=0.0, end=1.0, text="primeira frase", words=[], avg_logprob=-0.1),
+                FakeSegment(start=1.5, end=2.5, text="segunda frase", words=[], avg_logprob=-0.9),
+            ]
+            fake_info = types.SimpleNamespace(language="pt", language_probability=0.99, duration=2.5)
+
+            class FakeWhisperModel:
+                def __init__(self, *args, **kwargs):
+                    pass
+
+                def transcribe(self, *args, **kwargs):
+                    return fake_segments, fake_info
+
+            self.service.WhisperModel = FakeWhisperModel
+
+            output_path = self.service.transcribe_video(input_path=str(input_path), max_words=0)
+
+            cards_path = Path(output_path).with_suffix(".cards.json")
+            self.assertTrue(cards_path.exists())
+            cards = json.loads(cards_path.read_text(encoding="utf-8"))
+            self.assertEqual(len(cards), 2)
+            self.assertEqual(cards[0]["segment_id"], 0)
+            self.assertEqual(cards[1]["segment_id"], 1)
+            self.assertAlmostEqual(cards[0]["avg_logprob"], -0.1)
+            self.assertAlmostEqual(cards[1]["avg_logprob"], -0.9)
+
+    def test_cards_from_same_whisper_segment_share_segment_id_and_keep_natural_case(self):
+        # Prova a premissa de que a Task 2 depende: cards nascidos do mesmo
+        # segmento do Whisper (max_words>0 fatia UM segmento em varios cards)
+        # tem que sair com o MESMO segment_id. Tambem prova que o texto do
+        # sidecar preserva o case original (nao aplica uppercase/lowercase da
+        # config de exibicao) — sem isso, a extracao de nome de uma task
+        # posterior nao funciona quando o usuario liga a opcao "uppercase" da
+        # legenda.
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            input_path = Path(tmp_dir) / "video.mp4"
+            input_path.write_bytes(b"fake")
+
+            words = [
+                WordInfo(word=w, start=float(i) * 0.3, end=float(i) * 0.3 + 0.3)
+                for i, w in enumerate("so que ai o Bernardo morre".split())
+            ]
+
+            @dataclass
+            class FakeSegment:
+                start: float
+                end: float
+                text: str
+                words: list
+                avg_logprob: float
+
+            fake_segments = [
+                FakeSegment(
+                    start=0.0, end=words[-1].end, text="so que ai o Bernardo morre", words=words, avg_logprob=-0.2
+                )
+            ]
+            fake_info = types.SimpleNamespace(language="pt", language_probability=0.99, duration=words[-1].end)
+
+            class FakeWhisperModel:
+                def __init__(self, *args, **kwargs):
+                    pass
+
+                def transcribe(self, *args, **kwargs):
+                    return fake_segments, fake_info
+
+            self.service.WhisperModel = FakeWhisperModel
+
+            output_path = self.service.transcribe_video(input_path=str(input_path), max_words=3, uppercase=True)
+
+            cards = json.loads(Path(output_path).with_suffix(".cards.json").read_text(encoding="utf-8"))
+            self.assertGreater(len(cards), 1)  # max_words=3 fatia a frase em mais de 1 card
+            self.assertEqual({c["segment_id"] for c in cards}, {0})  # todos do MESMO segmento
+            self.assertIn("Bernardo", " ".join(c["text"] for c in cards))  # case original, nao "BERNARDO"
 
 
 if __name__ == "__main__":
