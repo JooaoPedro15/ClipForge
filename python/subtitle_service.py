@@ -9,7 +9,9 @@ from pathlib import Path
 from typing import Any
 
 import ffmpeg_utils
+import glossary_service
 import translate_service
+import translation_pipeline
 
 try:
     from faster_whisper import WhisperModel
@@ -321,6 +323,7 @@ def transcribe_video(
     no_accents: bool = False,
     no_punctuation: bool = False,
     translate_to: list[str] | None = None,
+    channel_glossary_path: str = glossary_service.DEFAULT_CHANNEL_GLOSSARY_PATH,
 ) -> str:
     input_file = Path(input_path)
 
@@ -529,9 +532,6 @@ def transcribe_video(
     cards_path.write_text(json.dumps(card_records, ensure_ascii=False, indent=2), encoding="utf-8")
 
     if translate_to:
-        translator = translate_service.Translator(device=device, compute_type=compute_type)
-        source_texts = [entry[2] for entry in subtitle_entries]
-
         for target_lang in translate_to:
             emit(
                 "status",
@@ -541,30 +541,16 @@ def transcribe_video(
                 progress=98,
             )
             try:
-                translated_texts = translator.translate_segments(
-                    source_texts,
+                translator = translate_service.Translator(device=device, compute_type=compute_type)
+                translated_output = str(output_file.with_suffix(f".{target_lang}.srt"))
+                translation_pipeline.traduzir_cards(
+                    cards=card_records,
+                    translator=translator,
                     source_lang=detected_language,
                     target_lang=target_lang,
+                    output_path=translated_output,
+                    channel_glossary_path=channel_glossary_path,
                 )
-
-                translated_srt: list[str] = []
-                for index, (entry, translated_text) in enumerate(zip(subtitle_entries, translated_texts), start=1):
-                    sub_start, sub_end, _original_text = entry
-                    text = translated_text
-                    if uppercase:
-                        text = text.upper()
-                    elif lowercase:
-                        text = text.lower()
-                    text = split_text_into_lines(text, max_line_width)
-
-                    translated_srt.append(f"{index}")
-                    translated_srt.append(f"{sub_start} --> {sub_end}")
-                    translated_srt.append(text)
-                    translated_srt.append("")
-
-                translated_output = output_file.with_suffix(f".{target_lang}.srt")
-                with open(translated_output, "w", encoding="utf-8") as translated_handle:
-                    translated_handle.write("\n".join(translated_srt))
 
                 emit(
                     "translation-done",
@@ -572,7 +558,7 @@ def transcribe_video(
                     "translating",
                     f"Traducao para {target_lang} concluida.",
                     targetLang=target_lang,
-                    outputPath=str(translated_output),
+                    outputPath=translated_output,
                 )
             except Exception as error:
                 emit(

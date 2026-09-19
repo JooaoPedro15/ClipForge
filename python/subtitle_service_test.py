@@ -104,8 +104,10 @@ class TranscribeVideoTranslationTest(unittest.TestCase):
                 text: str
                 words: list
 
-            fake_segments = [FakeSegment(start=0.0, end=1.0, text="ola mundo", words=[])]
-            fake_info = types.SimpleNamespace(language="pt", language_probability=0.99, duration=1.0)
+            # duration >= 1.2s (min_duration exigido por subtitle_validation) pra
+            # nao cair no branch de erro antes mesmo de checar o texto traduzido.
+            fake_segments = [FakeSegment(start=0.0, end=1.5, text="ola mundo", words=[])]
+            fake_info = types.SimpleNamespace(language="pt", language_probability=0.99, duration=1.5)
 
             class FakeWhisperModel:
                 def __init__(self, *args, **kwargs):
@@ -124,13 +126,19 @@ class TranscribeVideoTranslationTest(unittest.TestCase):
 
                 def translate_segments(self, texts, source_lang, target_lang):
                     captured_calls.append((tuple(texts), source_lang, target_lang))
+                    if target_lang == "zh":
+                        return ["你好世界" for _ in texts]
                     return [f"[{target_lang}] {text}" for text in texts]
 
             self.service.translate_service.Translator = FakeTranslator
 
+            # Aponta pra um glossario dentro do tmp_dir — sem isso o pipeline novo
+            # gravaria (mesmo vazio) no path padrao real do canal.
+            channel_glossary_path = Path(tmp_dir) / "glossario_canal.json"
             output_path = self.service.transcribe_video(
                 input_path=str(input_path),
                 translate_to=["en", "zh"],
+                channel_glossary_path=str(channel_glossary_path),
             )
 
             en_path = Path(output_path).with_suffix(".en.srt")
@@ -139,7 +147,7 @@ class TranscribeVideoTranslationTest(unittest.TestCase):
             self.assertTrue(en_path.exists())
             self.assertTrue(zh_path.exists())
             self.assertIn("[en] ola mundo", en_path.read_text(encoding="utf-8"))
-            self.assertIn("[zh] ola mundo", zh_path.read_text(encoding="utf-8"))
+            self.assertIn("你好世界", zh_path.read_text(encoding="utf-8"))
             self.assertEqual(
                 captured_calls,
                 [(("ola mundo",), "pt", "en"), (("ola mundo",), "pt", "zh")],
@@ -189,6 +197,69 @@ class TranscribeVideoTranslationTest(unittest.TestCase):
             self.assertTrue(Path(output_path).exists())
             en_path = Path(output_path).with_suffix(".en.srt")
             self.assertFalse(en_path.exists())
+
+    def test_translate_to_uses_grouped_pipeline_instead_of_card_by_card(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            input_path = Path(tmp_dir) / "video.mp4"
+            input_path.write_bytes(b"fake")
+
+            # "Bernardo" precisa aparecer 2x (nome novo, extract_candidate_names
+            # exige frequencia >=2 pra nao dar falso positivo).
+            sentence = "so que ai o Bernardo morre e Bernardo desaparece"
+            words = [
+                WordInfo(word=w, start=float(i) * 0.3, end=float(i) * 0.3 + 0.3)
+                for i, w in enumerate(sentence.split())
+            ]
+
+            @dataclass
+            class FakeSegment:
+                start: float
+                end: float
+                text: str
+                words: list
+                avg_logprob: float
+
+            fake_segments = [
+                FakeSegment(start=0.0, end=words[-1].end, text=sentence, words=words, avg_logprob=-0.1)
+            ]
+            fake_info = types.SimpleNamespace(language="pt", language_probability=0.99, duration=words[-1].end)
+
+            class FakeWhisperModel:
+                def __init__(self, *args, **kwargs):
+                    pass
+
+                def transcribe(self, *args, **kwargs):
+                    return fake_segments, fake_info
+
+            self.service.WhisperModel = FakeWhisperModel
+
+            class FakeTranslator:
+                def __init__(self, device, compute_type):
+                    pass
+
+                def translate_segments(self, texts, source_lang, target_lang):
+                    # a frase inteira, de uma vez so (pipeline novo agrupa por
+                    # segment_id) — nao card a card.
+                    if texts == [sentence]:
+                        return ["结果伯纳多死了"]
+                    return [f"[{target_lang}] {t}" for t in texts]  # nome isolado no glossario
+
+            self.service.translate_service.Translator = FakeTranslator
+
+            channel_glossary_path = Path(tmp_dir) / "glossario_canal.json"
+            output_path = self.service.transcribe_video(
+                input_path=str(input_path),
+                max_words=3,  # gera VARIOS cards de exibicao, todos do mesmo segment_id
+                translate_to=["zh"],
+                channel_glossary_path=str(channel_glossary_path),
+            )
+
+            zh_path = Path(output_path).with_suffix(".zh.srt")
+            content = zh_path.read_text(encoding="utf-8")
+            self.assertIn("结果伯纳多死了", content)
+            self.assertEqual(content.count(" --> "), 1)  # 1 grupo, nao 1 por card
 
     def test_long_natural_segment_without_max_words_gets_split_by_duration(self):
         import tempfile
