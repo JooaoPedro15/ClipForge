@@ -92,13 +92,15 @@ class OllamaClient:
         names = {m.get("name", "") for m in tags.get("models", [])}
         return self.model in names or f"{self.model}:latest" in names
 
-    def chat_json(self, system: str, user: str) -> Any:
-        """Uma rodada de chat, temperature 0, saida forcada em JSON."""
+    def chat_json(self, system: str, user: str, temperature: float = 0) -> Any:
+        """Uma rodada de chat, temperature 0 por padrao, saida forcada em JSON.
+        `temperature` > 0 so e usado em nova tentativa apos uma resposta
+        rejeitada — com 0 o modelo repete a mesma resposta."""
         payload = {
             "model": self.model,
             "stream": False,
             "format": "json",
-            "options": {"temperature": 0, "num_ctx": self.num_ctx},
+            "options": {"temperature": temperature, "num_ctx": self.num_ctx},
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},

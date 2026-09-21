@@ -60,23 +60,24 @@ PROMPT_TRADUCAO = """You are a subtitle translator taking Brazilian Portuguese i
 ## What you receive
 
 1. A reference sheet (summary, character list with genders and fixed Chinese names, terms, register).
-2. The FULL transcript as a JSON array: [{"i": <int>, "start": <sec>, "end": <sec>, "text": "<pt>", "low_confidence": <bool>}, ...]
+2. The FULL transcript, already cut into sentences, as a JSON array: [{"id": <int>, "start": <sec>, "end": <sec>, "text": "<pt>", "low_confidence": <bool>}, ...]
 
-The cards are cut every 2-3 words for on-screen pacing. A single spoken sentence is normally spread across 2-5 consecutive cards. Individual cards are FRAGMENTS, not sentences.
+Read the whole transcript before translating anything: each sentence only makes sense in the context of the ones around it.
+
+3. The Chinese lines already produced for the previous sentences (so your line continues them naturally).
+4. The ONE sentence you must translate now.
 
 ## Your task
 
-Group consecutive cards into complete sentences, translate each sentence as a whole, and return one Chinese line per sentence.
+Translate ONLY the requested sentence. One Chinese subtitle line, covering exactly what that sentence says — not the previous one, not the next one, no summary of the story.
 
-Output a JSON object with a single key "groups":
-{"groups": [{"cards": [<indices grouped>], "start": <start of first card>, "end": <end of last card>, "zh": "<translation>", "flag": "<empty string, or a reason>"}]}
-
-Every input index must appear in exactly one group. Groups must be consecutive and in order.
+Output a JSON object:
+{"id": <sentence id>, "zh": "<translation>", "flag": "<empty string, or a reason>"}
 
 ## Translation rules
 
-**1. Translate the sentence, never the fragment.**
-A card like "SÓ QUE AÍ" alone means nothing. Joined with the cards around it, it becomes a sentence such as "só que aí o fulano morre" -> 结果某某死了. Never emit a translation for a fragment in isolation.
+**1. Translate the sentence as a whole, using the surrounding sentences as context.**
+A sentence like "só que aí o Bernardo morre" is 结果伯纳多死了. A connective at the start of a sentence (e aí, só que, então) refers to the previous sentence — translate it so the two lines read as one continuous story.
 
 **2. Rebuild the Chinese sentence from scratch. Do not follow Portuguese word order.**
 Portuguese modifiers trail the noun; Chinese modifiers precede it.
@@ -84,7 +85,7 @@ Portuguese modifiers trail the noun; Chinese modifiers precede it.
 - "o cara que matou o chefe sozinho" -> 单人solo掉boss的哥们
 
 **3. Restore the subject that Portuguese drops.**
-Portuguese is pro-drop and its verbs already carry the person; Chinese needs an explicit subject or the line reads as a fragment. Use the reference sheet to know WHO. Never guess the gender of 他/她 — look it up. If the reference sheet says a character is male, a sentence about them can never use 她.
+Portuguese is pro-drop and its verbs already carry the person; Chinese needs an explicit subject or the line reads as a fragment. Use the reference sheet and the previous sentences to know WHO. Never guess the gender of 他/她 — look it up. If the reference sheet says a character is male, a sentence about them can never use 她.
 
 **4. Chinese forces distinctions Portuguese leaves open. Look them up, never guess.**
 Whenever the Chinese word requires information the Portuguese sentence does not carry, resolve it from the reference sheet or the story. If it is genuinely unresolvable, choose the neutral form — never guess.
@@ -103,13 +104,13 @@ One character = one Chinese rendering for the whole video. Never leave a name in
 
 **6. Register: spoken, informal, Bilibili.**
 Follow the "register" line of the reference sheet. Use natural spoken Chinese — 结果, 然后, 直接, 这哥们, 离谱, 好家伙. Avoid written-register connectives (因此, 随后, 于是乎) and avoid translationese (在…之后, 使得, 进行). If a line is a joke, land the joke in Chinese even if that means not matching the words.
+Do not open every line with the same connective. Look at the previous lines: if the last one already started with 结果 or 然后, start this one differently or with no connective at all — 结果 is for a surprising outcome, not a default.
 
-**7. Length and reading time.**
-Max {max_chars} Chinese characters per line. This is a vertical video, so a long line wraps and covers the picture. If a sentence is longer than that, split it into two groups at a natural clause boundary (a comma, 然后, 结果), never mid-phrase.
-Each group should stay on screen at least {min_duration} seconds. If a group would be shorter, merge it with the neighbouring group.
+**7. Length.**
+Max {max_chars} Chinese characters per line. This is a vertical video, so a long line wraps and covers the picture. Prefer short spoken phrasing over literal completeness. If a sentence genuinely needs more, put a Chinese comma (，) at the clause boundary where it may be split in two.
 
 **8. Never invent content.**
-Cards marked "low_confidence": true came from a weak speech-recognition pass. If the Portuguese for a group is garbled, truncated or looks like a speech-recognition error, translate the part you can actually read and set "flag" to a short reason (e.g. "source unintelligible, partial translation"). Producing a fluent Chinese sentence that is not in the source is the worst possible failure — worse than leaving it rough. Do not fill gaps.
+Sentences marked "low_confidence": true came from a weak speech-recognition pass. If the Portuguese is garbled, truncated or looks like a speech-recognition error, translate the part you can actually read and set "flag" to a short reason (e.g. "source unintelligible, partial translation"). Producing a fluent Chinese sentence that is not in the source is the worst possible failure — worse than leaving it rough. Do not fill gaps.
 
 **9. Punctuation.**
 Use ，。？！ sparingly — subtitles usually carry no terminal period. Never use Latin punctuation. No ellipses to pad a line.
@@ -139,12 +140,26 @@ def build_glossary_messages(
 
 
 def build_translation_messages(
-    cards: list[dict[str, Any]],
+    sentences: list[dict[str, Any]],
     reference_sheet: dict[str, Any],
+    target: dict[str, Any],
+    previous_lines: list[dict[str, Any]],
     max_chars: int = 20,
-    min_duration: float = 1.2,
 ) -> tuple[str, str]:
-    """Devolve (system, user) do estagio 2."""
-    system = PROMPT_TRADUCAO.replace("{max_chars}", str(max_chars)).replace("{min_duration}", str(min_duration))
-    user = "## Reference sheet\n\n" + _dumps(reference_sheet) + "\n\n## Transcript\n\n" + _dumps(cards)
+    """Devolve (system, user) do estagio 2 pra UMA frase. `sentences` e a
+    transcricao inteira ja agrupada pelo Python (llm_translation
+    .propose_sentences); `previous_lines` sao as linhas em chines ja
+    produzidas, na ordem. A parte fixa (sheet + transcricao) vem primeiro pro
+    Ollama reaproveitar o prefixo em cache entre as chamadas."""
+    system = PROMPT_TRADUCAO.replace("{max_chars}", str(max_chars))
+    user = (
+        "## Reference sheet\n\n"
+        + _dumps(reference_sheet)
+        + "\n\n## Transcript (all sentences)\n\n"
+        + _dumps(sentences)
+        + "\n\n## Previous lines already translated\n\n"
+        + _dumps(previous_lines)
+        + "\n\n## Translate now\n\n"
+        + _dumps(target)
+    )
     return system, user

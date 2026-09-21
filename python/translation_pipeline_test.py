@@ -110,8 +110,8 @@ class TraduzirCardsLlmTest(unittest.TestCase):
 
     CARDS = [
         {"i": 0, "start": 0.0, "end": 0.6, "text": "todo mundo rejeita", "segment_id": 0, "avg_logprob": -0.1},
-        {"i": 1, "start": 0.6, "end": 1.9, "text": "o Edgar, o Bernardo", "segment_id": 0, "avg_logprob": -0.1},
-        {"i": 2, "start": 1.9, "end": 3.4, "text": "se casou com a Lenora", "segment_id": 1, "avg_logprob": -0.1},
+        {"i": 1, "start": 0.6, "end": 1.9, "text": "o Edgar, o Bernardo,", "segment_id": 0, "avg_logprob": -0.1},
+        {"i": 2, "start": 1.9, "end": 3.4, "text": "se casou com a Lenora.", "segment_id": 1, "avg_logprob": -0.1},
     ]
 
     SHEET = {
@@ -123,10 +123,12 @@ class TraduzirCardsLlmTest(unittest.TestCase):
         ],
     }
 
-    def _client(self, groups):
+    def _client(self, lines):
+        # 1a chamada: estagio 1 (sheet). Depois, uma chamada por frase — os
+        # cards acima viram 2 frases ([0,1] fecha na virgula com 5 palavras; [2]).
         client = mock.Mock()
         client.is_available.return_value = True
-        client.chat_json.side_effect = [self.SHEET, {"groups": groups}]
+        client.chat_json.side_effect = [self.SHEET, *lines]
         return client
 
     def test_srt_is_built_from_llm_groups_and_glossary_is_persisted(self):
@@ -135,8 +137,8 @@ class TraduzirCardsLlmTest(unittest.TestCase):
             out = tmp_path / "video.zh.srt"
             glossary_path = tmp_path / "glossario_canal.json"
             client = self._client([
-                {"cards": [0, 1], "zh": "大家都拒绝埃德加", "flag": ""},
-                {"cards": [2], "zh": "伯纳多和莱诺拉结婚了", "flag": ""},
+                {"id": 0, "zh": "大家都拒绝埃德加", "flag": ""},
+                {"id": 1, "zh": "伯纳多和莱诺拉结婚了", "flag": ""},
             ])
             translator = mock.Mock()
 
@@ -156,10 +158,13 @@ class TraduzirCardsLlmTest(unittest.TestCase):
             tmp_path = Path(tmp_dir)
             out = tmp_path / "video.zh.srt"
             glossary_path = tmp_path / "glossario_canal.json"
-            # Nome em latim sobrou na traducao -> regra "caractere latino"
+            # Nome em latim sobrou na traducao, em todas as 3 tentativas da
+            # frase 0 -> regra "caractere latino" reprova.
             client = self._client([
-                {"cards": [0, 1], "zh": "大家都拒绝Ze", "flag": ""},
-                {"cards": [2], "zh": "伯纳多和莱诺拉结婚了", "flag": ""},
+                {"id": 0, "zh": "大家都拒绝Ze", "flag": ""},
+                {"id": 0, "zh": "大家都拒绝Ze", "flag": ""},
+                {"id": 0, "zh": "大家都拒绝Ze", "flag": ""},
+                {"id": 1, "zh": "伯纳多和莱诺拉结婚了", "flag": ""},
             ])
 
             with self.assertRaises(translation_pipeline.subtitle_validation.ValidationError) as ctx:

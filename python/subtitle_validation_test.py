@@ -161,6 +161,20 @@ class ErrosAuditadosTest(unittest.TestCase):
 
         self.assertEqual(_erros(groups, cards), "")
 
+    def test_erro_3_nome_feminino_como_objeto_nao_impede_他(self):
+        # "tenta casar com a Isabel": sujeito elidido (Edgar), Isabel e objeto.
+        cards = [{"i": 0, "start": 0.0, "end": 2.0, "text": "tenta casar com a Isabel,"}]
+        groups = [{"cards": [0], "start": 0.0, "end": 2.0, "zh": "结果他去娶伊莎贝尔", "flag": ""}]
+        glossario = {"characters": GLOSSARIO["characters"] + [{"source_name": "Isabel", "variants": [], "zh": "伊莎贝尔", "gender": "female"}]}
+
+        self.assertEqual(_erros(groups, cards, glossario), "")
+
+    def test_erro_3_nome_masculino_como_objeto_nao_impede_她(self):
+        cards = [{"i": 0, "start": 0.0, "end": 2.0, "text": "vai ver o túmulo do Bernardo"}]
+        groups = [{"cards": [0], "start": 0.0, "end": 2.0, "zh": "她去看伯纳多的墓地", "flag": ""}]
+
+        self.assertEqual(_erros(groups, cards), "")
+
     def test_erro_3_sujeito_feminino_com_他(self):
         cards = [{"i": 0, "start": 0.0, "end": 2.0, "text": "a Lenora fica triste"}]
         groups = [{"cards": [0], "start": 0.0, "end": 2.0, "zh": "他很难过", "flag": ""}]

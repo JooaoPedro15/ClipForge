@@ -18,15 +18,29 @@ _PT_MALE_PRONOUN = re.compile(r"\b(ele|dele|nele)\b", re.IGNORECASE)
 _TRANSLIT_SUFFIXES = "尔多德斯拉娜诺罗托索莫雷"
 
 
+# Preposicao (+ artigo opcional) antes do nome = nome e OBJETO ("casou com a
+# Lenora", "o tumulo do Bernardo"), nao sujeito. So o sujeito decide 他/她.
+_OBJECT_MARKER = r"\b(?:com|de|do|da|dos|das|pra|pro|para|no|na|nos|nas|ao|aos|à|às|em|sobre|contra)\s+(?:[oa]s?\s+)?"
+
+
 def _mentions_name(name: str, text: str) -> bool:
     return re.search(rf"\b{re.escape(name)}\b", text, re.IGNORECASE) is not None
 
 
-def _characters_in(source_text: str, glossary: dict[str, Any]) -> list[dict[str, Any]]:
+def _mentions_name_as_subject(name: str, text: str) -> bool:
+    """Alguma mencao do nome que NAO venha logo depois de preposicao."""
+    for match in re.finditer(rf"\b{re.escape(name)}\b", text, re.IGNORECASE):
+        prefix = text[: match.start()]
+        if not re.search(_OBJECT_MARKER + r"$", prefix, re.IGNORECASE):
+            return True
+    return False
+
+
+def _subject_characters(source_text: str, glossary: dict[str, Any]) -> list[dict[str, Any]]:
     found = []
     for character in glossary.get("characters", []):
         names = [character.get("source_name", ""), *character.get("variants", [])]
-        if any(n and _mentions_name(n, source_text) for n in names):
+        if any(n and _mentions_name_as_subject(n, source_text) for n in names):
             found.append(character)
     return found
 
@@ -34,11 +48,13 @@ def _characters_in(source_text: str, glossary: dict[str, Any]) -> list[dict[str,
 def _gender_errors(group: dict[str, Any], glossary: dict[str, Any], source: str) -> list[str]:
     """Erro 3 da auditoria: 她 pra sujeito masculino ("o Bernardo morre" ->
     她死了). So acusa quando a fonte NAO da nenhuma pista feminina: nenhum
-    personagem feminino mencionado e nenhum "ela". Simetrico pro 他."""
+    personagem feminino como sujeito e nenhum "ela". Nome atras de
+    preposicao ("casar com a Isabel") e objeto e nao conta — o sujeito
+    elidido pode ser qualquer um. Simetrico pro 他."""
     zh = group["zh"]
     if not source:
         return []
-    mentioned = _characters_in(source, glossary)
+    mentioned = _subject_characters(source, glossary)
     males = [c for c in mentioned if c.get("gender") == "male"]
     females = [c for c in mentioned if c.get("gender") == "female"]
     erros = []

@@ -30,7 +30,33 @@ O escopo atual e simples: preparar material bruto com rapidez, gerar legendas e 
 
 ### Traducao de legendas (SubtitleForge)
 
-O SubtitleForge tem duas opcoes opcionais para traduzir a legenda gerada, alem do `.srt` original: **"Traduzir p/ ingles"** e **"Traduzir p/ chines (simplificado)"**. Ao marcar uma ou ambas, o app gera arquivos adicionais (`arquivo.en.srt`, `arquivo.zh.srt`) ao lado do `.srt` original, usando o modelo NLLB para traducao.
+O SubtitleForge tem duas opcoes opcionais para traduzir a legenda gerada, alem do `.srt` original: **"Traduzir p/ ingles"** e **"Traduzir p/ chines (simplificado)"**. Ao marcar uma ou ambas, o app gera arquivos adicionais (`arquivo.en.srt`, `arquivo.zh.srt`) ao lado do `.srt` original.
+
+- **Chines** usa um **LLM local via Ollama** (padrao `qwen2.5:7b-instruct`, custo zero, offline, ~5,5GB de VRAM). Sem o Ollama rodando, a traducao pro chines falha com erro claro — nao cai em silencio no NLLB.
+- **Ingles** usa o modelo NLLB (ctranslate2), que tambem pode ser forcado pro chines com `CLIPFORGE_TRANSLATION_ENGINE=nllb` (qualidade bem menor).
+
+#### Chines: pipeline em dois estagios (LLM local)
+
+Os cards de exibicao de um video vertical sao cortados a cada 2-3 palavras; traduzir card a card gera fragmento de frase, ordem de palavras do portugues e genero chutado. Por isso a traducao pro chines roda em dois estagios, ambos com a **transcricao inteira** (`arquivo.cards.json`, gravado pela transcricao com `segment_id` e `avg_logprob` de cada card):
+
+1. **Glossario do video** (`glossary_service.build_video_glossary_llm`): o modelo recebe a transcricao inteira, o glossario do canal (travado) e o campo **"Tipo de video"** da UI (ex.: `gameplay de terror`, `corte engracado`, `reacao`), e devolve resumo da historia, personagens com genero/relacao/grafia chinesa fixa, termos recorrentes, registro adequado e os indices de cards ilegiveis.
+2. **Traducao por frase** (`llm_translation.translate_with_llm`): o modelo recebe a transcricao inteira + o glossario e devolve **um objeto por frase**, agrupando cards consecutivos: `{"cards": [7, 8, 9], "start": 7.4, "end": 9.8, "zh": "...", "flag": ""}`. O `.zh.srt` final e montado a partir desses grupos, nao dos cards. Cards com `avg_logprob < -0.6` (Whisper inseguro) vao marcados como `low_confidence` pro modelo nao inventar texto no buraco.
+
+Chamadas ao modelo usam `temperature: 0` e saida JSON forcada. Transcricoes longas sao fatiadas em pedacos de ~80 cards, sempre em fronteira de segmento do Whisper.
+
+**Glossario persistente do canal** em `D:\Projetos\subtitle-forge\glossario_canal.json` (ver `DEFAULT_CHANNEL_GLOSSARY_PATH` em `python/glossary_service.py`): nome do canal, bordoes, personagens e jogos recorrentes. Entra no estagio 1 como **travado** — grafia que ja existe nunca e reescrita — e no fim do video as entradas novas sao fundidas nele. E um JSON simples, pode ser editado a mao pra corrigir uma grafia.
+
+**Validacao antes de gravar** (`subtitle_validation.py`, sem chamar API): todo card em exatamente um grupo e em ordem; nenhum caractere latino na linha traduzida; no maximo 20 caracteres chineses por linha (video vertical); nenhum grupo com menos de 1,2s na tela; 她 com sujeito masculino / 他 com feminino; 嫁给 com sujeito masculino / 娶 com feminino; nome com grafia divergente da canonica (variantes do glossario, canonico + sufixo tipo 埃德加尔, ultimo caractere trocado tipo 伯纳德/伯纳多); grupos com `flag` preenchido. Qualquer violacao **falha a traducao** apontando grupo e regra, grava o rascunho em `arquivo.zh.REJEITADO.srt` pra inspecao e nao funde o glossario do canal.
+
+#### Instalando o Ollama
+
+```bash
+ollama pull qwen2.5:7b-instruct
+```
+
+O servidor precisa estar rodando (`ollama serve`, ou o app do Ollama na bandeja). Variaveis: `CLIPFORGE_OLLAMA_URL` (padrao `http://127.0.0.1:11434`), `CLIPFORGE_OLLAMA_MODEL` (padrao `qwen2.5:7b-instruct`). Pra guardar os modelos fora do `C:\Users\<usuario>\.ollama`, defina `OLLAMA_MODELS` (ex.: `D:\Projetos\subtitle-forge\models\ollama`) antes de subir o servidor.
+
+#### Ingles / fallback: NLLB
 
 O modelo NLLB precisa ser convertido pra ctranslate2 **localmente**, uma unica vez (mirrors prontos de terceiros no HuggingFace se mostraram instaveis — um foi removido, outro gerava traducao degenerada por tokenizer incompativel com os pesos). Com o ambiente do SubtitleForge ativado:
 
@@ -41,7 +67,7 @@ ct2-transformers-converter --model facebook/nllb-200-distilled-600M --output_dir
 
 Isso baixa o modelo original do Facebook (~2,4GB) e gera a versao ctranslate2 em `D:\Projetos\subtitle-forge\models\nllb-200-distilled-600M-ct2` (caminho fixo, sem acento — sentencepiece nao le corretamente caminhos do Windows com caracteres acentuados, como `C:\Users\<usuario com acento>`). Depois da conversao, `transformers`/`torch` podem ser removidos; so `ctranslate2` e `sentencepiece` sao necessarios em tempo de execucao. Para usar outro caminho, defina `CLIPFORGE_NLLB_MODEL_DIR`.
 
-A traducao roda por frase (agrupando os cards do mesmo segmento do Whisper, nao card a card) e mantem um glossario de nomes/genero de personagens persistente entre videos, em `D:\Projetos\subtitle-forge\glossario_canal.json` (caminho fixo, ver `DEFAULT_CHANNEL_GLOSSARY_PATH` em `python/glossary_service.py`). Cada nome novo detectado (frequencia >= 2 no video) e traduzido uma vez e travado nesse arquivo, garantindo que o mesmo personagem saia com a mesma grafia em chines em todos os videos seguintes. E um JSON simples — pode ser aberto e editado manualmente pra corrigir uma grafia errada.
+No caminho NLLB a traducao agrupa os cards do mesmo segmento do Whisper e usa um glossario heuristico (nome capitalizado com frequencia >= 2, genero por artigo/concordancia) com pos-processamento de nome/pronome — bem mais fraco que o caminho LLM.
 
 ### Queima de legenda no video (hardsub)
 
@@ -87,6 +113,8 @@ Variaveis opcionais:
 
 - `CLIPFORGE_SUBTITLE_FORGE_PATH`: caminho do ambiente Python usado pelo SubtitleForge.
 - `CLIPFORGE_NLLB_MODEL_DIR`: caminho do modelo NLLB ja convertido pra ctranslate2 (ver secao "Traducao de legendas" acima). Padrao: `D:\Projetos\subtitle-forge\models\nllb-200-distilled-600M-ct2`.
+- `CLIPFORGE_OLLAMA_URL` / `CLIPFORGE_OLLAMA_MODEL`: servidor e modelo do LLM local usado na traducao pro chines. Padrao: `http://127.0.0.1:11434` / `qwen2.5:7b-instruct`.
+- `CLIPFORGE_TRANSLATION_ENGINE`: `auto` (padrao, LLM pro chines), `nllb` (forca o NLLB tambem pro chines).
 - `CLIPFORGE_CLIP_SPLITTER_PATH`: caminho do projeto externo usado pelo Pre-Editor.
 - `CLIPFORGE_TEMP`: pasta temporaria curta usada pelo Pre-Editor (ex.: `D:\cs_tmp`). Evita [WinError 206] quando o input/output esta em caminho profundo. Se nao definido, o app tenta `<drive>:\cs_tmp` e cai para a pasta do video como fallback.
 - `GEMINI_API_KEY`: opcional para recursos de IA do Pre-Editor externo, quando habilitados.
