@@ -31,6 +31,7 @@ const defaultSubtitleSettings: SubtitleTaskOptions = {
   noPunctuation: false,
   useCpu: false,
   translateTo: [],
+  videoType: '',
   format: 'long',
   outputPath: null,
 }

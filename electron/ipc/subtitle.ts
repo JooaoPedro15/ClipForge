@@ -22,6 +22,7 @@ interface SubtitleTaskOptions {
   noPunctuation: boolean
   useCpu: boolean
   translateTo: string[]
+  videoType: string
   outputPath?: string | null
 }
 
@@ -157,6 +158,7 @@ const defaultOptions: SubtitleTaskOptions = {
   noPunctuation: false,
   useCpu: false,
   translateTo: [],
+  videoType: '',
   outputPath: null,
 }
 
@@ -172,6 +174,7 @@ function normalizeOptions(options: Partial<SubtitleTaskOptions> | undefined): Su
     translateTo: Array.from(
       new Set((options?.translateTo ?? defaultOptions.translateTo).map((lang) => lang.trim()).filter(Boolean)),
     ),
+    videoType: (options?.videoType ?? defaultOptions.videoType).trim(),
     outputPath: options?.outputPath?.trim() || null,
   }
 }
@@ -394,6 +397,12 @@ export function buildProcessArgs(serviceScriptPath: string, task: SubtitleTaskRe
 
   if (task.options.translateTo.length > 0) {
     args.push('--translate-to', task.options.translateTo.join(','))
+  }
+
+  // Uma linha de contexto ("gameplay de terror", "corte engraçado") — muda o
+  // registro do chines no estagio 1 da traducao.
+  if (task.options.videoType) {
+    args.push('--video-type', task.options.videoType)
   }
 
   if (task.options.outputPath) {

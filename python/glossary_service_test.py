@@ -120,5 +120,88 @@ class BuildVideoGlossaryTest(unittest.TestCase):
         self.assertNotIn("Ana", [c["source_name"] for c in result["characters"]])
 
 
+class BuildVideoGlossaryLlmTest(unittest.TestCase):
+    """Estagio 1 via LLM local: a transcricao inteira vai pro modelo, que
+    devolve resumo/personagens/termos/registro/ilegiveis. Entradas do
+    glossario do canal sao TRAVADAS — grafia existente nunca e reescrita."""
+
+    CARDS = [
+        {"i": 0, "start": 0.0, "end": 0.8, "text": "todo mundo rejeita", "segment_id": 0, "avg_logprob": -0.2},
+        {"i": 1, "start": 0.8, "end": 1.9, "text": "o Edgar, o Bernardo", "segment_id": 0, "avg_logprob": -0.2},
+        {"i": 2, "start": 1.9, "end": 3.4, "text": "REJEITADO", "segment_id": 1, "avg_logprob": -0.9},
+    ]
+
+    def _client(self, response):
+        client = mock.Mock()
+        client.chat_json.return_value = response
+        return client
+
+    def test_locked_channel_entry_overrides_llm_rendering(self):
+        channel = {"characters": [{"source_name": "Bernardo", "zh": "伯纳多", "gender": "male", "variants": []}], "terms": []}
+        client = self._client({
+            "summary": "s", "register": "r", "terms": [], "unclear": [],
+            "characters": [
+                {"source_name": "Bernardo", "variants": [], "zh": "伯纳德", "gender": "female", "relations": "unknown", "note": ""},
+                {"source_name": "Edgar", "variants": ["Edgar"], "zh": "埃德加", "gender": "male", "relations": "unknown", "note": ""},
+            ],
+        })
+
+        sheet = glossary_service.build_video_glossary_llm(self.CARDS, channel, video_type="corte", client=client)
+
+        bernardo = next(c for c in sheet["characters"] if c["source_name"] == "Bernardo")
+        self.assertEqual(bernardo["zh"], "伯纳多")
+        self.assertEqual(bernardo["gender"], "male")
+
+    def test_channel_entry_mentioned_but_omitted_by_llm_is_added(self):
+        channel = {"characters": [{"source_name": "Bernardo", "zh": "伯纳多", "gender": "male", "variants": []}], "terms": []}
+        client = self._client({"summary": "s", "register": "r", "terms": [], "unclear": [], "characters": []})
+
+        sheet = glossary_service.build_video_glossary_llm(self.CARDS, channel, video_type="corte", client=client)
+
+        self.assertIn("Bernardo", [c["source_name"] for c in sheet["characters"]])
+
+    def test_channel_entry_not_mentioned_is_not_added(self):
+        channel = {"characters": [{"source_name": "Zulmira", "zh": "祖尔米拉", "gender": "female", "variants": []}], "terms": []}
+        client = self._client({"summary": "s", "register": "r", "terms": [], "unclear": [], "characters": []})
+
+        sheet = glossary_service.build_video_glossary_llm(self.CARDS, channel, video_type="corte", client=client)
+
+        self.assertNotIn("Zulmira", [c["source_name"] for c in sheet["characters"]])
+
+    def test_locked_term_overrides_llm_rendering(self):
+        channel = {"characters": [], "terms": [{"source": "Roberto Careca", "zh": "光头罗伯托", "note": "canal"}]}
+        client = self._client({
+            "summary": "s", "register": "r", "unclear": [], "characters": [],
+            "terms": [{"source": "Roberto Careca", "zh": "秃头罗伯托", "note": ""}],
+        })
+
+        sheet = glossary_service.build_video_glossary_llm(self.CARDS, channel, video_type="corte", client=client)
+
+        self.assertEqual(sheet["terms"][0]["zh"], "光头罗伯托")
+
+    def test_low_confidence_cards_are_marked_in_prompt_and_unclear_is_normalized(self):
+        channel = {"characters": [], "terms": []}
+        client = self._client({"summary": "s", "register": "r", "terms": [], "characters": [], "unclear": ["2"]})
+
+        sheet = glossary_service.build_video_glossary_llm(self.CARDS, channel, video_type="corte", client=client)
+
+        user_prompt = client.chat_json.call_args.kwargs["user"]
+        self.assertIn('"low_confidence": true', user_prompt)
+        self.assertIn("corte", user_prompt)
+        self.assertNotIn("segment_id", user_prompt)
+        self.assertEqual(sheet["unclear"], [2])
+
+    def test_missing_keys_get_defaults(self):
+        client = self._client({"characters": [{"source_name": "Edgar", "zh": "埃德加"}]})
+
+        sheet = glossary_service.build_video_glossary_llm(self.CARDS, {"characters": [], "terms": []}, video_type="", client=client)
+
+        self.assertEqual(sheet["summary"], "")
+        self.assertEqual(sheet["terms"], [])
+        self.assertEqual(sheet["unclear"], [])
+        self.assertEqual(sheet["characters"][0]["gender"], "unknown")
+        self.assertEqual(sheet["characters"][0]["variants"], [])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -3,6 +3,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+import llm_prompts
+
 # Nomes comuns em portugues que aparecem capitalizados mas NAO sao nome proprio de
 # personagem — evita falso positivo no heuristico de extracao de nomes.
 STOPWORDS_CAPITALIZADAS = {
@@ -133,3 +135,109 @@ def build_video_glossary(
         characters.append(entry)
 
     return {"characters": characters, "terms": []}
+
+
+# Whisper: avg_logprob abaixo disso = segmento reconhecido com pouca confianca.
+# O card vai pro LLM marcado como low_confidence pra ele NAO preencher buraco
+# com texto inventado (origem provavel da alucinacao "REJEITADO" -> frase
+# fluente sem relacao com a fonte).
+LOW_CONFIDENCE_THRESHOLD = -0.6
+
+
+def cards_to_llm_transcript(cards: list[dict[str, Any]], threshold: float = LOW_CONFIDENCE_THRESHOLD) -> list[dict[str, Any]]:
+    """Reduz os cards ao que o modelo precisa ver (sem segment_id) e marca os
+    de baixa confianca em vez de manda-los como texto normal."""
+    transcript = []
+    for card in cards:
+        logprob = card.get("avg_logprob")
+        transcript.append(
+            {
+                "i": card["i"],
+                "start": card["start"],
+                "end": card["end"],
+                "text": card["text"],
+                "low_confidence": logprob is not None and logprob < threshold,
+            }
+        )
+    return transcript
+
+
+def _normalize_character(entry: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "source_name": str(entry.get("source_name", "")).strip(),
+        "variants": [str(v) for v in entry.get("variants", []) or []],
+        "zh": str(entry.get("zh", "")).strip(),
+        "gender": entry.get("gender") if entry.get("gender") in ("male", "female") else "unknown",
+        "relations": str(entry.get("relations", "unknown") or "unknown"),
+        "note": str(entry.get("note", "") or ""),
+    }
+
+
+def build_video_glossary_llm(
+    cards: list[dict[str, Any]],
+    channel_glossary: dict[str, Any],
+    video_type: str,
+    client: Any,
+) -> dict[str, Any]:
+    """Estagio 1 via LLM local: manda a transcricao INTEIRA + glossario do canal
+    (travado) + tipo de video, e recebe a "reference sheet" que alimenta o
+    estagio 2. Grafia/genero ja presentes no glossario do canal sobrescrevem
+    o que o modelo devolveu — a consistencia entre videos vem daqui, nao da
+    obediencia do modelo ao prompt."""
+    transcript = cards_to_llm_transcript(cards)
+    system, user = llm_prompts.build_glossary_messages(transcript, video_type, channel_glossary)
+    raw = client.chat_json(system=system, user=user)
+    if not isinstance(raw, dict):
+        raw = {}
+
+    cards_text = [c["text"] for c in cards]
+    locked_characters = {c["source_name"]: c for c in channel_glossary.get("characters", [])}
+    locked_terms = {t["source"]: t for t in channel_glossary.get("terms", [])}
+
+    characters: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for entry in raw.get("characters", []) or []:
+        character = _normalize_character(entry)
+        if not character["source_name"] or character["source_name"] in seen:
+            continue
+        locked = locked_characters.get(character["source_name"])
+        if locked:
+            # Entrada travada: grafia e genero vem do canal, o resto (relacoes,
+            # nota, variantes vistas neste video) pode vir do modelo.
+            character["zh"] = locked["zh"]
+            character["gender"] = locked.get("gender", character["gender"])
+            character["variants"] = sorted(set(character["variants"]) | set(locked.get("variants", [])))
+        seen.add(character["source_name"])
+        characters.append(character)
+
+    # Personagem recorrente do canal citado neste video mas omitido pelo modelo
+    # entra mesmo assim — senao o estagio 2 nao teria a grafia travada dele.
+    for name, locked in locked_characters.items():
+        if name not in seen and any(_mentions_name(name, text) for text in cards_text):
+            characters.append(_normalize_character(locked))
+            seen.add(name)
+
+    terms: list[dict[str, Any]] = []
+    for entry in raw.get("terms", []) or []:
+        source = str(entry.get("source", "")).strip()
+        if not source:
+            continue
+        term = {"source": source, "zh": str(entry.get("zh", "")).strip(), "note": str(entry.get("note", "") or "")}
+        if source in locked_terms:
+            term["zh"] = locked_terms[source]["zh"]
+        terms.append(term)
+
+    unclear: list[int] = []
+    for value in raw.get("unclear", []) or []:
+        try:
+            unclear.append(int(value))
+        except (TypeError, ValueError):
+            continue
+
+    return {
+        "summary": str(raw.get("summary", "") or ""),
+        "characters": characters,
+        "terms": terms,
+        "register": str(raw.get("register", "") or ""),
+        "unclear": sorted(set(unclear)),
+    }

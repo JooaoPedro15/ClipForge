@@ -27,6 +27,7 @@ describe('buildProcessArgs', () => {
         noPunctuation: false,
         useCpu: false,
         translateTo: ['en', 'zh'],
+        videoType: 'gameplay de terror',
         outputPath: null,
       },
     } as Parameters<typeof buildProcessArgs>[1]
@@ -35,6 +36,7 @@ describe('buildProcessArgs', () => {
 
     expect(args).toContain('--translate-to')
     expect(args[args.indexOf('--translate-to') + 1]).toBe('en,zh')
+    expect(args[args.indexOf('--video-type') + 1]).toBe('gameplay de terror')
   })
 
   it('omite --translate-to quando lista vazia', () => {
@@ -52,6 +54,7 @@ describe('buildProcessArgs', () => {
         noPunctuation: false,
         useCpu: false,
         translateTo: [],
+        videoType: '',
         outputPath: null,
       },
     } as Parameters<typeof buildProcessArgs>[1]
@@ -59,6 +62,7 @@ describe('buildProcessArgs', () => {
     const args = buildProcessArgs('script.py', task)
 
     expect(args).not.toContain('--translate-to')
+    expect(args).not.toContain('--video-type')
   })
 })
 

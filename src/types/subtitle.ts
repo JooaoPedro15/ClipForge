@@ -52,6 +52,8 @@ export interface SubtitleTaskOptions {
   noPunctuation: boolean
   useCpu: boolean
   translateTo: string[]
+  // Contexto livre do video ("gameplay de terror", "reacao"), usado pela traducao.
+  videoType: string
   format: HardsubFormat
   outputPath?: string | null
 }

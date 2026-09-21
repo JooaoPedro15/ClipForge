@@ -324,6 +324,7 @@ def transcribe_video(
     no_punctuation: bool = False,
     translate_to: list[str] | None = None,
     channel_glossary_path: str = glossary_service.DEFAULT_CHANNEL_GLOSSARY_PATH,
+    video_type: str = "",
 ) -> str:
     input_file = Path(input_path)
 
@@ -557,6 +558,7 @@ def transcribe_video(
                     channel_glossary_path=channel_glossary_path,
                     uppercase=uppercase,
                     lowercase=lowercase,
+                    video_type=video_type,
                 )
 
                 emit(
@@ -609,6 +611,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-words", type=int, default=0)
     parser.add_argument("--cpu", action="store_true")
     parser.add_argument("--translate-to", default="")
+    parser.add_argument("--video-type", default="", help="Contexto do video (ex.: gameplay de terror) pra traducao")
     return parser.parse_args()
 
 
@@ -635,6 +638,7 @@ def main() -> int:
             no_accents=args.no_accents,
             no_punctuation=args.no_punctuation,
             translate_to=translate_to,
+            video_type=args.video_type,
         )
         return 0
     except FileNotFoundError:

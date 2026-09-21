@@ -215,6 +215,16 @@ export function SubtitleForgePage({
                 />
               </div>
               <div className="space-y-2 rounded-xl border border-white/8 bg-white/[0.03] px-4 py-3 text-sm text-text-secondary">
+                <span className="block text-xs uppercase tracking-[0.18em] text-text-muted">Tipo de vídeo (p/ tradução)</span>
+                <input
+                  className="w-full bg-transparent text-text-primary outline-none placeholder:text-text-muted"
+                  onChange={(event) => patchSettings({ videoType: event.target.value })}
+                  placeholder="ex.: gameplay de terror, corte engraçado, reação"
+                  type="text"
+                  value={settings.videoType}
+                />
+              </div>
+              <div className="space-y-2 rounded-xl border border-white/8 bg-white/[0.03] px-4 py-3 text-sm text-text-secondary">
                 <span className="block text-xs uppercase tracking-[0.18em] text-text-muted">Máx. palavras</span>
                 <input
                   className="w-full bg-transparent text-text-primary outline-none"

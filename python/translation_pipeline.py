@@ -18,6 +18,7 @@ def traduzir_cards(
     channel_glossary_path: str = glossary_service.DEFAULT_CHANNEL_GLOSSARY_PATH,
     uppercase: bool = False,
     lowercase: bool = False,
+    video_type: str = "",
 ) -> str:
     """Recebe os cards JA CARREGADOS em memoria (usado por uma task futura, que
     chama isso no mesmo processo que acabou de transcrever — sem round-trip por
@@ -79,11 +80,12 @@ def traduzir_video(
     output_path: str | None = None,
     uppercase: bool = False,
     lowercase: bool = False,
+    video_type: str = "",
 ) -> str:
     """Usado pela queima: le os cards de um cards.json ja gravado em disco por
     uma transcricao ANTERIOR (processo Python diferente)."""
     cards = json.loads(Path(cards_path).read_text(encoding="utf-8"))
     output = output_path or str(Path(original_srt_path).with_suffix(f".{target_lang}.srt"))
     return traduzir_cards(
-        cards, translator, source_lang, target_lang, output, channel_glossary_path, uppercase, lowercase
+        cards, translator, source_lang, target_lang, output, channel_glossary_path, uppercase, lowercase, video_type
     )
