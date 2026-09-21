@@ -70,6 +70,7 @@ class TraduzirVideoTest(unittest.TestCase):
                 source_lang="pt",
                 target_lang="zh",
                 channel_glossary_path=str(channel_glossary_path),
+                engine="nllb",
             )
 
             content = Path(output_srt).read_text(encoding="utf-8")
@@ -97,10 +98,120 @@ class TraduzirVideoTest(unittest.TestCase):
                 source_lang="pt",
                 target_lang="zh",
                 channel_glossary_path=str(channel_glossary_path),
+                engine="nllb",
             )
 
             self.assertEqual(Path(output_srt).read_text(encoding="utf-8"), "")
             translator.translate_segments.assert_not_called()
+
+
+class TraduzirCardsLlmTest(unittest.TestCase):
+    """Caminho LLM: estagio 1 + estagio 2, SRT montado dos grupos."""
+
+    CARDS = [
+        {"i": 0, "start": 0.0, "end": 0.6, "text": "todo mundo rejeita", "segment_id": 0, "avg_logprob": -0.1},
+        {"i": 1, "start": 0.6, "end": 1.9, "text": "o Edgar, o Bernardo", "segment_id": 0, "avg_logprob": -0.1},
+        {"i": 2, "start": 1.9, "end": 3.4, "text": "se casou com a Lenora", "segment_id": 1, "avg_logprob": -0.1},
+    ]
+
+    SHEET = {
+        "summary": "s", "register": "r", "terms": [], "unclear": [],
+        "characters": [
+            {"source_name": "Edgar", "variants": [], "zh": "埃德加", "gender": "male", "relations": "unknown", "note": ""},
+            {"source_name": "Bernardo", "variants": [], "zh": "伯纳多", "gender": "male", "relations": "unknown", "note": ""},
+            {"source_name": "Lenora", "variants": [], "zh": "莱诺拉", "gender": "female", "relations": "unknown", "note": ""},
+        ],
+    }
+
+    def _client(self, groups):
+        client = mock.Mock()
+        client.is_available.return_value = True
+        client.chat_json.side_effect = [self.SHEET, {"groups": groups}]
+        return client
+
+    def test_srt_is_built_from_llm_groups_and_glossary_is_persisted(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            out = tmp_path / "video.zh.srt"
+            glossary_path = tmp_path / "glossario_canal.json"
+            client = self._client([
+                {"cards": [0, 1], "zh": "大家都拒绝埃德加", "flag": ""},
+                {"cards": [2], "zh": "伯纳多和莱诺拉结婚了", "flag": ""},
+            ])
+            translator = mock.Mock()
+
+            translation_pipeline.traduzir_cards(
+                self.CARDS, translator, "pt", "zh", str(out), str(glossary_path), llm_client=client, video_type="corte"
+            )
+
+            content = out.read_text(encoding="utf-8")
+            self.assertEqual(content.count(" --> "), 2)
+            self.assertIn("00:00:00,000 --> 00:00:01,899\n大家都拒绝埃德加", content)
+            translator.translate_segments.assert_not_called()
+            canal = json.loads(glossary_path.read_text(encoding="utf-8"))
+            self.assertEqual({c["source_name"] for c in canal["characters"]}, {"Edgar", "Bernardo", "Lenora"})
+
+    def test_validation_failure_writes_rejected_draft_and_raises(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            out = tmp_path / "video.zh.srt"
+            glossary_path = tmp_path / "glossario_canal.json"
+            # Nome em latim sobrou na traducao -> regra "caractere latino"
+            client = self._client([
+                {"cards": [0, 1], "zh": "大家都拒绝Ze", "flag": ""},
+                {"cards": [2], "zh": "伯纳多和莱诺拉结婚了", "flag": ""},
+            ])
+
+            with self.assertRaises(translation_pipeline.subtitle_validation.ValidationError) as ctx:
+                translation_pipeline.traduzir_cards(
+                    self.CARDS, mock.Mock(), "pt", "zh", str(out), str(glossary_path), llm_client=client
+                )
+
+            self.assertIn("caractere latino", str(ctx.exception))
+            self.assertFalse(out.exists())
+            self.assertTrue((tmp_path / "video.zh.REJEITADO.srt").exists())
+            self.assertFalse(glossary_path.exists())  # glossario nao e fundido com saida reprovada
+
+    def test_zh_without_ollama_raises_clear_error_instead_of_silent_nllb(self):
+        client = mock.Mock()
+        client.is_available.return_value = False
+        client.base_url = "http://127.0.0.1:11434"
+        client.model = "qwen"
+
+        with self.assertRaises(translation_pipeline.llm_service.LLMUnavailableError) as ctx:
+            translation_pipeline.traduzir_cards(self.CARDS, mock.Mock(), "pt", "zh", "x.srt", "g.json", llm_client=client)
+
+        self.assertIn("ollama pull qwen", str(ctx.exception))
+
+    def test_engine_nllb_skips_llm_even_for_zh(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            client = mock.Mock()
+            translator = mock.Mock()
+            # Nomes aparecem 1x cada -> heuristico nao extrai nenhum; so a
+            # chamada dos 2 grupos (segment_id 0 e 1).
+            translator.translate_segments.side_effect = [["好", "好"]]
+
+            translation_pipeline.traduzir_cards(
+                self.CARDS, translator, "pt", "zh", str(tmp_path / "v.zh.srt"), str(tmp_path / "g.json"),
+                engine="nllb", llm_client=client,
+            )
+
+            client.chat_json.assert_not_called()
+            client.is_available.assert_not_called()
+
+    def test_english_always_uses_nllb(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            client = mock.Mock()
+            translator = mock.Mock()
+            translator.translate_segments.side_effect = [["everyone rejects Edgar, Bernardo", "married Lenora"]]
+
+            translation_pipeline.traduzir_cards(
+                self.CARDS, translator, "pt", "en", str(tmp_path / "v.en.srt"), str(tmp_path / "g.json"), llm_client=client
+            )
+
+            client.chat_json.assert_not_called()
 
 
 if __name__ == "__main__":

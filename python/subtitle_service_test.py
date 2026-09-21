@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import os
 import sys
 import types
 import unittest
@@ -88,6 +89,11 @@ class ResolveMaxWordsForVideoTest(unittest.TestCase):
 class TranscribeVideoTranslationTest(unittest.TestCase):
     def setUp(self):
         self.service = load_subtitle_service()
+        # Estes testes cobrem o caminho NLLB (Translator falso). O motor padrao
+        # pro chines e o LLM local — forca o NLLB pra nao exigir Ollama aqui.
+        env_patch = mock.patch.dict(os.environ, {"CLIPFORGE_TRANSLATION_ENGINE": "nllb"})
+        env_patch.start()
+        self.addCleanup(env_patch.stop)
 
     def test_translate_to_writes_extra_srt_files_and_emits_events(self):
         import tempfile
