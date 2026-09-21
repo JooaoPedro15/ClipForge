@@ -101,5 +101,159 @@ class ValidateTranslationOutputTest(unittest.TestCase):
         self.assertIn("bernardo", str(ctx.exception).lower())
 
 
+GLOSSARIO = {
+    "characters": [
+        {"source_name": "Edgar", "variants": [], "zh": "埃德加", "gender": "male"},
+        {"source_name": "Bernardo", "variants": [], "zh": "伯纳多", "gender": "male"},
+        {"source_name": "Lenora", "variants": [], "zh": "莱诺拉", "gender": "female"},
+    ]
+}
+
+
+def _erros(groups, cards, glossary=GLOSSARIO):
+    try:
+        v.validate_translation_output(groups, cards, glossary=glossary, target_lang="zh")
+    except v.ValidationError as error:
+        return str(error)
+    return ""
+
+
+class ErrosAuditadosTest(unittest.TestCase):
+    """Cada teste reproduz um erro real encontrado na auditoria do video de
+    42s. A validacao tem que APONTAR o grupo e a regra, nao so falhar."""
+
+    def test_erro_1_fragmento_traduzido_isolado(self):
+        # "SÓ QUE AÍ" virou um card sozinho na tela por 0.6s -> tempo minimo.
+        cards = [
+            {"i": 7, "start": 7.4, "end": 8.0, "text": "só que aí"},
+            {"i": 8, "start": 8.0, "end": 9.8, "text": "o Bernardo morre"},
+        ]
+        groups = [
+            {"cards": [7], "start": 7.4, "end": 8.0, "zh": "伯纳德", "flag": ""},
+            {"cards": [8], "start": 8.0, "end": 9.8, "zh": "伯纳多死了", "flag": ""},
+        ]
+
+        erros = _erros(groups, cards)
+
+        self.assertIn("grupo [7]", erros)
+        self.assertIn("min 1.2s", erros)
+
+    def test_erro_3_sujeito_masculino_com_她(self):
+        # "o Bernardo morre" -> 她死了: fonte so menciona homem, nada de "ela".
+        cards = [{"i": 0, "start": 0.0, "end": 2.0, "text": "só que aí o Bernardo morre"}]
+        groups = [{"cards": [0], "start": 0.0, "end": 2.0, "zh": "结果她死了", "flag": ""}]
+
+        erros = _erros(groups, cards)
+
+        self.assertIn("grupo [0]", erros)
+        self.assertIn("她", erros)
+        self.assertIn("Bernardo", erros)
+
+    def test_erro_3_她_permitido_quando_fonte_tem_mulher(self):
+        cards = [{"i": 0, "start": 0.0, "end": 2.0, "text": "a Lenora fica triste"}]
+        groups = [{"cards": [0], "start": 0.0, "end": 2.0, "zh": "她很难过", "flag": ""}]
+
+        self.assertEqual(_erros(groups, cards), "")
+
+    def test_erro_3_她_permitido_quando_fonte_usa_ela_sem_nome(self):
+        cards = [{"i": 0, "start": 0.0, "end": 2.0, "text": "o Bernardo diz que ela já foi"}]
+        groups = [{"cards": [0], "start": 0.0, "end": 2.0, "zh": "伯纳多说她已经走了", "flag": ""}]
+
+        self.assertEqual(_erros(groups, cards), "")
+
+    def test_erro_3_sujeito_feminino_com_他(self):
+        cards = [{"i": 0, "start": 0.0, "end": 2.0, "text": "a Lenora fica triste"}]
+        groups = [{"cards": [0], "start": 0.0, "end": 2.0, "zh": "他很难过", "flag": ""}]
+
+        self.assertIn("他", _erros(groups, cards))
+
+    def test_erro_4_他嫁给_homem_casando_como_noiva(self):
+        cards = [{"i": 0, "start": 0.0, "end": 2.0, "text": "o Edgar tentou casar com a Lenora"}]
+        groups = [{"cards": [0], "start": 0.0, "end": 2.0, "zh": "他试图嫁给莱诺拉", "flag": ""}]
+
+        erros = _erros(groups, cards)
+
+        self.assertIn("grupo [0]", erros)
+        self.assertIn("嫁给", erros)
+
+    def test_erro_4_nome_masculino_antes_de_嫁给(self):
+        cards = [{"i": 0, "start": 0.0, "end": 2.0, "text": "o Edgar tentou casar com a Lenora"}]
+        groups = [{"cards": [0], "start": 0.0, "end": 2.0, "zh": "埃德加想嫁给莱诺拉", "flag": ""}]
+
+        self.assertIn("嫁给", _erros(groups, cards))
+
+    def test_erro_4_formas_corretas_passam(self):
+        cards = [
+            {"i": 0, "start": 0.0, "end": 2.0, "text": "o Edgar tentou casar com a Lenora"},
+            {"i": 1, "start": 2.0, "end": 4.0, "text": "o Bernardo se casou com a Lenora"},
+            {"i": 2, "start": 4.0, "end": 6.0, "text": "a Lenora se casou com o Bernardo"},
+        ]
+        groups = [
+            {"cards": [0], "start": 0.0, "end": 2.0, "zh": "埃德加想娶莱诺拉", "flag": ""},
+            {"cards": [1], "start": 2.0, "end": 4.0, "zh": "伯纳多和莱诺拉结婚了", "flag": ""},
+            {"cards": [2], "start": 4.0, "end": 6.0, "zh": "莱诺拉嫁给了伯纳多", "flag": ""},
+        ]
+
+        self.assertEqual(_erros(groups, cards), "")
+
+    def test_erro_5_nome_em_latim(self):
+        cards = [{"i": 0, "start": 0.0, "end": 2.0, "text": "lá no Edgar"}]
+        groups = [{"cards": [0], "start": 0.0, "end": 2.0, "zh": "在Edgar那里", "flag": ""}]
+
+        erros = _erros(groups, cards)
+
+        self.assertIn("latino", erros)
+
+    def test_erro_5_grafia_divergente_com_sufixo_extra(self):
+        # 埃德加尔 (Edgar + 尔) no mesmo video que 埃德加 (canonico).
+        cards = [
+            {"i": 0, "start": 0.0, "end": 2.0, "text": "o Edgar chegou"},
+            {"i": 1, "start": 2.0, "end": 4.0, "text": "e o Edgar saiu"},
+        ]
+        groups = [
+            {"cards": [0], "start": 0.0, "end": 2.0, "zh": "埃德加来了", "flag": ""},
+            {"cards": [1], "start": 2.0, "end": 4.0, "zh": "然后埃德加尔走了", "flag": ""},
+        ]
+
+        erros = _erros(groups, cards)
+
+        self.assertIn("grupo [1]", erros)
+        self.assertIn("埃德加尔", erros)
+        self.assertIn("埃德加", erros)
+
+    def test_erro_5_grafia_divergente_com_ultimo_caractere_trocado(self):
+        # 伯纳德 (Bernard) em vez de 伯纳多 (Bernardo), sem lista de variantes.
+        cards = [{"i": 0, "start": 0.0, "end": 2.0, "text": "o Bernardo morre"}]
+        groups = [{"cards": [0], "start": 0.0, "end": 2.0, "zh": "伯纳德死了", "flag": ""}]
+
+        erros = _erros(groups, cards)
+
+        self.assertIn("伯纳德", erros)
+        self.assertIn("伯纳多", erros)
+
+    def test_erro_6_alucinacao_em_card_de_baixa_confianca_e_reportada(self):
+        # "REJEITADO" (avg_logprob baixo) virou "我也是最好的". O pipeline poe
+        # a flag no grupo; a validacao tem que reportar o grupo e a flag.
+        cards = [{"i": 3, "start": 3.0, "end": 4.5, "text": "REJEITADO"}]
+        groups = [
+            {"cards": [3], "start": 3.0, "end": 4.5, "zh": "我也是最好的", "flag": "transcricao de baixa confianca (avg_logprob=-0.95)"}
+        ]
+
+        erros = _erros(groups, cards)
+
+        self.assertIn("grupo [3]", erros)
+        self.assertIn("FLAG", erros)
+        self.assertIn("baixa confianca", erros)
+
+    def test_mensagem_lista_todas_as_regras_violadas(self):
+        cards = [{"i": 0, "start": 0.0, "end": 0.5, "text": "o Bernardo morre"}]
+        groups = [{"cards": [0], "start": 0.0, "end": 0.5, "zh": "Bernardo她死了" + "啊" * 20, "flag": "x"}]
+
+        erros = _erros(groups, cards)
+
+        for regra in ("latino", "max 20", "min 1.2s", "FLAG", "她"):
+            self.assertIn(regra, erros)
+
+
 if __name__ == "__main__":
     unittest.main()
