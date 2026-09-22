@@ -93,6 +93,39 @@ def _marriage_errors(group: dict[str, Any], glossary: dict[str, Any]) -> list[st
     return erros
 
 
+def character_swap_error(zh: str, source: str, glossary: dict[str, Any]) -> str:
+    """Erro de troca de personagem: um nome que a fonte cita sumiu da
+    traducao E um nome do glossario que NAO esta na fonte aparece no lugar
+    ("Lenora não pode casar com o Edgar" -> "伊莎贝尔不能嫁埃德加").
+
+    Exigir as duas condicoes evita reprovar dois casos legitimos: o sujeito
+    que o chines precisa restaurar e o portugues elide (nenhum nome da fonte
+    some) e o nome trocado por pronome (nenhum nome estranho entra)."""
+    if not source or not zh:
+        return ""
+
+    missing = []
+    intruders = []
+    for character in glossary.get("characters", []):
+        canonical = character.get("zh", "")
+        names = [character.get("source_name", ""), *character.get("variants", [])]
+        if not canonical:
+            continue
+        in_source = any(n and _mentions_name(n, source) for n in names)
+        in_zh = canonical in zh
+        if in_source and not in_zh:
+            missing.append(character.get("source_name", canonical))
+        elif in_zh and not in_source:
+            intruders.append(canonical)
+
+    if missing and intruders:
+        return (
+            f"personagem trocado: a fonte cita {', '.join(missing)} mas a traducao usa "
+            f"{', '.join(intruders)} em '{zh}' | fonte: '{source}'"
+        )
+    return ""
+
+
 def _name_spelling_errors(groups: list[dict[str, Any]], glossary: dict[str, Any]) -> list[str]:
     """Erro 5 da auditoria: mesmo personagem com duas grafias. Alem das
     variantes listadas no glossario, pega dois padroes sem lista nenhuma:
@@ -180,6 +213,9 @@ def validate_translation_output(
             source = group.get("text") or " ".join(text_by_index.get(i, "") for i in grupo_ref)
             erros.extend(_gender_errors(group, glossary, source))
             erros.extend(_marriage_errors(group, glossary))
+            swap = character_swap_error(zh, source, glossary)
+            if swap:
+                erros.append(f"grupo {grupo_ref}: {swap}")
 
     if is_chinese:
         erros.extend(_name_spelling_errors(groups, glossary))

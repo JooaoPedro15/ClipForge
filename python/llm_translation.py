@@ -20,6 +20,7 @@ from typing import Any
 
 import glossary_service
 import llm_prompts
+import subtitle_validation
 import translation_postprocess
 
 # Temperatura por tentativa: a 1a e deterministica; as seguintes recebem o
@@ -253,8 +254,9 @@ def _translate_sentence(
             zh = normalize_punctuation(translation_postprocess.normalize_names(line["zh"], sheet))
             zh = _strip(zh)
             repeats_connective = bool(previous_connective) and _opening_connective(zh) == previous_connective
+            swap = subtitle_validation.character_swap_error(zh, target["text"], sheet)
             parts = _fit_line(zh, bucket, max_chars, min_duration)
-            if parts is not None and not _has_latin(zh) and not repeats_connective:
+            if parts is not None and not _has_latin(zh) and not repeats_connective and not swap:
                 return line, parts
             # Guarda a tentativa: se nenhuma sair limpa, a melhor delas ainda
             # e entregue (a validacao reprova apontando o grupo, ou o
@@ -264,6 +266,8 @@ def _translate_sentence(
                 # Nome (ou palavra solta) que ficou em latim: o modelo tem a
                 # grafia no glossario, so precisa ser lembrado.
                 last_error = f"Latin script left in zh ('{zh}'); use only Chinese characters, names from the reference sheet"
+            elif swap:
+                last_error = f"{swap}; translate the sentence you were given, keeping its own characters"
             elif parts is None:
                 last_error = f"zh is {len(zh)} characters ('{zh}'); rewrite it in at most {max_chars} characters, drop filler words"
             else:
@@ -277,11 +281,16 @@ def _translate_sentence(
             + f"{last_error}. Return one JSON object for sentence id {target['id']} with a non-empty zh."
         )
     if candidates:
-        # Sobrar letra latina e o pior defeito (nome/palavra nao traduzida na
-        # tela); linha longa demais vem depois; so entao o tamanho.
+        # Personagem trocado e o pior defeito (a legenda conta outra historia);
+        # depois letra latina, depois linha longa demais, so entao o tamanho.
         line, zh = min(
             candidates,
-            key=lambda c: (_has_latin(c[1]), _fit_line(c[1], bucket, max_chars, min_duration) is None, len(c[1])),
+            key=lambda c: (
+                bool(subtitle_validation.character_swap_error(c[1], target["text"], sheet)),
+                _has_latin(c[1]),
+                _fit_line(c[1], bucket, max_chars, min_duration) is None,
+                len(c[1]),
+            ),
         )
         if previous_connective and _opening_connective(zh) == previous_connective:
             # O modelo insistiu no mesmo conectivo: tira ele e reencaixa.

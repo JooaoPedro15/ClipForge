@@ -50,7 +50,7 @@ Chamadas usam `temperature: 0` e saida JSON forcada. Resposta rejeitada (id erra
 
 O campo **"Tipo de video"** tambem e repassado pela queima (hardsub), pra legenda gerada na hora da queima sair no mesmo registro da gerada na transcricao.
 
-**Validacao antes de gravar** (`subtitle_validation.py`, sem chamar API): todo card em exatamente um grupo e em ordem; nenhum caractere latino nem pontuacao latina na linha traduzida; no maximo 20 caracteres chineses por linha (video vertical); nenhum grupo com menos de 1,2s na tela; 她 com sujeito masculino / 他 com feminino; 嫁给 com sujeito masculino / 娶 com feminino; nome com grafia divergente da canonica (variantes do glossario, canonico + sufixo tipo 埃德加尔, ultimo caractere trocado tipo 伯纳德/伯纳多); grupos com `flag` preenchido. Qualquer violacao **falha a traducao** apontando grupo e regra, grava o rascunho em `arquivo.zh.REJEITADO.srt` pra inspecao e nao funde o glossario do canal.
+**Validacao antes de gravar** (`subtitle_validation.py`, sem chamar API): todo card em exatamente um grupo e em ordem; nenhum caractere latino nem pontuacao latina na linha traduzida; no maximo 20 caracteres chineses por linha (video vertical); nenhum grupo com menos de 1,2s na tela; 她 com sujeito masculino / 他 com feminino; 嫁给 com sujeito masculino / 娶 com feminino; nome com grafia divergente da canonica (variantes do glossario, canonico + sufixo tipo 埃德加尔, ultimo caractere trocado tipo 伯纳德/伯纳多); personagem trocado (a fonte cita um nome, a traducao usa outro no lugar); grupos com `flag` preenchido. Qualquer violacao **falha a traducao** apontando grupo e regra, grava o rascunho em `arquivo.zh.REJEITADO.srt` pra inspecao e nao funde o glossario do canal.
 
 #### Instalando o Ollama
 

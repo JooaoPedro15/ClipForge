@@ -286,5 +286,50 @@ class ErrosAuditadosTest(unittest.TestCase):
             self.assertIn(regra, erros)
 
 
+class TrocaDePersonagemTest(unittest.TestCase):
+    """Erro real do 7B: 'Lenora não pode casar com o Edgar' saiu
+    '伊莎贝尔不能嫁埃德加' — trocou Lenora por Isabel. O nome da fonte
+    sumiu E um nome que nao esta na fonte apareceu no lugar."""
+
+    GLOSSARIO = {
+        "characters": [
+            {"source_name": "Edgar", "variants": [], "zh": "埃德加", "gender": "male"},
+            {"source_name": "Bernardo", "variants": [], "zh": "伯纳多", "gender": "male"},
+            {"source_name": "Lenora", "variants": [], "zh": "莱诺拉", "gender": "female"},
+            {"source_name": "Isabel", "variants": [], "zh": "伊莎贝尔", "gender": "female"},
+        ]
+    }
+
+    def test_swapped_character_is_reported(self):
+        cards = [{"i": 0, "start": 0.0, "end": 2.0, "text": "Lenora não pode casar com o Edgar"}]
+        groups = [{"cards": [0], "start": 0.0, "end": 2.0, "zh": "伊莎贝尔不能嫁埃德加", "flag": ""}]
+
+        erros = _erros(groups, cards, self.GLOSSARIO)
+
+        self.assertIn("grupo [0]", erros)
+        self.assertIn("Lenora", erros)
+        self.assertIn("伊莎贝尔", erros)
+
+    def test_restored_subject_absent_from_source_is_allowed(self):
+        # Regra 3 do prompt: o chines precisa do sujeito que o portugues
+        # elide. Nenhum nome da fonte sumiu, entao nao e troca.
+        cards = [{"i": 0, "start": 0.0, "end": 2.0, "text": "tenta casar com a Isabel"}]
+        groups = [{"cards": [0], "start": 0.0, "end": 2.0, "zh": "埃德加想娶伊莎贝尔", "flag": ""}]
+
+        self.assertEqual(_erros(groups, cards, self.GLOSSARIO), "")
+
+    def test_name_replaced_by_pronoun_is_allowed(self):
+        cards = [{"i": 0, "start": 0.0, "end": 2.0, "text": "só que aí o Bernardo morre"}]
+        groups = [{"cards": [0], "start": 0.0, "end": 2.0, "zh": "结果他死了", "flag": ""}]
+
+        self.assertEqual(_erros(groups, cards, self.GLOSSARIO), "")
+
+    def test_all_source_names_present_is_allowed(self):
+        cards = [{"i": 0, "start": 0.0, "end": 2.0, "text": "Lenora não pode casar com o Edgar"}]
+        groups = [{"cards": [0], "start": 0.0, "end": 2.0, "zh": "莱诺拉不能嫁给埃德加", "flag": ""}]
+
+        self.assertEqual(_erros(groups, cards, self.GLOSSARIO), "")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -376,5 +376,26 @@ class PunctuationInPipelineTest(unittest.TestCase):
         self.assertEqual(client.chat_json.call_count, 1)
 
 
+class CharacterSwapRetryTest(unittest.TestCase):
+    SHEET = {
+        "summary": "s", "register": "r", "terms": [], "unclear": [],
+        "characters": [
+            {"source_name": "Lenora", "variants": [], "zh": "莱诺拉", "gender": "female"},
+            {"source_name": "Isabel", "variants": [], "zh": "伊莎贝尔", "gender": "female"},
+            {"source_name": "Edgar", "variants": [], "zh": "埃德加", "gender": "male"},
+        ],
+    }
+
+    def test_swapped_character_goes_back_to_the_model(self):
+        cards = [_card(0, 0.0, 2.0, "Lenora não pode casar com o Edgar.")]
+        client = _client(["伊莎贝尔不能嫁埃德加", "莱诺拉不能嫁给埃德加"])
+
+        groups = llm_translation.translate_with_llm(cards, self.SHEET, client)
+
+        self.assertEqual(client.chat_json.call_count, 2)
+        self.assertIn("Lenora", client.chat_json.call_args_list[1].kwargs["user"])
+        self.assertEqual(groups[0]["zh"], "莱诺拉不能嫁给埃德加")
+
+
 if __name__ == "__main__":
     unittest.main()
