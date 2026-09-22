@@ -191,6 +191,23 @@ class TranslateWithLlmTest(unittest.TestCase):
         with self.assertRaises(llm_translation.LLMTranslationError):
             llm_translation.translate_with_llm(cards, SHEET, client)
 
+    def test_long_line_is_split_in_three_groups(self):
+        # Erro 2 (linha longa): 3 cards, linha de 30 chars -> 3 linhas de 10.
+        cards = [
+            _card(0, 0.0, 2.0, "todo mundo rejeita o pobre Edgar"),
+            _card(1, 2.0, 4.0, "o Bernardo se casou com a Lenora"),
+            _card(2, 4.0, 6.0, "e aí o Bernardo morreu de repente."),
+        ]
+        client = _client(["一" * 15 + "，" + "二" * 15 + "，" + "三" * 15])
+
+        groups = llm_translation.translate_with_llm(cards, SHEET, client)
+
+        self.assertEqual(client.chat_json.call_count, 1)
+        self.assertEqual([g["zh"] for g in groups], ["一" * 15, "二" * 15, "三" * 15])
+        self.assertEqual([g["cards"] for g in groups], [[0], [1], [2]])
+        self.assertEqual(groups[0]["start"], 0.0)
+        self.assertEqual(groups[-1]["end"], 6.0)
+
     def test_long_line_is_split_in_two_groups_at_chinese_comma(self):
         # 4 palavras no 1o card: a virgula nao fecha a frase (min 5), entao os
         # 2 cards viram UMA frase e uma chamada; a linha de 23 chars e dividida.
@@ -234,6 +251,129 @@ class TranslateWithLlmTest(unittest.TestCase):
         groups = llm_translation.translate_with_llm(cards, SHEET, client)
 
         self.assertIn("baixa confianca", groups[0]["flag"])
+
+
+class SplitLineIntoPartsTest(unittest.TestCase):
+    """Linha longa vira N linhas (nao so 2): uma frase de ~20 palavras em
+    portugues passa de 40 caracteres em chines e precisa de 3 pedacos."""
+
+    def test_short_line_stays_whole(self):
+        self.assertEqual(llm_translation.split_line_into_parts("短句", 20), ["短句"])
+
+    def test_splits_into_three_parts_at_punctuation(self):
+        # 3 oracoes de 15 caracteres: nao cabem 2 a 2 no limite de 20.
+        zh = "一" * 15 + "，" + "二" * 15 + "，" + "三" * 15
+
+        parts = llm_translation.split_line_into_parts(zh, 20)
+
+        self.assertEqual(parts, ["一" * 15, "二" * 15, "三" * 15])
+
+    def test_uses_the_fewest_lines_that_fit(self):
+        # 4 oracoes curtas cabem em 2 linhas de <=20 — nao vira 4 linhas.
+        zh = "所有人都拒绝埃德加，伯纳多娶了莱诺拉，然后伯纳多死了，莱诺拉很伤心"
+
+        parts = llm_translation.split_line_into_parts(zh, 20)
+
+        self.assertEqual(parts, ["所有人都拒绝埃德加，伯纳多娶了莱诺拉", "然后伯纳多死了，莱诺拉很伤心"])
+
+    def test_packs_greedily_up_to_the_limit(self):
+        # Pedacos curtos sao agrupados ate encher a linha, em vez de virar
+        # uma linha por virgula.
+        zh = "他来了，她走了，我笑了"
+
+        parts = llm_translation.split_line_into_parts(zh, 20)
+
+        self.assertEqual(parts, ["他来了，她走了，我笑了"])
+
+    def test_returns_none_when_a_chunk_alone_exceeds_the_limit(self):
+        self.assertIsNone(llm_translation.split_line_into_parts("这" * 25, 20))
+        self.assertIsNone(llm_translation.split_line_into_parts("短，" + "这" * 25, 20))
+
+    def test_strips_trailing_punctuation_of_every_part(self):
+        parts = llm_translation.split_line_into_parts("第一句话在这里啊，第二句话也在这里。", 12)
+
+        self.assertEqual(parts, ["第一句话在这里啊", "第二句话也在这里"])
+
+
+class SplitCardsIntoPartsTest(unittest.TestCase):
+    def test_splits_cards_into_n_blocks_matching_line_lengths(self):
+        bucket = [_card(i, float(i), float(i) + 1.0, "x") for i in range(6)]
+
+        parts = llm_translation.split_cards_into_parts(bucket, [10, 10, 10], min_duration=1.2)
+
+        self.assertEqual([[c["i"] for c in p] for p in parts], [[0, 1], [2, 3], [4, 5]])
+
+    def test_returns_none_when_a_block_would_be_too_short_to_read(self):
+        bucket = [_card(0, 0.0, 1.0, "x"), _card(1, 1.0, 5.0, "x")]
+
+        self.assertIsNone(llm_translation.split_cards_into_parts(bucket, [10, 10], min_duration=1.2))
+
+    def test_returns_none_when_there_are_fewer_cards_than_parts(self):
+        bucket = [_card(0, 0.0, 5.0, "x")]
+
+        self.assertIsNone(llm_translation.split_cards_into_parts(bucket, [10, 10], min_duration=1.2))
+
+
+class RepeatedConnectiveTest(unittest.TestCase):
+    """O modelo de 7B abre quase toda linha com o mesmo conectivo (结果...,
+    结果..., 结果...), o que le muito mal numa sequencia de legendas."""
+
+    def test_same_opening_connective_twice_triggers_a_retry(self):
+        cards = [_card(0, 0.0, 2.0, "a."), _card(1, 2.0, 4.0, "b.")]
+        client = _client(["结果他来了", "结果她走了", "然后她走了"])
+
+        groups = llm_translation.translate_with_llm(cards, SHEET, client)
+
+        self.assertEqual(client.chat_json.call_count, 3)
+        self.assertIn("connective", client.chat_json.call_args_list[2].kwargs["user"])
+        self.assertEqual([g["zh"] for g in groups], ["结果他来了", "然后她走了"])
+
+    def test_connective_is_dropped_when_the_model_insists(self):
+        cards = [_card(0, 0.0, 2.0, "a."), _card(1, 2.0, 4.0, "b.")]
+        client = _client(["结果他来了", "结果她走了", "结果她走了", "结果她走了"])
+
+        groups = llm_translation.translate_with_llm(cards, SHEET, client)
+
+        self.assertEqual([g["zh"] for g in groups], ["结果他来了", "她走了"])
+
+    def test_different_connectives_in_a_row_are_fine(self):
+        cards = [_card(0, 0.0, 2.0, "a."), _card(1, 2.0, 4.0, "b.")]
+        client = _client(["结果他来了", "然后她走了"])
+
+        groups = llm_translation.translate_with_llm(cards, SHEET, client)
+
+        self.assertEqual(client.chat_json.call_count, 2)
+        self.assertEqual([g["zh"] for g in groups], ["结果他来了", "然后她走了"])
+
+    def test_connective_is_kept_when_dropping_it_would_empty_the_line(self):
+        cards = [_card(0, 0.0, 2.0, "a."), _card(1, 2.0, 4.0, "b.")]
+        client = _client(["结果他来了", "结果", "结果", "结果"])
+
+        groups = llm_translation.translate_with_llm(cards, SHEET, client)
+
+        self.assertEqual(groups[1]["zh"], "结果")
+
+
+class NormalizePunctuationTest(unittest.TestCase):
+    def test_latin_comma_becomes_full_width(self):
+        self.assertEqual(llm_translation.normalize_punctuation("他来了,她走了"), "他来了，她走了")
+
+    def test_quotes_and_parentheses_are_dropped(self):
+        self.assertEqual(llm_translation.normalize_punctuation('他说"好"(真的)'), "他说好真的")
+
+    def test_chinese_punctuation_is_untouched(self):
+        self.assertEqual(llm_translation.normalize_punctuation("他来了，她走了！"), "他来了，她走了！")
+
+
+class PunctuationInPipelineTest(unittest.TestCase):
+    def test_trailing_latin_comma_is_cleaned_before_grouping(self):
+        cards = [_card(0, 0.0, 2.0, "tenta casar com a Isabel.")]
+        client = _client(["尝试娶伊莎贝尔,"])
+
+        groups = llm_translation.translate_with_llm(cards, SHEET, client)
+
+        self.assertEqual(groups[0]["zh"], "尝试娶伊莎贝尔")
+        self.assertEqual(client.chat_json.call_count, 1)
 
 
 if __name__ == "__main__":

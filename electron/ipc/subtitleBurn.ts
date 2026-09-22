@@ -24,6 +24,8 @@ interface HardsubOptions {
   mode: HardsubMode
   format: HardsubFormat
   useCpu: boolean
+  // Mesma linha de contexto da transcricao — o registro do chines depende dela.
+  videoType?: string
 }
 
 interface HardsubEventPayload {
@@ -140,6 +142,10 @@ export function buildHardsubProcessArgs(serviceScriptPath: string, options: Hard
     args.push('--cpu')
   }
 
+  if (options.videoType) {
+    args.push('--video-type', options.videoType)
+  }
+
   return args
 }
 
@@ -247,6 +253,7 @@ async function runNextJob() {
       mode: job.mode,
       format: job.format,
       useCpu: false,
+      videoType: snapshot.videoType,
     }),
   ]
 

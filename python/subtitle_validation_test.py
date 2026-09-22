@@ -210,6 +210,23 @@ class ErrosAuditadosTest(unittest.TestCase):
 
         self.assertEqual(_erros(groups, cards), "")
 
+    def test_pontuacao_latina_e_reprovada(self):
+        # Legenda chinesa nao usa virgula/ponto latinos — o modelo as vezes
+        # devolve "尝试娶伊莎贝尔," com a virgula ASCII.
+        cards = [{"i": 0, "start": 0.0, "end": 2.0, "text": "tenta casar com a Isabel"}]
+        groups = [{"cards": [0], "start": 0.0, "end": 2.0, "zh": "尝试娶伊莎贝尔,", "flag": ""}]
+
+        erros = _erros(groups, cards)
+
+        self.assertIn("grupo [0]", erros)
+        self.assertIn("pontuacao latina", erros)
+
+    def test_pontuacao_chinesa_passa(self):
+        cards = [{"i": 0, "start": 0.0, "end": 2.0, "text": "ele veio, ela foi"}]
+        groups = [{"cards": [0], "start": 0.0, "end": 2.0, "zh": "他来了，她走了！", "flag": ""}]
+
+        self.assertEqual(_erros(groups, cards), "")
+
     def test_erro_5_nome_em_latim(self):
         cards = [{"i": 0, "start": 0.0, "end": 2.0, "text": "lá no Edgar"}]
         groups = [{"cards": [0], "start": 0.0, "end": 2.0, "zh": "在Edgar那里", "flag": ""}]

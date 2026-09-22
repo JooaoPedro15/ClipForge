@@ -352,6 +352,7 @@ export function getSubtitleTaskSnapshot(taskId: string) {
     outputPath: task.outputPath,
     language: task.options.language,
     detectedLanguage: task.detectedLanguage,
+    videoType: task.options.videoType,
     status: task.status,
   }
 }

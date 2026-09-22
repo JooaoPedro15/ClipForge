@@ -69,6 +69,7 @@ def ensure_srt_for_lang(
     original_srt_path: str,
     source_language: str,
     translator: "translate_service.Translator | None",
+    video_type: str = "",
 ) -> str:
     if lang == "original":
         return original_srt_path
@@ -86,6 +87,7 @@ def ensure_srt_for_lang(
             source_lang=source_language,
             target_lang=lang,
             output_path=candidate_path,
+            video_type=video_type,
         )
 
     # Fallback pra videos transcritos antes do sidecar cards.json existir.
@@ -226,6 +228,7 @@ def run_hardsub(
     output_path: str | None,
     device: str = "cuda",
     compute_type: str = "default",
+    video_type: str = "",
 ) -> str:
     emit("status", "preparing", "starting", "Preparando queima de legenda...", progress=5)
 
@@ -250,7 +253,7 @@ def run_hardsub(
     for index, lang in enumerate(langs):
         if lang != "original":
             emit("status", "processing", "translating", f"Verificando legenda em {lang}...", progress=20)
-        srt_path = ensure_srt_for_lang(lang, original_srt_path, source_language, translator)
+        srt_path = ensure_srt_for_lang(lang, original_srt_path, source_language, translator, video_type)
 
         is_top = index == 0 and len(langs) > 1
         fontsize, margin_v = resolve_layer_style(resolved_format_profile, video_info.height, is_top)
@@ -290,6 +293,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--format", required=True, choices=sorted(FONT_SCALE.keys()))
     parser.add_argument("--output", default=None)
     parser.add_argument("--cpu", action="store_true")
+    parser.add_argument("--video-type", default="", help="Contexto do video (ex.: gameplay de terror) pra traducao")
     return parser.parse_args()
 
 
@@ -306,6 +310,7 @@ def main() -> int:
             mode=args.mode,
             format_profile=args.format,
             output_path=args.output,
+            video_type=args.video_type,
             device=device,
             compute_type=compute_type,
         )

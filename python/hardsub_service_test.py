@@ -81,6 +81,25 @@ class EnsureSrtForLangTest(unittest.TestCase):
                 ["ola mundo"], source_lang="pt", target_lang="en"
             )
 
+    def test_video_type_is_forwarded_to_the_translation_pipeline(self):
+        # O tipo de video muda o registro do chines no estagio 1 — a queima
+        # precisa repassar o mesmo contexto que a transcricao usou.
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            (tmp_path / "video.cards.json").write_text("[]", encoding="utf-8")
+            srt_path = tmp_path / "video.srt"
+            srt_path.write_text("", encoding="utf-8")
+
+            with mock.patch.object(hardsub_service.translation_pipeline, "traduzir_video") as traduzir:
+                traduzir.return_value = str(tmp_path / "video.zh.srt")
+                hardsub_service.ensure_srt_for_lang(
+                    "zh", str(srt_path), "pt", translator=None, video_type="gameplay de terror"
+                )
+
+            self.assertEqual(traduzir.call_args.kwargs["video_type"], "gameplay de terror")
+
 
 class ResolveFormatProfileTest(unittest.TestCase):
     def test_portrait_video_resolves_to_shorts(self):

@@ -12,8 +12,8 @@ funcionou com modelo local de 7B: ou resumia o video numa linha so, ou
 traduzia o fluxo e redistribuia o conteudo deslocado entre as frases
 (timing errado). Uma frase por chamada trava o alinhamento; o prefixo fixo
 (sheet + transcricao) fica em cache no Ollama, entao custa ~1s por frase.
-Frase que sai longa demais e dividida em duas linhas na pontuacao chinesa,
-com o tempo repartido em fronteira de card.
+Frase que sai longa demais e dividida em quantas linhas forem precisas na
+pontuacao chinesa, com o tempo repartido em fronteira de card.
 """
 
 from typing import Any
@@ -54,6 +54,15 @@ _DANGLING_WORDS = _CONTINUATION_WORDS | {
 HARD_MAX_WORDS_PER_SENTENCE = 24
 _ZH_SPLIT_MARKS = "，。？！；"
 _ZH_TRAILING_MARKS = "，。；"
+# O modelo as vezes fecha a linha com virgula/ponto ASCII — em chines isso
+# nao existe: virgula e ponto viram a forma de largura inteira, o resto cai.
+_LATIN_TO_ZH_PUNCTUATION = {",": "，", ".": "。", ";": "；", "?": "？", "!": "！", ":": "："}
+# Conectivos de abertura: o modelo de 7B abre quase toda linha com o mesmo
+# ("结果..., 结果..., 结果..."), o que le pessimo numa sequencia de legendas.
+# Repetir o conectivo da linha anterior faz a resposta voltar pro modelo; se
+# ele insistir, o conectivo e simplesmente removido (o sentido nao depende
+# dele, e a linha ainda encurta).
+_OPENING_CONNECTIVES = ("结果", "然后", "接着", "于是", "后来", "但是", "不过", "而且", "所以")
 
 
 class LLMTranslationError(RuntimeError):
@@ -185,19 +194,32 @@ def _has_latin(text: str) -> bool:
     return any("a" <= ch.lower() <= "z" for ch in text)
 
 
+def _opening_connective(zh: str) -> str:
+    for connective in _OPENING_CONNECTIVES:
+        if zh.startswith(connective):
+            return connective
+    return ""
+
+
+def _drop_opening_connective(zh: str) -> str:
+    connective = _opening_connective(zh)
+    rest = zh[len(connective) :].lstrip(_ZH_TRAILING_MARKS) if connective else zh
+    return rest or zh
+
+
 def _fit_line(zh: str, bucket: list[dict[str, Any]], max_chars: int, min_duration: float) -> list[tuple[list, str]] | None:
     """Encaixa a linha no limite: cabe inteira -> 1 parte; longa mas divisivel
-    na pontuacao com as duas metades no limite E cada metade com tempo de
-    leitura -> 2 partes; senao None (o chamador pede uma linha mais curta)."""
-    if len(zh) <= max_chars:
-        return [(bucket, zh)]
-    halves = _split_long_line(zh, max_chars)
-    if not halves:
+    na pontuacao, com cada pedaco dentro do limite E com tempo de leitura ->
+    N partes; senao None (o chamador pede uma linha mais curta)."""
+    lines = split_line_into_parts(zh, max_chars)
+    if lines is None:
         return None
-    parts = _split_cards_proportionally(bucket, len(halves[0]) / len(zh))
-    if not parts or not all(_duration(p) >= min_duration for p in parts):
+    if len(lines) == 1:
+        return [(bucket, lines[0])]
+    buckets = split_cards_into_parts(bucket, [len(line) for line in lines], min_duration)
+    if buckets is None:
         return None
-    return [(parts[0], halves[0]), (parts[1], halves[1])]
+    return list(zip(buckets, lines))
 
 
 def _translate_sentence(
@@ -209,14 +231,16 @@ def _translate_sentence(
     bucket: list[dict[str, Any]],
     max_chars: int,
     min_duration: float,
+    previous_connective: str = "",
 ) -> tuple[dict[str, Any], list[tuple[list, str]]]:
     """Traduz UMA frase. Devolve (linha do modelo, partes [(cards, zh)]).
     Resposta rejeitada (id errado, vazia, latim, longa demais sem divisao
-    possivel) volta pro modelo com o motivo e um pouco de temperatura."""
+    possivel, conectivo repetido) volta pro modelo com o motivo e um pouco
+    de temperatura."""
     system, user = llm_prompts.build_translation_messages(payload, sheet, target, previous_lines, max_chars=max_chars)
     last_error = "sem resposta"
     line = None
-    fallback: tuple[dict[str, Any], list[tuple[list, str]]] | None = None
+    candidates: list[tuple[dict[str, Any], str]] = []
     for temperature in ATTEMPT_TEMPERATURES:
         line = _normalize_line(client.chat_json(system=system, user=user, temperature=temperature))
         if line is None:
@@ -226,56 +250,135 @@ def _translate_sentence(
         elif not line["zh"]:
             last_error = "zh vazio"
         else:
-            zh = translation_postprocess.normalize_names(line["zh"], sheet).strip(_ZH_TRAILING_MARKS)
+            zh = normalize_punctuation(translation_postprocess.normalize_names(line["zh"], sheet))
+            zh = _strip(zh)
+            repeats_connective = bool(previous_connective) and _opening_connective(zh) == previous_connective
             parts = _fit_line(zh, bucket, max_chars, min_duration)
-            if parts is not None and not _has_latin(zh):
+            if parts is not None and not _has_latin(zh) and not repeats_connective:
                 return line, parts
-            # Entrega utilizavel (a validacao vai reprovar apontando o grupo),
-            # guardada caso as tentativas seguintes nao melhorem.
-            if fallback is None or len(zh) < len(fallback[1][0][1]):
-                fallback = (line, [(bucket, zh)])
+            # Guarda a tentativa: se nenhuma sair limpa, a melhor delas ainda
+            # e entregue (a validacao reprova apontando o grupo, ou o
+            # conectivo repetido cai fora no final).
+            candidates.append((line, zh))
             if _has_latin(zh):
                 # Nome (ou palavra solta) que ficou em latim: o modelo tem a
                 # grafia no glossario, so precisa ser lembrado.
                 last_error = f"Latin script left in zh ('{zh}'); use only Chinese characters, names from the reference sheet"
-            else:
+            elif parts is None:
                 last_error = f"zh is {len(zh)} characters ('{zh}'); rewrite it in at most {max_chars} characters, drop filler words"
+            else:
+                last_error = (
+                    f"the previous line already opens with '{previous_connective}'; "
+                    f"write this one with a different connective or none at all"
+                )
         user = (
             user
             + "\n\n## Previous attempt was rejected\n\n"
             + f"{last_error}. Return one JSON object for sentence id {target['id']} with a non-empty zh."
         )
-    if fallback is not None:
-        return fallback
+    if candidates:
+        # Sobrar letra latina e o pior defeito (nome/palavra nao traduzida na
+        # tela); linha longa demais vem depois; so entao o tamanho.
+        line, zh = min(
+            candidates,
+            key=lambda c: (_has_latin(c[1]), _fit_line(c[1], bucket, max_chars, min_duration) is None, len(c[1])),
+        )
+        if previous_connective and _opening_connective(zh) == previous_connective:
+            # O modelo insistiu no mesmo conectivo: tira ele e reencaixa.
+            zh = _drop_opening_connective(zh)
+        return line, _fit_line(zh, bucket, max_chars, min_duration) or [(bucket, zh)]
     raise LLMTranslationError(f"estagio 2: {last_error} (frase {target['id']}: '{target['text']}')")
 
 
-def _split_long_line(zh: str, max_chars: int) -> list[str] | None:
-    """Divide uma linha longa em duas na pontuacao chinesa mais proxima do
-    meio. None se nao houver ponto de corte que deixe as duas metades no
-    limite — ai a validacao reprova, o que e o comportamento desejado."""
-    candidates = [i for i, ch in enumerate(zh) if ch in _ZH_SPLIT_MARKS and 0 < i < len(zh) - 1]
-    if not candidates:
-        return None
-    middle = len(zh) / 2
-    for cut in sorted(candidates, key=lambda i: abs(i - middle)):
-        left, right = zh[: cut + 1].strip(_ZH_TRAILING_MARKS), zh[cut + 1 :].strip(_ZH_TRAILING_MARKS)
-        if left and right and len(left) <= max_chars and len(right) <= max_chars:
-            return [left, right]
-    return None
+def split_line_into_parts(zh: str, max_chars: int) -> list[str] | None:
+    """Divide a linha em quantas partes forem precisas pra caber no limite,
+    sempre na pontuacao chinesa, usando o MENOR numero de linhas possivel —
+    uma virgula nao vira automaticamente quebra de linha, oracoes curtas
+    seguidas ficam na mesma legenda enquanto couberem.
+    None quando um pedaco sozinho ja estoura o limite — nao ha onde cortar
+    sem partir a oracao, entao o chamador pede uma traducao mais curta."""
+    chunks = []
+    current = ""
+    for char in zh:
+        current += char
+        if char in _ZH_SPLIT_MARKS:
+            chunks.append(current)
+            current = ""
+    if current:
+        chunks.append(current)
+
+    parts: list[str] = []
+    line = ""
+    for chunk in chunks:
+        stripped = chunk.strip(_ZH_TRAILING_MARKS)
+        if len(stripped) > max_chars:
+            return None
+        if len(_strip(line + chunk)) <= max_chars:
+            line += chunk
+            continue
+        if line:
+            parts.append(_strip(line))
+        line = chunk
+    if _strip(line):
+        parts.append(_strip(line))
+    return parts or None
 
 
-def _split_cards_proportionally(bucket: list[dict[str, Any]], ratio: float) -> tuple[list, list] | None:
-    """Reparte os cards da frase em dois blocos na fronteira de card mais
-    proxima da proporcao `ratio` (tamanho da 1a linha / total)."""
-    if len(bucket) < 2:
+def _strip(text: str) -> str:
+    return text.strip(_ZH_TRAILING_MARKS)
+
+
+def normalize_punctuation(zh: str) -> str:
+    """Troca pontuacao latina pela equivalente de largura inteira e remove a
+    que nao tem equivalente (aspas, parenteses)."""
+    result = []
+    for char in zh:
+        if char in _LATIN_TO_ZH_PUNCTUATION:
+            result.append(_LATIN_TO_ZH_PUNCTUATION[char])
+        elif char in "\"'()[]":
+            continue
+        else:
+            result.append(char)
+    return "".join(result)
+
+
+def split_cards_into_parts(
+    bucket: list[dict[str, Any]],
+    line_lengths: list[int],
+    min_duration: float,
+) -> list[list[dict[str, Any]]] | None:
+    """Reparte os cards da frase em len(line_lengths) blocos, cortando nas
+    fronteiras de card mais proximas da proporcao de cada linha. None quando
+    nao ha cards suficientes ou algum bloco ficaria curto demais pra ler."""
+    if len(bucket) < len(line_lengths):
         return None
-    total = bucket[-1]["end"] - bucket[0]["start"]
-    if total <= 0:
+    total_chars = sum(line_lengths)
+    total_time = bucket[-1]["end"] - bucket[0]["start"]
+    if total_chars <= 0 or total_time <= 0:
         return None
-    target = bucket[0]["start"] + total * ratio
-    best = min(range(1, len(bucket)), key=lambda k: abs(bucket[k]["start"] - target))
-    return bucket[:best], bucket[best:]
+
+    cuts: list[int] = []
+    accumulated = 0
+    for length in line_lengths[:-1]:
+        accumulated += length
+        target = bucket[0]["start"] + total_time * (accumulated / total_chars)
+        # Cada bloco precisa de pelo menos 1 card, entao o corte k fica entre
+        # o corte anterior + 1 e "sobra um card pra cada bloco seguinte".
+        lower = (cuts[-1] if cuts else 0) + 1
+        parts_after = len(line_lengths) - len(cuts) - 1
+        highest = len(bucket) - parts_after
+        if lower > highest:
+            return None
+        cuts.append(min(range(lower, highest + 1), key=lambda k: abs(bucket[k]["start"] - target)))
+
+    parts = []
+    previous = 0
+    for cut in [*cuts, len(bucket)]:
+        parts.append(bucket[previous:cut])
+        previous = cut
+    if any(_duration(part) < min_duration for part in parts):
+        return None
+    return parts
 
 
 def _build_group(bucket: list[dict[str, Any]], zh: str, flag: str) -> dict[str, Any]:
@@ -318,9 +421,13 @@ def translate_with_llm(
 
     groups: list[dict[str, Any]] = []
     previous_lines: list[dict[str, Any]] = []
+    previous_connective = ""
     for sentence, target in zip(sentences, payload):
         bucket = [by_index[i] for i in sentence["cards"]]
-        line, parts = _translate_sentence(target, payload, previous_lines, sheet, client, bucket, max_chars, min_duration)
+        line, parts = _translate_sentence(
+            target, payload, previous_lines, sheet, client, bucket, max_chars, min_duration, previous_connective
+        )
+        previous_connective = _opening_connective(parts[0][1])
         previous_lines.append({"id": sentence["id"], "zh": "".join(zh for _, zh in parts)})
         for part_bucket, zh in parts:
             groups.append(_build_group(part_bucket, zh, line["flag"]))

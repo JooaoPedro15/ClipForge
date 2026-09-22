@@ -16,6 +16,9 @@ _PT_MALE_PRONOUN = re.compile(r"\b(ele|dele|nele)\b", re.IGNORECASE)
 # Sufixos tipicos de transliteracao: canonico + um desses = provavel grafia
 # alternativa do mesmo nome (埃德加 -> 埃德加尔).
 _TRANSLIT_SUFFIXES = "尔多德斯拉娜诺罗托索莫雷"
+# Legenda em chines usa ，。？！ — pontuacao latina denuncia traducao mal
+# formatada (e fica visivelmente errada na tela).
+_LATIN_PUNCTUATION = ",.;:!?\"'()"
 
 
 # Preposicao (+ artigo opcional) antes do nome = nome e OBJETO ("casou com a
@@ -153,6 +156,9 @@ def validate_translation_output(
         # sempre dispararia, ja que ingles E letra latina.
         if is_chinese and any("a" <= ch.lower() <= "z" for ch in zh):
             erros.append(f"grupo {grupo_ref}: caractere latino em '{zh}'")
+
+        if is_chinese and any(ch in _LATIN_PUNCTUATION for ch in zh):
+            erros.append(f"grupo {grupo_ref}: pontuacao latina em '{zh}'")
 
         # Mesma logica do caractere latino acima: o teto de caracteres modela
         # "cabe numa linha de video vertical" pro chines (hanzi denso, poucos

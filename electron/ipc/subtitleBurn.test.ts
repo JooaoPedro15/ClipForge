@@ -49,6 +49,7 @@ describe('buildHardsubProcessArgs', () => {
       mode: 'zh-en',
       format: 'long',
       useCpu: false,
+      videoType: 'gameplay de terror',
     })
 
     expect(args).toEqual([
@@ -63,7 +64,22 @@ describe('buildHardsubProcessArgs', () => {
       'zh-en',
       '--format',
       'long',
+      '--video-type',
+      'gameplay de terror',
     ])
+  })
+
+  it('omite --video-type quando nao ha contexto de video', () => {
+    const args = buildHardsubProcessArgs('hardsub_service.py', {
+      videoPath: 'C:\video.mp4',
+      originalSrtPath: 'C:\video.srt',
+      sourceLanguage: 'pt',
+      mode: 'zh',
+      format: 'long',
+      useCpu: false,
+    })
+
+    expect(args).not.toContain('--video-type')
   })
 
   it('inclui --cpu quando useCpu true', () => {
