@@ -177,9 +177,24 @@ class TraduzirCardsLlmTest(unittest.TestCase):
             self.assertTrue((tmp_path / "video.zh.REJEITADO.srt").exists())
             self.assertFalse(glossary_path.exists())  # glossario nao e fundido com saida reprovada
 
+    def test_starts_ollama_when_it_is_down(self):
+        client = mock.Mock()
+        client.is_available.side_effect = [False, True]
+        client.ensure_server_running.return_value = True
+        client.chat_json.side_effect = [self.SHEET, {"id": 0, "zh": "大家都拒绝埃德加"}, {"id": 1, "zh": "伯纳多和莱诺拉结婚了"}]
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            translation_pipeline.traduzir_cards(
+                self.CARDS, mock.Mock(), "pt", "zh", str(tmp_path / "v.zh.srt"), str(tmp_path / "g.json"), llm_client=client
+            )
+
+        client.ensure_server_running.assert_called_once()
+
     def test_zh_without_ollama_raises_clear_error_instead_of_silent_nllb(self):
         client = mock.Mock()
         client.is_available.return_value = False
+        client.ensure_server_running.return_value = False
         client.base_url = "http://127.0.0.1:11434"
         client.model = "qwen"
 

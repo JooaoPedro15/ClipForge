@@ -105,5 +105,65 @@ class ResolveConfigTest(unittest.TestCase):
         self.assertEqual(client.base_url, "http://x:9")
 
 
+class EnsureServerRunningTest(unittest.TestCase):
+    """Caso real: o PC reiniciou, o Ollama nao subiu, a traducao pro chines
+    falhou na transcricao e ninguem percebeu. O app agora liga o servidor."""
+
+    def _client(self):
+        return llm_service.OllamaClient(model="qwen-test", base_url="http://127.0.0.1:11434")
+
+    def test_does_nothing_when_server_is_up(self):
+        client = self._client()
+        with mock.patch.object(client, "is_server_up", return_value=True), \
+                mock.patch.object(llm_service.subprocess, "Popen") as popen:
+            self.assertTrue(client.ensure_server_running())
+        popen.assert_not_called()
+
+    def test_starts_ollama_serve_and_waits_until_it_answers(self):
+        client = self._client()
+        with mock.patch.object(client, "is_server_up", side_effect=[False, False, True]), \
+                mock.patch.object(llm_service, "resolve_ollama_executable", return_value="D:/Ollama/ollama.exe"), \
+                mock.patch.object(llm_service.subprocess, "Popen") as popen, \
+                mock.patch.object(llm_service.time, "sleep"):
+            self.assertTrue(client.ensure_server_running())
+
+        args = popen.call_args.args[0]
+        self.assertEqual(args, ["D:/Ollama/ollama.exe", "serve"])
+
+    def test_forwards_ollama_models_dir_to_the_server(self):
+        client = self._client()
+        with mock.patch.object(client, "is_server_up", side_effect=[False, True]), \
+                mock.patch.object(llm_service, "resolve_ollama_executable", return_value="ollama"), \
+                mock.patch.object(llm_service, "resolve_models_dir", return_value="D:/modelos"), \
+                mock.patch.object(llm_service.subprocess, "Popen") as popen, \
+                mock.patch.object(llm_service.time, "sleep"):
+            client.ensure_server_running()
+
+        self.assertEqual(popen.call_args.kwargs["env"]["OLLAMA_MODELS"], "D:/modelos")
+
+    def test_returns_false_when_executable_is_not_found(self):
+        client = self._client()
+        with mock.patch.object(client, "is_server_up", return_value=False), \
+                mock.patch.object(llm_service, "resolve_ollama_executable", return_value=None), \
+                mock.patch.object(llm_service.subprocess, "Popen") as popen:
+            self.assertFalse(client.ensure_server_running())
+        popen.assert_not_called()
+
+    def test_returns_false_when_server_never_answers(self):
+        client = self._client()
+        with mock.patch.object(client, "is_server_up", return_value=False), \
+                mock.patch.object(llm_service, "resolve_ollama_executable", return_value="ollama"), \
+                mock.patch.object(llm_service.subprocess, "Popen"), \
+                mock.patch.object(llm_service.time, "sleep"):
+            self.assertFalse(client.ensure_server_running(wait_seconds=3))
+
+    def test_never_starts_a_server_for_a_remote_url(self):
+        client = llm_service.OllamaClient(model="qwen-test", base_url="http://outra-maquina:11434")
+        with mock.patch.object(client, "is_server_up", return_value=False), \
+                mock.patch.object(llm_service.subprocess, "Popen") as popen:
+            self.assertFalse(client.ensure_server_running())
+        popen.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

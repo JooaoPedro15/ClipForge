@@ -1,8 +1,12 @@
 import json
 import os
 import re
+import shutil
+import subprocess
+import sys
+import time
 from typing import Any
-from urllib import error, request
+from urllib import error, parse, request
 
 # LLM local via Ollama (http://localhost:11434). Custo zero, offline, roda na
 # GPU do proprio usuario. Modelo padrao: Qwen2.5 7B instruct — forte em
@@ -13,6 +17,47 @@ DEFAULT_TIMEOUT_SECONDS = 600
 # Janela de contexto: a transcricao inteira + glossario + prompt precisa caber
 # de uma vez. 8k tokens cobre folgado um corte vertical (~30-150 cards).
 DEFAULT_NUM_CTX = 8192
+
+
+# Onde procurar o executavel quando `ollama` nao esta no PATH (o instalador
+# foi apontado pra D:, e o padrao do instalador e o LOCALAPPDATA).
+_OLLAMA_EXE_CANDIDATES = (
+    "D:\\Ollama\\app\\ollama.exe",
+    os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Ollama", "ollama.exe"),
+)
+DEFAULT_STARTUP_WAIT_SECONDS = 20
+
+
+def resolve_ollama_executable() -> str | None:
+    configured = os.environ.get("CLIPFORGE_OLLAMA_EXE")
+    if configured and os.path.exists(configured):
+        return configured
+    on_path = shutil.which("ollama")
+    if on_path:
+        return on_path
+    for candidate in _OLLAMA_EXE_CANDIDATES:
+        if candidate and os.path.exists(candidate):
+            return candidate
+    return None
+
+
+def resolve_models_dir() -> str | None:
+    """OLLAMA_MODELS do ambiente; senao o valor salvo nas variaveis de usuario
+    do Windows. Um `setx` so chega aos processos abertos DEPOIS dele — o app
+    aberto antes herdaria o ambiente sem a variavel e subiria o servidor
+    procurando os modelos no C:, sem achar nenhum."""
+    value = os.environ.get("OLLAMA_MODELS")
+    if value:
+        return value
+    if sys.platform != "win32":
+        return None
+    try:
+        import winreg
+
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment") as key:
+            return str(winreg.QueryValueEx(key, "OLLAMA_MODELS")[0]) or None
+    except OSError:
+        return None
 
 
 class LLMUnavailableError(RuntimeError):
@@ -82,6 +127,53 @@ class OllamaClient:
                 f"Ollama inacessivel em {self.base_url} ({net_error}). "
                 f"Inicie o servidor (`ollama serve`) e baixe o modelo (`ollama pull {self.model}`)."
             ) from net_error
+
+    def is_server_up(self) -> bool:
+        try:
+            self._request("/api/tags")
+            return True
+        except LLMUnavailableError:
+            return False
+
+    def _is_local(self) -> bool:
+        host = parse.urlparse(self.base_url).hostname or ""
+        return host in ("127.0.0.1", "localhost", "::1")
+
+    def ensure_server_running(self, wait_seconds: float = DEFAULT_STARTUP_WAIT_SECONDS) -> bool:
+        """Sobe `ollama serve` em segundo plano se o servidor local nao
+        responde (ex.: depois de reiniciar o PC). So pra URL local — nunca
+        tenta ligar servidor de outra maquina. True se ficou no ar."""
+        if self.is_server_up():
+            return True
+        if not self._is_local():
+            return False
+        executable = resolve_ollama_executable()
+        if not executable:
+            return False
+
+        env = dict(os.environ)
+        models_dir = resolve_models_dir()
+        if models_dir:
+            env["OLLAMA_MODELS"] = models_dir
+        flags = 0
+        if sys.platform == "win32":
+            flags = subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+        subprocess.Popen(
+            [executable, "serve"],
+            env=env,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=flags,
+            close_fds=True,
+        )
+
+        deadline = int(wait_seconds)
+        for _ in range(max(deadline, 1)):
+            time.sleep(1)
+            if self.is_server_up():
+                return True
+        return False
 
     def is_available(self) -> bool:
         """True se o servidor responde E o modelo configurado ja foi baixado."""

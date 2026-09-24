@@ -86,9 +86,13 @@ def _resolve_llm_client(target_lang: str, engine: str, llm_client: Any) -> Any:
     client = llm_client or llm_service.create_default_client()
     if client.is_available():
         return client
+    # Servidor desligado (ex.: PC reiniciado): liga e confere de novo.
+    if client.ensure_server_running() and client.is_available():
+        return client
     raise llm_service.LLMUnavailableError(
         f"Traducao pra '{target_lang}' precisa do LLM local, mas o Ollama nao respondeu em "
         f"{getattr(client, 'base_url', '?')} ou o modelo '{getattr(client, 'model', '?')}' nao foi baixado. "
+        f"O app tentou ligar o Ollama sozinho e nao conseguiu. "
         f"Rode `ollama serve` e `ollama pull {getattr(client, 'model', '?')}`, "
         f"ou force o NLLB com CLIPFORGE_TRANSLATION_ENGINE=nllb."
     )
