@@ -124,9 +124,32 @@ export function TaskItem({ task, onCancel, onOpenOutput, onRetry, onBurn }: Task
         </div>
       </div>
 
+      {/* Falha de traducao em destaque: a tarefa termina como "concluida" (o .srt
+          original saiu), entao um aviso discreto no rodape passava batido e o
+          video era queimado com uma traducao velha. */}
+      {Object.entries(task.translationErrors).map(([lang, message]) => (
+        <div
+          key={lang}
+          className="space-y-2 rounded-2xl border border-status-yellow/40 bg-status-yellow/10 px-4 py-3 text-sm"
+        >
+          <p className="inline-flex items-center gap-2 font-medium text-status-yellow">
+            <TriangleAlert className="h-4 w-4" />
+            A tradução para {labelForLanguage(lang)} falhou
+          </p>
+          <p className="whitespace-pre-line font-mono text-xs text-text-secondary">{message}</p>
+          <p className="text-xs text-text-muted">
+            O .srt original foi gerado normalmente. Os botões de queima abaixo tentam traduzir de novo; se a validação
+            reprovar outra vez, o rascunho fica em <span className="font-mono">.{lang}.REJEITADO.srt</span> ao lado do vídeo.
+          </p>
+        </div>
+      ))}
+
       {task.status === 'completed' ? (
         <div className="space-y-2 border-t border-white/8 pt-4">
           <p className="text-sm font-medium text-text-secondary">Queimar legenda no vídeo</p>
+          <p className="text-xs text-text-muted">
+            A queima traduz sozinha o que faltar — não precisa marcar tradução antes de transcrever.
+          </p>
           <div className="flex flex-wrap gap-2">
             {(
               [
@@ -152,8 +175,8 @@ export function TaskItem({ task, onCancel, onOpenOutput, onRetry, onBurn }: Task
                     </Button>
                   ) : null}
                   {job?.status === 'error' ? (
-                    <span className="inline-flex items-center gap-1 text-xs text-status-yellow">
-                      <TriangleAlert className="h-3.5 w-3.5" />
+                    <span className="inline-flex items-start gap-1 whitespace-pre-line text-xs text-status-yellow">
+                      <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                       {job.error}
                     </span>
                   ) : null}
@@ -196,12 +219,6 @@ export function TaskItem({ task, onCancel, onOpenOutput, onRetry, onBurn }: Task
             {task.error}
           </span>
         ) : null}
-        {Object.entries(task.translationErrors).map(([lang, message]) => (
-          <span key={lang} className="inline-flex items-center gap-1 text-status-yellow">
-            <TriangleAlert className="h-3.5 w-3.5" />
-            Traducao {lang} falhou: {message}
-          </span>
-        ))}
         {isActive ? (
           <span className="inline-flex items-center gap-1 text-status-yellow">
             <LoaderCircle className="h-3.5 w-3.5 animate-spin" />

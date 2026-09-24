@@ -189,7 +189,10 @@ export function SubtitleForgePage({
                 />
               </div>
               <div className="flex items-center justify-between rounded-xl border border-white/8 bg-white/[0.03] px-4 py-3 text-sm text-text-secondary">
-                <span>Traduzir p/ inglês</span>
+                <span className="space-y-0.5">
+                  <span className="block">Gerar .srt em inglês também</span>
+                  <span className="block text-xs text-text-muted">Opcional — os botões de queima já traduzem sozinhos</span>
+                </span>
                 <Toggle
                   checked={settings.translateTo.includes('en')}
                   onChange={(checked) =>
@@ -202,7 +205,10 @@ export function SubtitleForgePage({
                 />
               </div>
               <div className="flex items-center justify-between rounded-xl border border-white/8 bg-white/[0.03] px-4 py-3 text-sm text-text-secondary">
-                <span>Traduzir p/ chinês (simplificado)</span>
+                <span className="space-y-0.5">
+                  <span className="block">Gerar .srt em chinês também</span>
+                  <span className="block text-xs text-text-muted">Opcional — os botões de queima já traduzem sozinhos</span>
+                </span>
                 <Toggle
                   checked={settings.translateTo.includes('zh')}
                   onChange={(checked) =>
@@ -215,7 +221,8 @@ export function SubtitleForgePage({
                 />
               </div>
               <div className="space-y-2 rounded-xl border border-white/8 bg-white/[0.03] px-4 py-3 text-sm text-text-secondary">
-                <span className="block text-xs uppercase tracking-[0.18em] text-text-muted">Tipo de vídeo (p/ tradução)</span>
+                <span className="block text-xs uppercase tracking-[0.18em] text-text-muted">Tipo de vídeo</span>
+                <span className="block text-xs text-text-muted">Ajusta o tom da tradução em chinês (vale pra queima também)</span>
                 <input
                   className="w-full bg-transparent text-text-primary outline-none placeholder:text-text-muted"
                   onChange={(event) => patchSettings({ videoType: event.target.value })}

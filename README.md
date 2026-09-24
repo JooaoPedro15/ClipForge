@@ -30,7 +30,11 @@ O escopo atual e simples: preparar material bruto com rapidez, gerar legendas e 
 
 ### Traducao de legendas (SubtitleForge)
 
-O SubtitleForge tem duas opcoes opcionais para traduzir a legenda gerada, alem do `.srt` original: **"Traduzir p/ ingles"** e **"Traduzir p/ chines (simplificado)"**. Ao marcar uma ou ambas, o app gera arquivos adicionais (`arquivo.en.srt`, `arquivo.zh.srt`) ao lado do `.srt` original.
+**Fluxo recomendado:** transcreva o video e clique em **"So chines"** (ou outro modo) na secao de queima — a queima traduz sozinha o que faltar. As opcoes **"Gerar .srt em ingles/chines tambem"** sao opcionais: servem so pra ter o `arquivo.en.srt` / `arquivo.zh.srt` pronto logo na transcricao (ex.: pra revisar ou corrigir a mao antes de queimar).
+
+A queima so reaproveita um `.zh.srt` existente se ele for **mais novo que o `cards.json`** da transcricao — traducao de uma transcricao anterior e gerada de novo, e correcao manual feita no `.zh.srt` depois da traducao e respeitada. Se a traducao falhar, a tarefa mostra um aviso em destaque com o motivo (a validacao nomeia grupo e regra). Os arquivos temporarios da queima (`.burn-N.ass`) sao apagados no fim.
+
+Arquivos que aparecem ao lado do video: `.srt` (legenda original), `.cards.json` (tempos e confianca do Whisper, usado pela traducao), `.zh.srt` / `.en.srt` (traducoes), `.zh.REJEITADO.srt` (rascunho de traducao reprovada na validacao, so pra inspecao) e `.hardsub.<modo>.mp4` (video final).
 
 - **Chines** usa um **LLM local via Ollama** (padrao `qwen2.5:7b-instruct`, custo zero, offline, ~5,5GB de VRAM). Sem o Ollama rodando, a traducao pro chines falha com erro claro — nao cai em silencio no NLLB.
 - **Ingles** usa o modelo NLLB (ctranslate2), que tambem pode ser forcado pro chines com `CLIPFORGE_TRANSLATION_ENGINE=nllb` (qualidade bem menor).
@@ -58,7 +62,7 @@ O campo **"Tipo de video"** tambem e repassado pela queima (hardsub), pra legend
 ollama pull qwen2.5:7b-instruct
 ```
 
-O servidor precisa estar rodando (`ollama serve`, ou o app do Ollama na bandeja). Variaveis: `CLIPFORGE_OLLAMA_URL` (padrao `http://127.0.0.1:11434`), `CLIPFORGE_OLLAMA_MODEL` (padrao `qwen2.5:7b-instruct`). Pra guardar os modelos fora do `C:\Users\<usuario>\.ollama`, defina `OLLAMA_MODELS` (ex.: `D:\Projetos\subtitle-forge\models\ollama`) antes de subir o servidor.
+Se o servidor local nao estiver rodando, o app sobe `ollama serve` sozinho em segundo plano (procura o executavel em `CLIPFORGE_OLLAMA_EXE`, no PATH, em `D:\Ollamapp` e na pasta padrao do instalador). Variaveis: `CLIPFORGE_OLLAMA_URL` (padrao `http://127.0.0.1:11434`), `CLIPFORGE_OLLAMA_MODEL` (padrao `qwen2.5:7b-instruct`). Pra guardar os modelos fora do `C:\Users\<usuario>\.ollama`, defina `OLLAMA_MODELS` (ex.: `D:\Projetos\subtitle-forge\models\ollama`) antes de subir o servidor.
 
 #### Ingles / fallback: NLLB
 

@@ -264,6 +264,34 @@ def run_hardsub(
     translator = translate_service.Translator(device=device, compute_type=compute_type) if needs_translation else None
 
     ass_paths: list[str] = []
+    # Tudo que for arquivo temporario da queima (o .ass e a eventual copia em
+    # pasta curta) e apagado no fim, com sucesso ou falha.
+    temp_files: set[str] = set()
+    try:
+        return _burn(
+            ffmpeg_path, video_path, original_srt_path, source_language, mode, output_path, langs,
+            resolved_format_profile, video_info, translator, video_type, ass_paths, temp_files,
+        )
+    finally:
+        for temp_file in temp_files:
+            Path(temp_file).unlink(missing_ok=True)
+
+
+def _burn(
+    ffmpeg_path: str,
+    video_path: str,
+    original_srt_path: str,
+    source_language: str,
+    mode: str,
+    output_path: str | None,
+    langs: list[str],
+    resolved_format_profile: str,
+    video_info: Any,
+    translator: Any,
+    video_type: str,
+    ass_paths: list[str],
+    temp_files: set[str],
+) -> str:
     for index, lang in enumerate(langs):
         if lang != "original":
             emit("status", "processing", "translating", f"Verificando legenda em {lang}...", progress=20)
@@ -274,10 +302,12 @@ def run_hardsub(
 
         ass_path = str(Path(srt_path).with_suffix(f".burn-{index}.ass"))
         write_ass_for_srt(srt_path, ass_path, fontsize, margin_v, video_info.width, video_info.height)
+        temp_files.add(ass_path)
         # O caminho da legenda entra dentro do filtro subtitles=..., o ponto mais sensivel
         # ao limite de path do Windows — usa copia em pasta curta como fallback em vez
         # de so falhar, quando o caminho original for longo demais.
         ass_path = ffmpeg_utils.ensure_short_srt_path(ass_path)
+        temp_files.add(ass_path)
         ass_paths.append(ass_path)
 
     output = output_path or str(Path(video_path).with_suffix("")) + f".hardsub.{mode}{Path(video_path).suffix}"

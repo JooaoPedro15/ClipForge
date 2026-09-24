@@ -265,5 +265,54 @@ class BuildFfmpegBurnCommandTest(unittest.TestCase):
         self.assertEqual(filter_value.count("subtitles="), 2)
 
 
+class RunHardsubCleanupTest(unittest.TestCase):
+    """Os .burn-N.ass sao temporarios do ffmpeg; ficavam na pasta do video e
+    confundiam ("fez um burn .es aqui, que eu nao sei o que e")."""
+
+    def _run(self, tmp_dir, ffmpeg_side_effect=None):
+        tmp_path = Path(tmp_dir)
+        srt = tmp_path / "clip.srt"
+        srt.write_text("", encoding="utf-8")
+        portrait_info = types.SimpleNamespace(duration_sec=5.0, width=1080, height=1920)
+
+        def fake_write_ass(srt_path, ass_path, *args):
+            Path(ass_path).write_text("[Script Info]", encoding="utf-8")
+
+        with mock.patch("hardsub_service.ffmpeg_utils.resolve_ffmpeg_path", return_value="ffmpeg"), \
+                mock.patch("hardsub_service.ffmpeg_utils.probe_video", return_value=portrait_info), \
+                mock.patch("hardsub_service.ffmpeg_utils.assert_safe_path_length"), \
+                mock.patch("hardsub_service.ffmpeg_utils.ensure_short_srt_path", side_effect=lambda p: p), \
+                mock.patch("hardsub_service.ffmpeg_utils.run_ffmpeg_with_progress", side_effect=ffmpeg_side_effect), \
+                mock.patch("hardsub_service.ensure_srt_for_lang", return_value=str(srt)), \
+                mock.patch("hardsub_service.translated_srt_is_fresh", return_value=True), \
+                mock.patch("hardsub_service.write_ass_for_srt", side_effect=fake_write_ass), \
+                mock.patch("hardsub_service.build_ffmpeg_burn_command", return_value=["ffmpeg"]):
+            hardsub_service.run_hardsub(
+                video_path=str(tmp_path / "clip.mp4"),
+                original_srt_path=str(srt),
+                source_language="pt",
+                mode="zh",
+                format_profile="shorts",
+                output_path=str(tmp_path / "out.mp4"),
+            )
+
+    def test_temporary_ass_files_are_removed_after_burn(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            self._run(tmp_dir)
+
+            self.assertEqual(list(Path(tmp_dir).glob("*.ass")), [])
+
+    def test_temporary_ass_files_are_removed_even_when_ffmpeg_fails(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            with self.assertRaises(RuntimeError):
+                self._run(tmp_dir, ffmpeg_side_effect=RuntimeError("ffmpeg falhou"))
+
+            self.assertEqual(list(Path(tmp_dir).glob("*.ass")), [])
+
+
 if __name__ == "__main__":
     unittest.main()
