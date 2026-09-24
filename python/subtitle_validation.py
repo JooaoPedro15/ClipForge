@@ -70,6 +70,20 @@ def _gender_errors(group: dict[str, Any], glossary: dict[str, Any], source: str)
     return erros
 
 
+def marriage_object_error(zh: str, glossary: dict[str, Any]) -> str:
+    """嫁给 X exige X homem; 娶 X exige X mulher. Com duas pessoas do mesmo
+    genero ("莱诺拉嫁给了伊莎贝尔", "埃德加想娶伯纳多") o natural e 和…结婚."""
+    males = [c["zh"] for c in glossary.get("characters", []) if c.get("gender") == "male" and c.get("zh")]
+    females = [c["zh"] for c in glossary.get("characters", []) if c.get("gender") == "female" and c.get("zh")]
+    for verb, wrong_objects, gender_label in (("嫁给", females, "mulher"), ("娶", males, "homem")):
+        for match in re.finditer(re.escape(verb), zh):
+            after = zh[match.end() :].lstrip("了过")
+            for name in wrong_objects:
+                if after.startswith(name):
+                    return f"{verb} com {gender_label} ({name}) em '{zh}' — com o mesmo genero use 和…结婚"
+    return ""
+
+
 def _marriage_errors(group: dict[str, Any], glossary: dict[str, Any]) -> list[str]:
     """Erro 4 da auditoria: 嫁给 e "mulher casa com homem"; 娶 e "homem casa
     com mulher". Olha quem esta IMEDIATAMENTE antes do verbo: 他 ou nome
@@ -90,6 +104,9 @@ def _marriage_errors(group: dict[str, Any], glossary: dict[str, Any]) -> list[st
             if subject_is_wrong:
                 erros.append(f"grupo {group['cards']}: {hint} em '{zh}'")
                 break
+    object_error = marriage_object_error(zh, glossary)
+    if object_error:
+        erros.append(f"grupo {group['cards']}: {object_error}")
     return erros
 
 

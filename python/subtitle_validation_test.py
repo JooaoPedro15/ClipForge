@@ -331,5 +331,47 @@ class TrocaDePersonagemTest(unittest.TestCase):
         self.assertEqual(_erros(groups, cards, self.GLOSSARIO), "")
 
 
+class VerboDeCasamentoObjetoTest(unittest.TestCase):
+    """嫁给 X = casar com X (X homem); 娶 X = casar com X (X mulher). Com
+    duas pessoas do mesmo genero, o natural e 和…结婚. Casos reais:
+    '莱诺拉嫁给了伊莎贝尔' e '埃德加想娶伯纳多'."""
+
+    GLOSSARIO = {
+        "characters": [
+            {"source_name": "Edgar", "variants": [], "zh": "埃德加", "gender": "male"},
+            {"source_name": "Bernardo", "variants": [], "zh": "伯纳多", "gender": "male"},
+            {"source_name": "Lenora", "variants": [], "zh": "莱诺拉", "gender": "female"},
+            {"source_name": "Isabel", "variants": [], "zh": "伊莎贝尔", "gender": "female"},
+        ]
+    }
+
+    def _erros(self, zh, text):
+        cards = [{"i": 0, "start": 0.0, "end": 2.0, "text": text}]
+        groups = [{"cards": [0], "start": 0.0, "end": 2.0, "zh": zh, "flag": ""}]
+        return _erros(groups, cards, self.GLOSSARIO)
+
+    def test_嫁给_mulher_e_reprovado(self):
+        erros = self._erros("莱诺拉嫁给了伊莎贝尔", "Lenora casa com Isabel")
+
+        self.assertIn("grupo [0]", erros)
+        self.assertIn("嫁给", erros)
+        self.assertIn("伊莎贝尔", erros)
+
+    def test_娶_homem_e_reprovado(self):
+        erros = self._erros("埃德加想娶伯纳多", "o Edgar tenta casar com o Bernardo")
+
+        self.assertIn("娶", erros)
+        self.assertIn("伯纳多", erros)
+
+    def test_嫁给_homem_passa(self):
+        self.assertEqual(self._erros("莱诺拉嫁给了伯纳多", "a Lenora casa com o Bernardo"), "")
+
+    def test_娶_mulher_passa(self):
+        self.assertEqual(self._erros("埃德加想娶莱诺拉", "o Edgar tenta casar com a Lenora"), "")
+
+    def test_forma_neutra_passa(self):
+        self.assertEqual(self._erros("莱诺拉和伊莎贝尔结婚了", "Lenora casa com Isabel"), "")
+
+
 if __name__ == "__main__":
     unittest.main()

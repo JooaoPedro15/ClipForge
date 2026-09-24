@@ -255,8 +255,9 @@ def _translate_sentence(
             zh = _strip(zh)
             repeats_connective = bool(previous_connective) and _opening_connective(zh) == previous_connective
             swap = subtitle_validation.character_swap_error(zh, target["text"], sheet)
+            marriage = subtitle_validation.marriage_object_error(zh, sheet)
             parts = _fit_line(zh, bucket, max_chars, min_duration)
-            if parts is not None and not _has_latin(zh) and not repeats_connective and not swap:
+            if parts is not None and not _has_latin(zh) and not repeats_connective and not swap and not marriage:
                 return line, parts
             # Guarda a tentativa: se nenhuma sair limpa, a melhor delas ainda
             # e entregue (a validacao reprova apontando o grupo, ou o
@@ -268,6 +269,11 @@ def _translate_sentence(
                 last_error = f"Latin script left in zh ('{zh}'); use only Chinese characters, names from the reference sheet"
             elif swap:
                 last_error = f"{swap}; translate the sentence you were given, keeping its own characters"
+            elif marriage:
+                last_error = (
+                    f"{marriage}. 嫁给 only takes a male object and 娶 only a female object; "
+                    f"for two people of the same gender write A和B结婚"
+                )
             elif parts is None:
                 last_error = f"zh is {len(zh)} characters ('{zh}'); rewrite it in at most {max_chars} characters, drop filler words"
             else:
@@ -288,6 +294,7 @@ def _translate_sentence(
             key=lambda c: (
                 bool(subtitle_validation.character_swap_error(c[1], target["text"], sheet)),
                 _has_latin(c[1]),
+                bool(subtitle_validation.marriage_object_error(c[1], sheet)),
                 _fit_line(c[1], bucket, max_chars, min_duration) is None,
                 len(c[1]),
             ),

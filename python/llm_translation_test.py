@@ -397,5 +397,25 @@ class CharacterSwapRetryTest(unittest.TestCase):
         self.assertEqual(groups[0]["zh"], "莱诺拉不能嫁给埃德加")
 
 
+class MarriageVerbRetryTest(unittest.TestCase):
+    SHEET = {
+        "summary": "s", "register": "r", "terms": [], "unclear": [],
+        "characters": [
+            {"source_name": "Lenora", "variants": [], "zh": "莱诺拉", "gender": "female"},
+            {"source_name": "Isabel", "variants": [], "zh": "伊莎贝尔", "gender": "female"},
+        ],
+    }
+
+    def test_same_gender_marriage_verb_goes_back_to_the_model(self):
+        cards = [_card(0, 0.0, 2.0, "Lenora casa com Isabel.")]
+        client = _client(["莱诺拉嫁给了伊莎贝尔", "莱诺拉和伊莎贝尔结婚了"])
+
+        groups = llm_translation.translate_with_llm(cards, self.SHEET, client)
+
+        self.assertEqual(client.chat_json.call_count, 2)
+        self.assertIn("和…结婚", client.chat_json.call_args_list[1].kwargs["user"])
+        self.assertEqual(groups[0]["zh"], "莱诺拉和伊莎贝尔结婚了")
+
+
 if __name__ == "__main__":
     unittest.main()
