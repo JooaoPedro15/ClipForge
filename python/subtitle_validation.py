@@ -75,12 +75,13 @@ def marriage_object_error(zh: str, glossary: dict[str, Any]) -> str:
     genero ("莱诺拉嫁给了伊莎贝尔", "埃德加想娶伯纳多") o natural e 和…结婚."""
     males = [c["zh"] for c in glossary.get("characters", []) if c.get("gender") == "male" and c.get("zh")]
     females = [c["zh"] for c in glossary.get("characters", []) if c.get("gender") == "female" and c.get("zh")]
-    for verb, wrong_objects, gender_label in (("嫁给", females, "mulher"), ("娶", males, "homem")):
-        for match in re.finditer(re.escape(verb), zh):
+    # "嫁给?" cobre 嫁给X e o 嫁X sem 给 ("再嫁伊莎贝尔").
+    for verb, wrong_objects, gender_label in (("嫁给?", females, "mulher"), ("娶", males, "homem")):
+        for match in re.finditer(verb, zh):
             after = zh[match.end() :].lstrip("了过")
             for name in wrong_objects:
                 if after.startswith(name):
-                    return f"{verb} com {gender_label} ({name}) em '{zh}' — com o mesmo genero use 和…结婚"
+                    return f"{match.group(0)} com {gender_label} ({name}) em '{zh}' — com o mesmo genero use 和…结婚"
     return ""
 
 

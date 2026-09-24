@@ -357,6 +357,12 @@ class VerboDeCasamentoObjetoTest(unittest.TestCase):
         self.assertIn("嫁给", erros)
         self.assertIn("伊莎贝尔", erros)
 
+    def test_嫁_sem_给_com_mulher_e_reprovado(self):
+        # Caso real do 14b: "她伤心再嫁伊莎贝尔".
+        erros = self._erros("她伤心再嫁伊莎贝尔", "ela casa novamente com a Isabel")
+
+        self.assertIn("伊莎贝尔", erros)
+
     def test_娶_homem_e_reprovado(self):
         erros = self._erros("埃德加想娶伯纳多", "o Edgar tenta casar com o Bernardo")
 
