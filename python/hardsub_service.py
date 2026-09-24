@@ -64,6 +64,21 @@ def translated_srt_candidate_path(original_srt_path: str, lang: str) -> str:
     return str(Path(original_srt_path).with_suffix(f".{lang}.srt"))
 
 
+def translated_srt_is_fresh(original_srt_path: str, lang: str) -> bool:
+    """A traducao existente so vale se for mais nova que a transcricao
+    (cards.json). Uma traducao mais velha veio de uma transcricao anterior —
+    ex.: a traducao da transcricao nova falhou (Ollama fora do ar) e o
+    .zh.srt antigo ficou na pasta. Edicao manual no .zh.srt depois da
+    traducao deixa ele mais novo, entao continua sendo respeitada."""
+    candidate = Path(translated_srt_candidate_path(original_srt_path, lang))
+    if not candidate.exists():
+        return False
+    cards_path = Path(original_srt_path).with_suffix(".cards.json")
+    if not cards_path.exists():
+        return True
+    return candidate.stat().st_mtime >= cards_path.stat().st_mtime
+
+
 def ensure_srt_for_lang(
     lang: str,
     original_srt_path: str,
@@ -75,7 +90,7 @@ def ensure_srt_for_lang(
         return original_srt_path
 
     candidate_path = translated_srt_candidate_path(original_srt_path, lang)
-    if Path(candidate_path).exists():
+    if translated_srt_is_fresh(original_srt_path, lang):
         return candidate_path
 
     cards_path = Path(original_srt_path).with_suffix(".cards.json")
@@ -244,8 +259,7 @@ def run_hardsub(
 
     langs = resolve_mode_langs(mode)
     needs_translation = any(
-        lang != "original" and not Path(translated_srt_candidate_path(original_srt_path, lang)).exists()
-        for lang in langs
+        lang != "original" and not translated_srt_is_fresh(original_srt_path, lang) for lang in langs
     )
     translator = translate_service.Translator(device=device, compute_type=compute_type) if needs_translation else None
 

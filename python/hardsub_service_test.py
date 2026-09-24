@@ -1,3 +1,4 @@
+import os
 import sys
 import types
 import unittest
@@ -37,21 +38,60 @@ class EnsureSrtForLangTest(unittest.TestCase):
 
         self.assertEqual(result, "C:/videos/clip.srt")
 
-    def test_existing_translated_srt_is_reused_without_translating(self):
-        with mock.patch("hardsub_service.Path") as mock_path_cls:
-            mock_path_cls.return_value.exists.return_value = True
-            mock_path_cls.return_value.with_suffix.return_value = "C:/videos/clip.zh.srt"
+    def _make_files(self, tmp_dir, cards_mtime, zh_mtime):
+        tmp_path = Path(tmp_dir)
+        srt = tmp_path / "clip.srt"
+        srt.write_text("1\n00:00:00,000 --> 00:00:01,000\nola\n", encoding="utf-8")
+        zh = tmp_path / "clip.zh.srt"
+        zh.write_text("1\n00:00:00,000 --> 00:00:01,000\n旧的\n", encoding="utf-8")
+        cards = tmp_path / "clip.cards.json"
+        cards.write_text("[]", encoding="utf-8")
+        os.utime(cards, (cards_mtime, cards_mtime))
+        os.utime(zh, (zh_mtime, zh_mtime))
+        return srt, zh
 
+    def test_translation_newer_than_transcription_is_reused(self):
+        # Inclui o caso de correcao manual no .zh.srt depois da traducao: a
+        # queima tem que respeitar a edicao.
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            srt, zh = self._make_files(tmp_dir, cards_mtime=1000, zh_mtime=2000)
+
+            with mock.patch.object(hardsub_service.translation_pipeline, "traduzir_video") as traduzir:
+                result = hardsub_service.ensure_srt_for_lang("zh", str(srt), "pt", translator=None)
+
+            traduzir.assert_not_called()
+            self.assertEqual(result, str(zh))
+
+    def test_translation_older_than_transcription_is_regenerated(self):
+        # Caso real: .zh.srt de uma transcricao antiga (Ollama fora do ar na
+        # transcricao nova) foi queimado em silencio com a traducao velha.
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            srt, zh = self._make_files(tmp_dir, cards_mtime=2000, zh_mtime=1000)
+
+            with mock.patch.object(hardsub_service.translation_pipeline, "traduzir_video") as traduzir:
+                traduzir.return_value = str(zh)
+                hardsub_service.ensure_srt_for_lang("zh", str(srt), "pt", translator=None)
+
+            traduzir.assert_called_once()
+
+    def test_translation_without_cards_sidecar_is_reused(self):
+        # Video transcrito antes do cards.json existir: nao ha como saber se a
+        # traducao e velha, e sem cards nao da pra regenerar pelo pipeline novo.
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            srt, zh = self._make_files(tmp_dir, cards_mtime=2000, zh_mtime=1000)
+            (Path(tmp_dir) / "clip.cards.json").unlink()
             translator = mock.Mock()
-            result = hardsub_service.ensure_srt_for_lang(
-                lang="zh",
-                original_srt_path="C:/videos/clip.srt",
-                source_language="pt",
-                translator=translator,
-            )
+
+            result = hardsub_service.ensure_srt_for_lang("zh", str(srt), "pt", translator=translator)
 
             translator.translate_segments.assert_not_called()
-            self.assertEqual(result, "C:/videos/clip.zh.srt")
+            self.assertEqual(result, str(zh))
 
     def test_missing_translated_srt_is_generated_on_demand(self):
         import tempfile
@@ -177,6 +217,7 @@ class RunHardsubAutoDetectFormatTest(unittest.TestCase):
                 mock.patch("hardsub_service.ffmpeg_utils.ensure_short_srt_path", side_effect=lambda p: p), \
                 mock.patch("hardsub_service.ffmpeg_utils.run_ffmpeg_with_progress"), \
                 mock.patch("hardsub_service.ensure_srt_for_lang", return_value="C:/videos/clip.srt"), \
+                mock.patch("hardsub_service.translated_srt_is_fresh", return_value=True), \
                 mock.patch("hardsub_service.write_ass_for_srt") as mock_write_ass, \
                 mock.patch("hardsub_service.build_ffmpeg_burn_command", return_value=["ffmpeg"]), \
                 mock.patch.object(Path, "exists", return_value=True):
