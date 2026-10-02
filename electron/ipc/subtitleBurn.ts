@@ -13,7 +13,8 @@ import {
   resolveSubtitleForgeRoot,
 } from './subtitle.js'
 
-export type HardsubMode = 'zh' | 'zh-en' | 'zh-original'
+// 'translate-zh' nao queima: so refaz a traducao (botao "Traduzir de novo").
+export type HardsubMode = 'zh' | 'zh-en' | 'zh-original' | 'translate-zh'
 export type HardsubFormat = 'shorts' | 'long'
 type HardsubStatus = 'queued' | 'preparing' | 'processing' | 'completed' | 'error' | 'cancelled'
 

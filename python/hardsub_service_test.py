@@ -314,5 +314,72 @@ class RunHardsubCleanupTest(unittest.TestCase):
             self.assertEqual(list(Path(tmp_dir).glob("*.ass")), [])
 
 
+class RetranslateModeTest(unittest.TestCase):
+    """Botao "Traduzir de novo": ignora o .zh.srt existente (mesmo mais novo
+    que a transcricao) e gera outro, sem queimar o video."""
+
+    def _files(self, tmp_dir):
+        tmp_path = Path(tmp_dir)
+        srt = tmp_path / "clip.srt"
+        srt.write_text("1\n00:00:00,000 --> 00:00:01,000\nola\n", encoding="utf-8")
+        cards = tmp_path / "clip.cards.json"
+        cards.write_text("[]", encoding="utf-8")
+        zh = tmp_path / "clip.zh.srt"
+        zh.write_text("1\n00:00:00,000 --> 00:00:01,000\n旧的\n", encoding="utf-8")
+        os.utime(cards, (1000, 1000))
+        os.utime(zh, (2000, 2000))  # traducao "fresca": a queima normal reaproveitaria
+        return srt, zh
+
+    def test_force_regenerates_even_a_fresh_translation(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            srt, zh = self._files(tmp_dir)
+
+            with mock.patch.object(hardsub_service.translation_pipeline, "traduzir_video") as traduzir:
+                traduzir.return_value = str(zh)
+                hardsub_service.ensure_srt_for_lang("zh", str(srt), "pt", translator=None, force=True)
+
+            traduzir.assert_called_once()
+
+    def test_translate_only_mode_translates_and_never_burns(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            srt, zh = self._files(tmp_dir)
+
+            with mock.patch.object(hardsub_service.translation_pipeline, "traduzir_video") as traduzir, \
+                    mock.patch("hardsub_service.ffmpeg_utils.run_ffmpeg_with_progress") as ffmpeg, \
+                    mock.patch("hardsub_service.ffmpeg_utils.probe_video") as probe, \
+                    mock.patch("hardsub_service.emit") as emit:
+                traduzir.return_value = str(zh)
+                result = hardsub_service.run_hardsub(
+                    video_path=str(Path(tmp_dir) / "clip.mp4"),
+                    original_srt_path=str(srt),
+                    source_language="pt",
+                    mode="translate-zh",
+                    format_profile="shorts",
+                    output_path=None,
+                    video_type="gameplay de terror",
+                )
+
+            traduzir.assert_called_once()
+            self.assertEqual(traduzir.call_args.kwargs["video_type"], "gameplay de terror")
+            ffmpeg.assert_not_called()
+            probe.assert_not_called()
+            self.assertEqual(result, str(zh))
+            done = [c for c in emit.call_args_list if c.args[0] == "done"]
+            self.assertEqual(done[-1].kwargs["outputPath"], str(zh))
+
+    def test_translate_only_mode_is_accepted_by_the_cli(self):
+        with mock.patch.object(sys, "argv", [
+            "hardsub_service.py", "--video", "v.mp4", "--original-srt", "v.srt",
+            "--source-language", "pt", "--mode", "translate-zh", "--format", "shorts",
+        ]):
+            args = hardsub_service.parse_args()
+
+        self.assertEqual(args.mode, "translate-zh")
+
+
 if __name__ == "__main__":
     unittest.main()

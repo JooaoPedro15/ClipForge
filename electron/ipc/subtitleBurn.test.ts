@@ -69,6 +69,19 @@ describe('buildHardsubProcessArgs', () => {
     ])
   })
 
+  it('repassa o modo translate-zh (botao "Traduzir de novo") pro script', () => {
+    const args = buildHardsubProcessArgs('hardsub_service.py', {
+      videoPath: 'C:\video.mp4',
+      originalSrtPath: 'C:\video.srt',
+      sourceLanguage: 'pt',
+      mode: 'translate-zh',
+      format: 'shorts',
+      useCpu: false,
+    })
+
+    expect(args[args.indexOf('--mode') + 1]).toBe('translate-zh')
+  })
+
   it('omite --video-type quando nao ha contexto de video', () => {
     const args = buildHardsubProcessArgs('hardsub_service.py', {
       videoPath: 'C:\video.mp4',

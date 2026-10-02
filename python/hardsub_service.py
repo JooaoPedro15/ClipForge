@@ -15,6 +15,12 @@ MODE_LANGS = {
     "zh-original": ["zh", "original"],
 }
 
+# Modos que so refazem a traducao (botao "Traduzir de novo"), sem queimar:
+# ignoram o .zh.srt existente mesmo que ele seja mais novo que a transcricao.
+RETRANSLATE_MODE_LANGS = {
+    "translate-zh": ["zh"],
+}
+
 # Proporcao da altura do video usada como tamanho de fonte, por preset de formato.
 # "shorts" medido direto no template do Joao (Premiere, sequencia 1080x1920): a legenda
 # amarela do editor usa fonte 70px -> 70/1920 = 0.0365. Mantem a legenda traduzida do
@@ -85,12 +91,13 @@ def ensure_srt_for_lang(
     source_language: str,
     translator: "translate_service.Translator | None",
     video_type: str = "",
+    force: bool = False,
 ) -> str:
     if lang == "original":
         return original_srt_path
 
     candidate_path = translated_srt_candidate_path(original_srt_path, lang)
-    if translated_srt_is_fresh(original_srt_path, lang):
+    if not force and translated_srt_is_fresh(original_srt_path, lang):
         return candidate_path
 
     cards_path = Path(original_srt_path).with_suffix(".cards.json")
@@ -234,6 +241,36 @@ def build_ffmpeg_burn_command(
     ]
 
 
+def retranslate(
+    original_srt_path: str,
+    source_language: str,
+    mode: str,
+    video_type: str,
+    device: str = "cuda",
+    compute_type: str = "default",
+) -> str:
+    """Refaz a traducao ignorando o .srt traduzido que ja existe. Se a
+    validacao reprovar, o .srt anterior fica intacto e o erro sobe — nunca
+    troca uma traducao valida por uma reprovada."""
+    emit("status", "preparing", "starting", "Preparando nova traducao...", progress=5)
+    ffmpeg_utils.assert_safe_path_length(original_srt_path, "srt original")
+    translator = translate_service.Translator(device=device, compute_type=compute_type)
+
+    srt_path = original_srt_path
+    for lang in RETRANSLATE_MODE_LANGS[mode]:
+        emit(
+            "status",
+            "processing",
+            "translating",
+            f"Traduzindo de novo para {lang} — com o modelo de melhor qualidade leva alguns minutos...",
+            progress=20,
+        )
+        srt_path = ensure_srt_for_lang(lang, original_srt_path, source_language, translator, video_type, force=True)
+
+    emit("done", "completed", "done", "Nova traducao gerada.", progress=100, outputPath=srt_path)
+    return srt_path
+
+
 def run_hardsub(
     video_path: str,
     original_srt_path: str,
@@ -245,6 +282,9 @@ def run_hardsub(
     compute_type: str = "default",
     video_type: str = "",
 ) -> str:
+    if mode in RETRANSLATE_MODE_LANGS:
+        return retranslate(original_srt_path, source_language, mode, video_type, device, compute_type)
+
     emit("status", "preparing", "starting", "Preparando queima de legenda...", progress=5)
 
     for path, label in [(video_path, "video"), (original_srt_path, "srt original")]:
@@ -333,7 +373,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--video", required=True)
     parser.add_argument("--original-srt", required=True)
     parser.add_argument("--source-language", required=True)
-    parser.add_argument("--mode", required=True, choices=sorted(MODE_LANGS.keys()))
+    parser.add_argument("--mode", required=True, choices=sorted([*MODE_LANGS, *RETRANSLATE_MODE_LANGS]))
     parser.add_argument("--format", required=True, choices=sorted(FONT_SCALE.keys()))
     parser.add_argument("--output", default=None)
     parser.add_argument("--cpu", action="store_true")

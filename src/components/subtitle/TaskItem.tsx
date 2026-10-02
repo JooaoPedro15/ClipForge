@@ -1,4 +1,4 @@
-import { FolderSearch, LoaderCircle, RotateCcw, Square, TriangleAlert } from 'lucide-react'
+import { FolderSearch, Languages, LoaderCircle, RotateCcw, Square, TriangleAlert } from 'lucide-react'
 
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
@@ -47,6 +47,54 @@ function resolveTone(status: SubtitleTask['status']) {
     default:
       return 'neutral'
   }
+}
+
+// A queima reaproveita o .zh.srt quando ele e mais novo que a transcricao
+// (pra respeitar correcao manual). Esse botao e o jeito de pedir uma
+// traducao nova mesmo assim — sem queimar, pra dar pra revisar antes.
+function RetranslateControl({
+  job,
+  onOpenOutput,
+  onRetranslate,
+}: {
+  job: SubtitleTask['hardsubJobs']['translate-zh']
+  onOpenOutput: (outputPath: string | null) => void
+  onRetranslate: () => void
+}) {
+  const isRunning = Boolean(job && job.status !== 'completed' && job.status !== 'error' && job.status !== 'cancelled')
+
+  return (
+    <div className="space-y-2 pt-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          disabled={isRunning}
+          leadingIcon={isRunning ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Languages className="h-4 w-4" />}
+          onClick={onRetranslate}
+          variant="ghost"
+        >
+          {isRunning && job ? `Traduzindo de novo (${job.progress ?? 0}%)` : 'Traduzir de novo (chinês)'}
+        </Button>
+        {job?.status === 'completed' && job.outputPath ? (
+          <Button leadingIcon={<FolderSearch className="h-4 w-4" />} onClick={() => onOpenOutput(job.outputPath)} variant="ghost">
+            Abrir .zh.srt
+          </Button>
+        ) : null}
+      </div>
+      <p className="text-xs text-text-muted">
+        {isRunning && job?.message
+          ? job.message
+          : job?.status === 'completed'
+            ? 'Tradução nova pronta. Confira o .zh.srt e clique em "Só chinês" pra queimar.'
+            : 'Ignora o .zh.srt atual e gera outro. Não queima o vídeo — dá pra revisar antes.'}
+      </p>
+      {job?.status === 'error' ? (
+        <span className="inline-flex items-start gap-1 whitespace-pre-line text-xs text-status-yellow">
+          <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          {`${job.error}\nO .zh.srt anterior continua intacto.`}
+        </span>
+      ) : null}
+    </div>
+  )
 }
 
 export function TaskItem({ task, onCancel, onOpenOutput, onRetry, onBurn }: TaskItemProps) {
@@ -184,6 +232,11 @@ export function TaskItem({ task, onCancel, onOpenOutput, onRetry, onBurn }: Task
               )
             })}
           </div>
+          <RetranslateControl
+            job={task.hardsubJobs['translate-zh']}
+            onOpenOutput={onOpenOutput}
+            onRetranslate={() => onBurn(task.id, 'translate-zh')}
+          />
         </div>
       ) : null}
 
