@@ -9,10 +9,15 @@ from typing import Any
 from urllib import error, parse, request
 
 # LLM local via Ollama (http://localhost:11434). Custo zero, offline, roda na
-# GPU do proprio usuario. Modelo padrao: Qwen2.5 7B instruct — forte em
-# chines e cabe em 8GB de VRAM quantizado (Q4_K_M ~4.7GB).
+# GPU do proprio usuario. Modelo padrao: Qwen2.5 14B instruct (Q4_K_M ~9GB).
+# Numa placa de 8GB ele nao cabe inteiro (~6GB na GPU, resto na RAM) e leva
+# ~2x mais que o 7B, mas no video auditado o 7B trocava personagem e
+# invertia sentido onde o 14B acertou — pra legenda que vai pro publico do
+# Bilibili, qualidade vale mais que tempo. O 7B continua disponivel via
+# CLIPFORGE_OLLAMA_MODEL=qwen2.5:7b-instruct.
 DEFAULT_BASE_URL = "http://127.0.0.1:11434"
-DEFAULT_MODEL = "qwen2.5:7b-instruct"
+DEFAULT_MODEL = "qwen2.5:14b-instruct"
+FAST_MODEL = "qwen2.5:7b-instruct"
 DEFAULT_TIMEOUT_SECONDS = 600
 # Janela de contexto: a transcricao inteira + glossario + prompt precisa caber
 # de uma vez. 8k tokens cobre folgado um corte vertical (~30-150 cards).

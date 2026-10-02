@@ -36,7 +36,7 @@ A queima so reaproveita um `.zh.srt` existente se ele for **mais novo que o `car
 
 Arquivos que aparecem ao lado do video: `.srt` (legenda original), `.cards.json` (tempos e confianca do Whisper, usado pela traducao), `.zh.srt` / `.en.srt` (traducoes), `.zh.REJEITADO.srt` (rascunho de traducao reprovada na validacao, so pra inspecao) e `.hardsub.<modo>.mp4` (video final).
 
-- **Chines** usa um **LLM local via Ollama** (padrao `qwen2.5:7b-instruct`, custo zero, offline, ~5,5GB de VRAM). Sem o Ollama rodando, a traducao pro chines falha com erro claro — nao cai em silencio no NLLB.
+- **Chines** usa um **LLM local via Ollama** (padrao `qwen2.5:14b-instruct`, custo zero, offline). Numa placa de 8GB o 14B roda parte na GPU e parte na RAM: um corte de ~40s leva ~7 min pra traduzir e o PC fica pesado nesse tempo. O `qwen2.5:7b-instruct` e ~2x mais rapido mas erra bem mais (troca personagem, inverte sentido) — use so se precisar de velocidade, com `CLIPFORGE_OLLAMA_MODEL=qwen2.5:7b-instruct`. Sem o Ollama rodando, a traducao pro chines falha com erro claro — nao cai em silencio no NLLB.
 - **Ingles** usa o modelo NLLB (ctranslate2), que tambem pode ser forcado pro chines com `CLIPFORGE_TRANSLATION_ENGINE=nllb` (qualidade bem menor).
 
 #### Chines: pipeline em dois estagios (LLM local)
@@ -59,10 +59,10 @@ O campo **"Tipo de video"** tambem e repassado pela queima (hardsub), pra legend
 #### Instalando o Ollama
 
 ```bash
-ollama pull qwen2.5:7b-instruct
+ollama pull qwen2.5:14b-instruct
 ```
 
-Se o servidor local nao estiver rodando, o app sobe `ollama serve` sozinho em segundo plano (procura o executavel em `CLIPFORGE_OLLAMA_EXE`, no PATH, em `D:\Ollama\app` e na pasta padrao do instalador). Variaveis: `CLIPFORGE_OLLAMA_URL` (padrao `http://127.0.0.1:11434`), `CLIPFORGE_OLLAMA_MODEL` (padrao `qwen2.5:7b-instruct`). Pra guardar os modelos fora do `C:\Users\<usuario>\.ollama`, defina `OLLAMA_MODELS` (ex.: `D:\Projetos\subtitle-forge\models\ollama`) antes de subir o servidor.
+Se o servidor local nao estiver rodando, o app sobe `ollama serve` sozinho em segundo plano (procura o executavel em `CLIPFORGE_OLLAMA_EXE`, no PATH, em `D:\Ollama\app` e na pasta padrao do instalador). Variaveis: `CLIPFORGE_OLLAMA_URL` (padrao `http://127.0.0.1:11434`), `CLIPFORGE_OLLAMA_MODEL` (padrao `qwen2.5:14b-instruct`). Pra guardar os modelos fora do `C:\Users\<usuario>\.ollama`, defina `OLLAMA_MODELS` (ex.: `D:\Projetos\subtitle-forge\models\ollama`) antes de subir o servidor.
 
 #### Ingles / fallback: NLLB
 
@@ -121,7 +121,7 @@ Variaveis opcionais:
 
 - `CLIPFORGE_SUBTITLE_FORGE_PATH`: caminho do ambiente Python usado pelo SubtitleForge.
 - `CLIPFORGE_NLLB_MODEL_DIR`: caminho do modelo NLLB ja convertido pra ctranslate2 (ver secao "Traducao de legendas" acima). Padrao: `D:\Projetos\subtitle-forge\models\nllb-200-distilled-600M-ct2`.
-- `CLIPFORGE_OLLAMA_URL` / `CLIPFORGE_OLLAMA_MODEL`: servidor e modelo do LLM local usado na traducao pro chines. Padrao: `http://127.0.0.1:11434` / `qwen2.5:7b-instruct`.
+- `CLIPFORGE_OLLAMA_URL` / `CLIPFORGE_OLLAMA_MODEL`: servidor e modelo do LLM local usado na traducao pro chines. Padrao: `http://127.0.0.1:11434` / `qwen2.5:14b-instruct`.
 - `CLIPFORGE_TRANSLATION_ENGINE`: `auto` (padrao, LLM pro chines), `nllb` (forca o NLLB tambem pro chines).
 - `CLIPFORGE_CLIP_SPLITTER_PATH`: caminho do projeto externo usado pelo Pre-Editor.
 - `CLIPFORGE_TEMP`: pasta temporaria curta usada pelo Pre-Editor (ex.: `D:\cs_tmp`). Evita [WinError 206] quando o input/output esta em caminho profundo. Se nao definido, o app tenta `<drive>:\cs_tmp` e cai para a pasta do video como fallback.
