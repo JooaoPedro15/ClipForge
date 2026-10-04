@@ -108,6 +108,13 @@ class TraduzirVideoTest(unittest.TestCase):
 class TraduzirCardsLlmTest(unittest.TestCase):
     """Caminho LLM: estagio 1 + estagio 2, SRT montado dos grupos."""
 
+    def setUp(self):
+        # Estes testes contam as chamadas ao modelo uma a uma; a conferencia de
+        # sentido (2 chamadas a mais por frase) tem teste proprio abaixo.
+        env_patch = mock.patch.dict("os.environ", {"CLIPFORGE_MEANING_CHECK": "0"})
+        env_patch.start()
+        self.addCleanup(env_patch.stop)
+
     CARDS = [
         {"i": 0, "start": 0.0, "end": 0.6, "text": "todo mundo rejeita", "segment_id": 0, "avg_logprob": -0.1},
         {"i": 1, "start": 0.6, "end": 1.9, "text": "o Edgar, o Bernardo,", "segment_id": 0, "avg_logprob": -0.1},
@@ -232,6 +239,47 @@ class TraduzirCardsLlmTest(unittest.TestCase):
             )
 
             client.chat_json.assert_not_called()
+
+
+class ReviewFileTest(unittest.TestCase):
+    CARDS = TraduzirCardsLlmTest.CARDS
+    SHEET = TraduzirCardsLlmTest.SHEET
+
+    def test_review_file_is_written_next_to_the_srt_with_back_translation(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            out = tmp_path / "video.zh.srt"
+            client = mock.Mock()
+            client.is_available.return_value = True
+            client.chat_json.side_effect = [
+                self.SHEET,
+                {"id": 0, "zh": "大家都拒绝埃德加"}, {"pt": "todos recusam Edgar"},
+                {"id": 1, "zh": "伯纳多和莱诺拉结婚了"}, {"pt": "Bernardo e Lenora se casaram"},
+            ]
+
+            with mock.patch.dict("os.environ", {"CLIPFORGE_MEANING_CHECK": "1"}):
+                translation_pipeline.traduzir_cards(
+                    self.CARDS, mock.Mock(), "pt", "zh", str(out), str(tmp_path / "g.json"), llm_client=client
+                )
+
+            review = json.loads((tmp_path / "video.zh.review.json").read_text(encoding="utf-8"))
+            self.assertEqual([r["back_pt"] for r in review["rows"]], ["todos recusam Edgar", "Bernardo e Lenora se casaram"])
+            self.assertEqual(review["rows"][1]["pt"], "se casou com a Lenora.")
+
+    def test_stale_review_is_removed_when_nllb_path_writes_the_srt(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            out = tmp_path / "video.zh.srt"
+            stale = tmp_path / "video.zh.review.json"
+            stale.write_text("{}", encoding="utf-8")
+            translator = mock.Mock()
+            translator.translate_segments.side_effect = [["好", "好"]]
+
+            translation_pipeline.traduzir_cards(
+                self.CARDS, translator, "pt", "zh", str(out), str(tmp_path / "g.json"), engine="nllb"
+            )
+
+            self.assertFalse(stale.exists())
 
 
 if __name__ == "__main__":

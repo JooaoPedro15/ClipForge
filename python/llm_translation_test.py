@@ -417,5 +417,75 @@ class MarriageVerbRetryTest(unittest.TestCase):
         self.assertEqual(groups[0]["zh"], "莱诺拉和伊莎贝尔结婚了")
 
 
+class MeaningCheckInStage2Test(unittest.TestCase):
+    """Retraducao as cegas + checagem de negacao dentro do loop do estagio 2."""
+
+    def _client(self, responses):
+        client = mock.Mock()
+        client.chat_json.side_effect = responses
+        return client
+
+    def test_back_translation_is_attached_to_every_part_of_the_sentence(self):
+        cards = [_card(0, 0.0, 2.0, "o Bernardo morre.")]
+        client = self._client([{"zh": "伯纳多死了"}, {"pt": "Bernardo morreu"}])
+
+        groups = llm_translation.translate_with_llm(cards, SHEET, client, check_meaning=True)
+
+        self.assertEqual(groups[0]["back_pt"], "Bernardo morreu")
+        self.assertEqual(groups[0]["review_note"], "")
+        self.assertEqual(groups[0]["sentence_text"], "o Bernardo morre.")
+        self.assertEqual(groups[0]["sentence_id"], 0)
+
+    def test_lost_negation_goes_back_to_the_model(self):
+        # Caso real: "faltou o Bernardo rejeitar" -> "伯纳多还拒绝了埃德加"
+        # (retraducao: "Bernardo ainda recusou Edgar").
+        cards = [_card(0, 0.0, 2.5, "faltou o Bernardo rejeitar o Edgar.")]
+        client = self._client([
+            {"zh": "伯纳多还拒绝了埃德加"},
+            {"pt": "Bernardo ainda recusou Edgar"},
+            {"zh": "就差伯纳多没拒绝埃德加了"},
+            {"pt": "só falta Bernardo não ter recusado Edgar"},
+        ])
+
+        groups = llm_translation.translate_with_llm(cards, SHEET, client, check_meaning=True)
+
+        self.assertEqual(groups[0]["zh"], "就差伯纳多没拒绝埃德加了")
+        retry_prompt = client.chat_json.call_args_list[2].kwargs["user"]
+        self.assertIn("Bernardo ainda recusou Edgar", retry_prompt)
+        self.assertIn("faltou", retry_prompt)
+
+    def test_line_still_wrong_after_all_attempts_is_marked_for_review_not_rejected(self):
+        cards = [_card(0, 0.0, 2.5, "faltou o Bernardo rejeitar o Edgar.")]
+        responses = []
+        for _ in llm_translation.ATTEMPT_TEMPERATURES:
+            responses += [{"zh": "伯纳多拒绝了埃德加"}, {"pt": "Bernardo recusou Edgar"}]
+        client = self._client(responses)
+
+        groups = llm_translation.translate_with_llm(cards, SHEET, client, check_meaning=True)
+
+        self.assertEqual(groups[0]["zh"], "伯纳多拒绝了埃德加")
+        self.assertEqual(groups[0]["back_pt"], "Bernardo recusou Edgar")
+        self.assertIn("faltou", groups[0]["review_note"])
+        self.assertEqual(groups[0]["flag"], "")  # nao reprova o video: vai pra revisao
+
+    def test_line_rejected_by_rules_still_gets_back_translated_for_review(self):
+        cards = [_card(0, 0.0, 2.0, "frase longa.")]
+        responses = [{"zh": "这" * 25}] * len(llm_translation.ATTEMPT_TEMPERATURES) + [{"pt": "isto isto isto"}]
+        client = self._client(responses)
+
+        groups = llm_translation.translate_with_llm(cards, SHEET, client, check_meaning=True)
+
+        self.assertEqual(groups[0]["back_pt"], "isto isto isto")
+
+    def test_without_check_meaning_no_extra_calls(self):
+        cards = [_card(0, 0.0, 2.0, "o Bernardo morre.")]
+        client = self._client([{"zh": "伯纳多死了"}])
+
+        groups = llm_translation.translate_with_llm(cards, SHEET, client)
+
+        self.assertEqual(client.chat_json.call_count, 1)
+        self.assertEqual(groups[0]["back_pt"], "")
+
+
 if __name__ == "__main__":
     unittest.main()

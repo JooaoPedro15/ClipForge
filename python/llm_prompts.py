@@ -118,6 +118,18 @@ Use ，。？！ sparingly — subtitles usually carry no terminal period. Never
 Output raw JSON only. No markdown fence, no commentary."""
 
 
+# Conferencia de sentido (meaning_check.back_translate): retraducao literal
+# zh -> pt-BR feita SEM ver a fala original, pra o criador (que nao le chines)
+# ver o que a legenda realmente diz.
+PROMPT_RETRADUCAO = """You check Chinese subtitles for a Brazilian creator who does not read Chinese.
+
+Translate the Simplified Chinese subtitle line into Brazilian Portuguese AS LITERALLY AS POSSIBLE, so he can see exactly what the Chinese says. Do NOT improve it, do NOT fix it, do NOT guess what it was meant to say — if the Chinese says something odd or wrong, your Portuguese must say the same odd or wrong thing. Keep negations, who does what to whom, and every word that carries meaning.
+
+Character names: use the Portuguese name from the mapping you receive.
+
+Output a JSON object: {"pt": "<literal Brazilian Portuguese>"}"""
+
+
 def _dumps(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, indent=1)
 

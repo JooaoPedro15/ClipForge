@@ -7,6 +7,7 @@ from typing import Any
 import glossary_service
 import llm_service
 import llm_translation
+import review_store
 import sentence_grouping
 import srt_utils
 import subtitle_validation
@@ -27,6 +28,13 @@ LLM_TARGET_LANGS = {"zh"}
 
 def resolve_engine(engine: str | None) -> str:
     return engine or os.environ.get("CLIPFORGE_TRANSLATION_ENGINE", ENGINE_AUTO)
+
+
+def meaning_check_enabled() -> bool:
+    """Retraducao as cegas + checagem de negacao (meaning_check). Ligada por
+    padrao; CLIPFORGE_MEANING_CHECK=0 desliga (traducao ~2x mais rapida, sem
+    retraducao na tela de revisao)."""
+    return os.environ.get("CLIPFORGE_MEANING_CHECK", "1").strip() not in ("0", "false", "no", "")
 
 
 def _translate_with_nllb(
@@ -74,7 +82,7 @@ def _translate_with_llm(
     if not cards:
         return [], {"characters": [], "terms": []}
     sheet = glossary_service.build_video_glossary_llm(cards, channel_glossary, video_type, client)
-    groups = llm_translation.translate_with_llm(cards, sheet, client)
+    groups = llm_translation.translate_with_llm(cards, sheet, client, check_meaning=meaning_check_enabled())
     return groups, sheet
 
 
@@ -157,6 +165,15 @@ def traduzir_cards(
     glossary_service.merge_into_channel_glossary(video_glossary, channel_glossary_path)
 
     srt_utils.write_srt(entries, output_path)
+
+    # Arquivo da tela "Revisar traducao" (so no caminho LLM). Um review velho
+    # de traducao anterior e apagado pra nao mostrar linhas que nao existem mais.
+    review_path = review_store.review_path_for(output_path)
+    review = review_store.build_review(groups, target_lang)
+    if review is not None:
+        review_store.save_review(review, review_path)
+    else:
+        Path(review_path).unlink(missing_ok=True)
     return output_path
 
 

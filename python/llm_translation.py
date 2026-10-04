@@ -20,6 +20,7 @@ from typing import Any
 
 import glossary_service
 import llm_prompts
+import meaning_check
 import subtitle_validation
 import translation_postprocess
 
@@ -233,15 +234,18 @@ def _translate_sentence(
     max_chars: int,
     min_duration: float,
     previous_connective: str = "",
-) -> tuple[dict[str, Any], list[tuple[list, str]]]:
-    """Traduz UMA frase. Devolve (linha do modelo, partes [(cards, zh)]).
-    Resposta rejeitada (id errado, vazia, latim, longa demais sem divisao
-    possivel, conectivo repetido) volta pro modelo com o motivo e um pouco
-    de temperatura."""
+    check_meaning: bool = False,
+) -> tuple[dict[str, Any], list[tuple[list, str]], dict[str, str]]:
+    """Traduz UMA frase. Devolve (linha do modelo, partes [(cards, zh)],
+    revisao {"back_pt", "note"}). Resposta rejeitada (id errado, vazia,
+    latim, longa demais sem divisao possivel, conectivo repetido, negacao
+    perdida na retraducao) volta pro modelo com o motivo e um pouco de
+    temperatura."""
     system, user = llm_prompts.build_translation_messages(payload, sheet, target, previous_lines, max_chars=max_chars)
     last_error = "sem resposta"
     line = None
-    candidates: list[tuple[dict[str, Any], str]] = []
+    # (linha do modelo, zh, retraducao, problema de sentido)
+    candidates: list[tuple[dict[str, Any], str, str, str]] = []
     for temperature in ATTEMPT_TEMPERATURES:
         line = _normalize_line(client.chat_json(system=system, user=user, temperature=temperature))
         if line is None:
@@ -257,13 +261,24 @@ def _translate_sentence(
             swap = subtitle_validation.character_swap_error(zh, target["text"], sheet)
             marriage = subtitle_validation.marriage_object_error(zh, sheet)
             parts = _fit_line(zh, bucket, max_chars, min_duration)
-            if parts is not None and not _has_latin(zh) and not repeats_connective and not swap and not marriage:
-                return line, parts
+            passes_rules = parts is not None and not _has_latin(zh) and not repeats_connective and not swap and not marriage
+            back_pt, meaning_problem = "", ""
+            if passes_rules and check_meaning:
+                back_pt = meaning_check.back_translate(zh, sheet, client)
+                meaning_problem = meaning_check.negation_mismatch(target["text"], back_pt) if back_pt else ""
+            if passes_rules and not meaning_problem:
+                return line, parts, {"back_pt": back_pt, "note": ""}
             # Guarda a tentativa: se nenhuma sair limpa, a melhor delas ainda
-            # e entregue (a validacao reprova apontando o grupo, ou o
-            # conectivo repetido cai fora no final).
-            candidates.append((line, zh))
-            if _has_latin(zh):
+            # e entregue (a validacao reprova apontando o grupo, o conectivo
+            # repetido cai fora no final, ou a linha vai marcada pra revisao).
+            candidates.append((line, zh, back_pt, meaning_problem))
+            if meaning_problem:
+                last_error = (
+                    f"meaning check failed: your line, translated back literally, says '{back_pt}', "
+                    f"but the sentence says '{target['text']}' ({meaning_problem}). "
+                    f"Keep the negation / 'not yet' / 'not X, but Y' of the source"
+                )
+            elif _has_latin(zh):
                 # Nome (ou palavra solta) que ficou em latim: o modelo tem a
                 # grafia no glossario, so precisa ser lembrado.
                 last_error = f"Latin script left in zh ('{zh}'); use only Chinese characters, names from the reference sheet"
@@ -289,12 +304,13 @@ def _translate_sentence(
     if candidates:
         # Personagem trocado e o pior defeito (a legenda conta outra historia);
         # depois letra latina, depois linha longa demais, so entao o tamanho.
-        line, zh = min(
+        line, zh, back_pt, meaning_problem = min(
             candidates,
             key=lambda c: (
                 bool(subtitle_validation.character_swap_error(c[1], target["text"], sheet)),
                 _has_latin(c[1]),
                 bool(subtitle_validation.marriage_object_error(c[1], sheet)),
+                bool(c[3]),
                 _fit_line(c[1], bucket, max_chars, min_duration) is None,
                 len(c[1]),
             ),
@@ -302,7 +318,13 @@ def _translate_sentence(
         if previous_connective and _opening_connective(zh) == previous_connective:
             # O modelo insistiu no mesmo conectivo: tira ele e reencaixa.
             zh = _drop_opening_connective(zh)
-        return line, _fit_line(zh, bucket, max_chars, min_duration) or [(bucket, zh)]
+        if check_meaning and not back_pt:
+            # Linha reprovada nas regras antes da retraducao: retraduz mesmo
+            # assim, pra tela de revisao mostrar o que ela diz.
+            back_pt = meaning_check.back_translate(zh, sheet, client)
+            meaning_problem = meaning_check.negation_mismatch(target["text"], back_pt) if back_pt else ""
+        parts = _fit_line(zh, bucket, max_chars, min_duration) or [(bucket, zh)]
+        return line, parts, {"back_pt": back_pt, "note": meaning_problem}
     raise LLMTranslationError(f"estagio 2: {last_error} (frase {target['id']}: '{target['text']}')")
 
 
@@ -416,7 +438,12 @@ def translate_with_llm(
     client: Any,
     max_chars: int = 20,
     min_duration: float = MIN_SENTENCE_DURATION,
+    check_meaning: bool = False,
 ) -> list[dict[str, Any]]:
+    """Cada grupo devolvido carrega tambem `sentence_id`/`sentence_text` (a
+    frase em portugues de onde saiu — uma frase longa vira 2+ grupos) e,
+    com check_meaning, `back_pt` (retraducao literal da frase inteira) e
+    `review_note` (suspeita de sentido diferente, pra tela de revisao)."""
     by_index = {c["i"]: c for c in cards}
     sentences = propose_sentences(cards, min_duration=min_duration)
     unclear = set(sheet.get("unclear", []))
@@ -440,13 +467,19 @@ def translate_with_llm(
     previous_connective = ""
     for sentence, target in zip(sentences, payload):
         bucket = [by_index[i] for i in sentence["cards"]]
-        line, parts = _translate_sentence(
-            target, payload, previous_lines, sheet, client, bucket, max_chars, min_duration, previous_connective
+        line, parts, review = _translate_sentence(
+            target, payload, previous_lines, sheet, client, bucket, max_chars, min_duration, previous_connective,
+            check_meaning=check_meaning,
         )
         previous_connective = _opening_connective(parts[0][1])
         previous_lines.append({"id": sentence["id"], "zh": "".join(zh for _, zh in parts)})
         for part_bucket, zh in parts:
-            groups.append(_build_group(part_bucket, zh, line["flag"]))
+            group = _build_group(part_bucket, zh, line["flag"])
+            group["sentence_id"] = sentence["id"]
+            group["sentence_text"] = sentence["text"]
+            group["back_pt"] = review["back_pt"]
+            group["review_note"] = review["note"]
+            groups.append(group)
 
     for group in groups:
         if not group["flag"]:
