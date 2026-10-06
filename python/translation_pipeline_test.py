@@ -155,7 +155,7 @@ class TraduzirCardsLlmTest(unittest.TestCase):
 
             content = out.read_text(encoding="utf-8")
             self.assertEqual(content.count(" --> "), 2)
-            self.assertIn("00:00:00,000 --> 00:00:01,899\n大家都拒绝埃德加", content)
+            self.assertIn("00:00:00,000 --> 00:00:01,900\n大家都拒绝埃德加", content)
             translator.translate_segments.assert_not_called()
             canal = json.loads(glossary_path.read_text(encoding="utf-8"))
             self.assertEqual({c["source_name"] for c in canal["characters"]}, {"Edgar", "Bernardo", "Lenora"})

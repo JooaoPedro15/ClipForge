@@ -55,9 +55,9 @@ SEGMENTS = [
 
 NATURAL_SRT = (
     "1\n00:00:00,000 --> 00:00:04,500\nEntão, ela falou que não ia voltar pra\ncasa hoje de jeito nenhum.\n\n"
-    "2\n00:00:05,000 --> 00:00:09,099\naí o cara chegou correndo e gritou\n\n"
-    "3\n00:00:09,199 --> 00:00:14,500\nque a casa tava pegando fogo de verdade mano\n\n"
-    "4\n00:00:15,000 --> 00:00:16,199\nValeu, galera!\n"
+    "2\n00:00:05,000 --> 00:00:09,100\naí o cara chegou correndo e gritou\n\n"
+    "3\n00:00:09,200 --> 00:00:14,500\nque a casa tava pegando fogo de verdade mano\n\n"
+    "4\n00:00:15,000 --> 00:00:16,200\nValeu, galera!\n"
 )
 NATURAL_CARDS = [
     {"i": 0, "start": 0.0, "end": 4.5, "text": SHORT_TEXT, "segment_id": 0, "avg_logprob": -0.1},
@@ -67,14 +67,14 @@ NATURAL_CARDS = [
 ]
 WORD_GROUP_SRT = (
     "1\n00:00:00,000 --> 00:00:01,000\nENTAO, ELA FALOU\n\n"
-    "2\n00:00:01,050 --> 00:00:02,049\nQUE NAO IA\n\n"
+    "2\n00:00:01,050 --> 00:00:02,050\nQUE NAO IA\n\n"
     "3\n00:00:02,100 --> 00:00:03,100\nVOLTAR PRA CASA\n\n"
-    "4\n00:00:03,149 --> 00:00:04,500\nHOJE DE JEITO NENHUM.\n\n"
+    "4\n00:00:03,150 --> 00:00:04,500\nHOJE DE JEITO NENHUM.\n\n"
     "5\n00:00:05,000 --> 00:00:06,700\nAI O CARA\n\n"
-    "6\n00:00:06,799 --> 00:00:07,900\nCHEGOU CORRENDO\n\n"
-    "7\n00:00:08,000 --> 00:00:09,099\nE GRITOU\n\n"
-    "8\n00:00:09,199 --> 00:00:10,900\nQUE A CASA\n\n"
-    "9\n00:00:11,000 --> 00:00:12,699\nTAVA PEGANDO FOGO\n\n"
+    "6\n00:00:06,800 --> 00:00:07,900\nCHEGOU CORRENDO\n\n"
+    "7\n00:00:08,000 --> 00:00:09,100\nE GRITOU\n\n"
+    "8\n00:00:09,200 --> 00:00:10,900\nQUE A CASA\n\n"
+    "9\n00:00:11,000 --> 00:00:12,700\nTAVA PEGANDO FOGO\n\n"
     "10\n00:00:12,800 --> 00:00:14,500\nDE VERDADE MANO\n"
 )
 WORD_GROUP_CARDS = [

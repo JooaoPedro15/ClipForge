@@ -30,6 +30,13 @@ class FormatTimestampTest(unittest.TestCase):
         self.assertEqual(text_utils.format_timestamp(3661.5), "01:01:01,500")
         self.assertEqual(text_utils.format_timestamp(0.0), "00:00:00,000")
 
+    def test_rounds_float_noise_instead_of_truncating(self):
+        self.assertEqual(text_utils.format_timestamp(9.1), "00:00:09,100")
+        self.assertEqual(text_utils.format_timestamp(16.2), "00:00:16,200")
+        self.assertEqual(text_utils.format_timestamp(2.05), "00:00:02,050")
+        self.assertEqual(text_utils.format_timestamp(59.9996), "00:01:00,000")
+        self.assertEqual(text_utils.format_timestamp(-0.2), "00:00:00,000")
+
 
 class WeakWordsTest(unittest.TestCase):
     def test_contains_connectives_that_should_not_close_a_subtitle(self):

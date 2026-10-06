@@ -1,6 +1,5 @@
 """Helpers de texto puros (sem Whisper, sem arquivo) usados por varios servicos."""
 
-import math
 import re
 import unicodedata
 
@@ -25,12 +24,14 @@ WEAK_TRAILING_WORDS = {
 }
 
 
-# Converte segundos para o formato padrao do arquivo .srt.
+# Converte segundos para o formato padrao do arquivo .srt. Conta em milissegundos
+# inteiros: floor em float transformava 9.1s em 09,099.
 def format_timestamp(seconds: float) -> str:
-    hours, remainder = divmod(seconds, 3600)
-    minutes, secs = divmod(remainder, 60)
-    milliseconds = math.floor((secs % 1) * 1000)
-    return f"{int(hours):02}:{int(minutes):02}:{int(secs):02},{milliseconds:03}"
+    total_ms = max(0, round(seconds * 1000))
+    hours, remainder = divmod(total_ms, 3_600_000)
+    minutes, remainder = divmod(remainder, 60_000)
+    secs, milliseconds = divmod(remainder, 1000)
+    return f"{hours:02}:{minutes:02}:{secs:02},{milliseconds:03}"
 
 
 def remove_accents(text: str) -> str:
