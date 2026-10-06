@@ -11,7 +11,9 @@
     "electron:dev": "concurrently -k -n vite,tsc,electron \"vite\" \"tsc -p tsconfig.electron.json --watch --preserveWatchOutput\" \"wait-on http://localhost:5173 dist-electron/electron/main.js && electron .\"",
     "electron:build": "vite build && tsc -p tsconfig.electron.json",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:py": "node scripts/run-python-tests.mjs",
+    "test:all": "vitest run && node scripts/run-python-tests.mjs"
   },
   "keywords": [],
   "author": "",

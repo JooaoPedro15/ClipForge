@@ -1,0 +1,10 @@
+# Dependencias Python do Careca Studio (venv do SubtitleForge).
+# Instalar: D:\Projetos\subtitle-forge\.venv\Scripts\python.exe -m pip install -r python/requirements.txt
+faster-whisper==1.2.1
+ctranslate2==4.7.1
+sentencepiece==0.2.2
+# DLLs CUDA da GPU (o Electron poe as pastas bin delas no PATH do processo Python)
+nvidia-cublas-cu12==12.9.2.10
+nvidia-cudnn-cu12==9.20.0.48
+nvidia-cuda-runtime-cu12==12.9.79
+nvidia-cuda-nvrtc-cu12==12.9.86
