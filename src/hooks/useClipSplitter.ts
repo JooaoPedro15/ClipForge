@@ -4,8 +4,6 @@ import { useEffect } from 'react'
 import { getFileName } from '@/lib/utils'
 import { useAppStore } from '@/store/appStore'
 import type {
-  ClipFeedbackLabel,
-  ClipSplitterClip,
   ClipSplitterDoneEvent,
   ClipSplitterErrorEvent,
   ClipSplitterOptions,
@@ -183,38 +181,6 @@ export function useClipSplitter() {
       // Reusa o mesmo video como fonte e inicia um novo job.
       setSourcePath(sourcePath)
       return startSplit(sourcePath)
-    },
-    saveClipFeedback: async (taskId: string, clip: ClipSplitterClip, label: ClipFeedbackLabel | null) => {
-      // Persiste o feedback manual para alimentar cortes futuros com memoria local.
-      if (!clipForgeApi?.clipSplitter?.saveFeedback) {
-        return {
-          ok: false,
-          message: 'A API de feedback do Pre-Editor nao esta disponivel nesta execucao.',
-        }
-      }
-
-      try {
-        const saved = await clipForgeApi.clipSplitter.saveFeedback(clip, label)
-        if (!saved) {
-          return {
-            ok: false,
-            message: 'Nao foi possivel salvar o feedback deste clipe.',
-          }
-        }
-
-        // Atualiza a UI imediatamente sem esperar um novo ciclo de sincronizacao.
-        useAppStore.getState().setClipFeedbackForTask(taskId, clip.clipId, label)
-        return {
-          ok: true,
-          message: null,
-        }
-      } catch (error) {
-        console.error('[clipforge] falha ao salvar feedback do clip', error)
-        return {
-          ok: false,
-          message: 'Falha ao salvar feedback local do clipe.',
-        }
-      }
     },
   }
 }

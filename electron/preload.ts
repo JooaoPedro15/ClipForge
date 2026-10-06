@@ -71,12 +71,10 @@ const api = {
     },
   },
   clipSplitter: {
-    // Namespace dedicado ao workflow de corte e feedback de clipes.
+    // Namespace dedicado ao workflow do Pre-Editor.
     process: (sourcePath: string, options: Record<string, unknown>) =>
       ipcRenderer.invoke('clipSplitter:process', sourcePath, options),
     cancel: (taskId: string) => ipcRenderer.invoke('clipSplitter:cancel', taskId),
-    saveFeedback: (clip: Record<string, unknown>, label: string | null) =>
-      ipcRenderer.invoke('clipSplitter:saveFeedback', clip, label),
     onProgress: (cb: (data: unknown) => void) => {
       const listener = (_event: unknown, data: unknown) => cb(data)
       ipcRenderer.on('clipSplitter:progress', listener)

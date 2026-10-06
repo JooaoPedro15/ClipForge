@@ -16,7 +16,6 @@ import { Toggle } from '@/components/ui/Toggle'
 import { getFileName } from '@/lib/utils'
 // ── Store global do app (Zustand) — contém estado compartilhado entre páginas
 import { useAppStore } from '@/store/appStore'
-import type { ClipFeedbackLabel, ClipSplitterClip } from '@/types/clipSplitter'
 
 // ── Tipagem das props que o componente pai precisa fornecer (callbacks de ações)
 interface ClipSplitterPageProps {
@@ -32,8 +31,6 @@ interface ClipSplitterPageProps {
   onOpenOutput: (outputDir: string | null) => void
   /** Re-executa uma tarefa que falhou, usando o mesmo sourcePath */
   onRetryTask: (sourcePath: string) => void
-  /** Salva o feedback manual do usuario para um clip especifico */
-  onSaveClipFeedback: (taskId: string, clip: ClipSplitterClip, label: ClipFeedbackLabel | null) => Promise<{ ok: boolean; message: string | null }>
 }
 
 /**
@@ -47,7 +44,6 @@ export function ClipSplitterPage({
   onCancelTask,
   onOpenOutput,
   onRetryTask,
-  onSaveClipFeedback,
 }: ClipSplitterPageProps) {
   // ── Estado local: mensagem de feedback exibida após uma ação (ex: erro ou sucesso)
   const [actionMessage, setActionMessage] = useState<string | null>(null)
@@ -176,9 +172,6 @@ export function ClipSplitterPage({
             onCancel={onCancelTask}
             onOpenOutput={onOpenOutput}
             onRetry={onRetryTask}
-            onSaveFeedback={(taskId, clip, label) => {
-              void runAction(() => onSaveClipFeedback(taskId, clip, label))
-            }}
             tasks={tasks}
           />
         </div>

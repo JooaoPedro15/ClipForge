@@ -485,8 +485,6 @@ def build_preedit_export_payload(
         "durationSec": round(float(edited_duration_sec), 3),
         "reason": f"Pre-edicao unica com {decisions_count} pausa(s) analisada(s); {removed_sec:.1f}s removidos.",
         "transcriptSnippet": "Video limpo em ordem original para revisao manual.",
-        "feedbackLabel": None,
-        "feedbackUpdatedAt": None,
     }
 
 
@@ -744,7 +742,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--silence-threshold-db", type=float, default=-35.0)
     parser.add_argument("--silence-min-duration", type=float, default=0.45)
     parser.add_argument("--analysis-audio-track", "--voice-track-index", default=DEFAULT_ANALYSIS_AUDIO_TRACK)
-    parser.add_argument("--feedback-file", default=None)
     parser.add_argument("--write-debug-json", action="store_true")
     parser.add_argument("--cpu", action="store_true")
     return parser.parse_args()

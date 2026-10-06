@@ -2,8 +2,6 @@
 export type ClipSplitterMode = 'fixed' | 'silence'
 // Intensidade da pre-edicao de pausas no modo silencio.
 export type ClipSplitterPreEditMode = 'conservative' | 'balanced' | 'aggressive'
-// Rotulos de feedback manual usados para memoria local dos clipes.
-export type ClipFeedbackLabel = 'weak' | 'good' | 'viral'
 
 // Estados possiveis de um job do Pre-Editor.
 export type ClipSplitterTaskStatus =
@@ -29,7 +27,7 @@ export interface ClipSplitterOptions {
 }
 
 export interface ClipSplitterClip {
-  // Metadados do clipe exportado mostrados na UI e salvos para feedback.
+  // Metadados do video limpo exportado, mostrados na UI.
   clipId: string
   index: number
   filePath: string
@@ -39,8 +37,6 @@ export interface ClipSplitterClip {
   durationSec: number
   reason: string
   transcriptSnippet: string
-  feedbackLabel?: ClipFeedbackLabel | null
-  feedbackUpdatedAt?: number | null
 }
 
 export interface ClipSplitterTaskEventBase {

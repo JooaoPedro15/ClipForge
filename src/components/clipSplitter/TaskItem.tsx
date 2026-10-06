@@ -1,17 +1,16 @@
-import { FolderSearch, Flame, LoaderCircle, RotateCcw, Square, ThumbsDown, ThumbsUp, TriangleAlert } from 'lucide-react'
+import { FolderSearch, LoaderCircle, RotateCcw, Square, TriangleAlert } from 'lucide-react'
 
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { formatDuration, formatTaskStatus, formatTimestamp } from '@/lib/utils'
-import type { ClipFeedbackLabel, ClipSplitterClip, ClipSplitterTask } from '@/types/clipSplitter'
+import type { ClipSplitterTask } from '@/types/clipSplitter'
 
 interface TaskItemProps {
   task: ClipSplitterTask
   onCancel: (taskId: string) => void
   onOpenOutput: (outputDir: string | null) => void
   onRetry: (sourcePath: string) => void
-  onSaveFeedback: (taskId: string, clip: ClipSplitterClip, label: ClipFeedbackLabel | null) => void | Promise<unknown>
 }
 
 // Mapeia o status da tarefa para a cor do badge principal.
@@ -32,35 +31,7 @@ function resolveTone(status: ClipSplitterTask['status']) {
   }
 }
 
-// Mantem consistente a cor usada para o feedback salvo em cada clipe.
-function resolveFeedbackTone(label: ClipFeedbackLabel | null | undefined) {
-  switch (label) {
-    case 'viral':
-      return 'green'
-    case 'good':
-      return 'blue'
-    case 'weak':
-      return 'red'
-    default:
-      return 'neutral'
-  }
-}
-
-// Traduz o feedback salvo para um rotulo amigavel na interface.
-function formatFeedbackLabel(label: ClipFeedbackLabel | null | undefined) {
-  switch (label) {
-    case 'viral':
-      return 'Viral'
-    case 'good':
-      return 'Bom'
-    case 'weak':
-      return 'Fraco'
-    default:
-      return 'Sem feedback'
-  }
-}
-
-export function ClipSplitterTaskItem({ task, onCancel, onOpenOutput, onRetry, onSaveFeedback }: TaskItemProps) {
+export function ClipSplitterTaskItem({ task, onCancel, onOpenOutput, onRetry }: TaskItemProps) {
   // Estados ativos sao os que ainda permitem cancelamento e mostram progresso.
   const isActive = task.status === 'queued' || task.status === 'preparing' || task.status === 'processing'
 
@@ -159,7 +130,7 @@ export function ClipSplitterTaskItem({ task, onCancel, onOpenOutput, onRetry, on
       </div>
 
       {task.status === 'completed' && task.clips.length > 0 ? (
-        // Painel que transforma cada clipe exportado em dado de treino/manual feedback.
+        // Painel com o video limpo gerado pela pre-edicao.
         <div className="space-y-3 rounded-2xl border border-white/8 bg-black/12 p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -172,7 +143,7 @@ export function ClipSplitterTaskItem({ task, onCancel, onOpenOutput, onRetry, on
           </div>
 
           <div className="space-y-3">
-            {/* Cada card permite revisar rapidamente o motivo do corte e dar feedback. */}
+            {/* Cada card mostra o video limpo gerado e o motivo da pre-edicao. */}
             {task.clips.map((clip) => (
               <div key={clip.clipId} className="rounded-2xl border border-white/8 bg-black/16 p-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -181,7 +152,6 @@ export function ClipSplitterTaskItem({ task, onCancel, onOpenOutput, onRetry, on
                       <p className="text-sm font-medium text-text-primary">
                         Video limpo {String(clip.index).padStart(2, '0')} • {formatDuration(clip.durationSec)}
                       </p>
-                      <Badge tone={resolveFeedbackTone(clip.feedbackLabel)}>{formatFeedbackLabel(clip.feedbackLabel)}</Badge>
                     </div>
                     <p className="text-sm text-text-secondary">{clip.reason}</p>
                     <p className="max-w-3xl text-xs leading-6 text-text-muted">{clip.transcriptSnippet}</p>

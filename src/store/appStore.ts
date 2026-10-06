@@ -1,7 +1,6 @@
 import { create } from 'zustand'
 
 import type {
-  ClipFeedbackLabel,
   ClipSplitterDoneEvent,
   ClipSplitterErrorEvent,
   ClipSplitterProgressEvent,
@@ -89,7 +88,6 @@ interface AppState {
   upsertClipSplitterProgress: (event: ClipSplitterProgressEvent) => void
   completeClipSplitterTask: (event: ClipSplitterDoneEvent) => void
   failClipSplitterTask: (event: ClipSplitterErrorEvent) => void
-  setClipFeedbackForTask: (taskId: string, clipId: string, label: ClipFeedbackLabel | null) => void
 }
 
 // Insere ou atualiza uma tarefa de legenda conforme os eventos vindos do backend.
@@ -256,27 +254,5 @@ export const useAppStore = create<AppState>((set) => ({
   failClipSplitterTask: (event) =>
     set((state) => ({
       clipSplitterTasks: upsertClipSplitterTask(state.clipSplitterTasks, event),
-    })),
-  setClipFeedbackForTask: (taskId, clipId, label) =>
-    set((state) => ({
-      // Atualiza somente o clipe alterado para refletir o feedback salvo pelo usuario.
-      clipSplitterTasks: state.clipSplitterTasks.map((task) => {
-        if (task.id !== taskId) {
-          return task
-        }
-
-        return {
-          ...task,
-          clips: task.clips.map((clip) =>
-            clip.clipId === clipId
-              ? {
-                  ...clip,
-                  feedbackLabel: label,
-                  feedbackUpdatedAt: label ? Date.now() : null,
-                }
-              : clip,
-          ),
-        }
-      }),
     })),
 }))

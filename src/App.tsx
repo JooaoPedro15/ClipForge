@@ -33,7 +33,6 @@ export default function App() {
         onPickOutputDir={clipSplitter.pickOutputDir}
         onPickSourceFile={clipSplitter.pickSourceFile}
         onRetryTask={clipSplitter.retryTask}
-        onSaveClipFeedback={clipSplitter.saveClipFeedback}
         onStartSplit={() => clipSplitter.startSplit()}
       />
     )

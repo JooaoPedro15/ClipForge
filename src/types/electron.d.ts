@@ -1,6 +1,4 @@
 import type {
-  ClipFeedbackLabel,
-  ClipSplitterClip,
   ClipSplitterDoneEvent,
   ClipSplitterErrorEvent,
   ClipSplitterOptions,
@@ -53,7 +51,6 @@ declare global {
         // Ponte entre o renderer e o pipeline de corte/exportacao.
         process: (sourcePath: string, options: Partial<ClipSplitterOptions>) => Promise<string>
         cancel: (taskId: string) => Promise<boolean>
-        saveFeedback: (clip: ClipSplitterClip, label: ClipFeedbackLabel | null) => Promise<boolean>
         onProgress: (cb: (data: ClipSplitterProgressEvent) => void) => () => void
         onDone: (cb: (data: ClipSplitterDoneEvent) => void) => () => void
         onError: (cb: (data: ClipSplitterErrorEvent) => void) => () => void

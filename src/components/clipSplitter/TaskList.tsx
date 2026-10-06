@@ -2,17 +2,16 @@ import { Scissors } from 'lucide-react'
 
 import { ClipSplitterTaskItem } from '@/components/clipSplitter/TaskItem'
 import { Card } from '@/components/ui/Card'
-import type { ClipFeedbackLabel, ClipSplitterClip, ClipSplitterTask } from '@/types/clipSplitter'
+import type { ClipSplitterTask } from '@/types/clipSplitter'
 
 interface TaskListProps {
   tasks: ClipSplitterTask[]
   onCancel: (taskId: string) => void
   onOpenOutput: (outputDir: string | null) => void
   onRetry: (sourcePath: string) => void
-  onSaveFeedback: (taskId: string, clip: ClipSplitterClip, label: ClipFeedbackLabel | null) => void
 }
 
-export function ClipSplitterTaskList({ tasks, onCancel, onOpenOutput, onRetry, onSaveFeedback }: TaskListProps) {
+export function ClipSplitterTaskList({ tasks, onCancel, onOpenOutput, onRetry }: TaskListProps) {
   // Placeholder inicial mostrado antes de qualquer exportacao.
   if (tasks.length === 0) {
     return (
@@ -33,14 +32,13 @@ export function ClipSplitterTaskList({ tasks, onCancel, onOpenOutput, onRetry, o
 
   return (
     <div className="space-y-4">
-      {/* Lista de jobs com progresso, reprocessamento e feedback de clipes. */}
+      {/* Lista de jobs com progresso e reprocessamento. */}
       {tasks.map((task) => (
         <ClipSplitterTaskItem
           key={task.id}
           onCancel={onCancel}
           onOpenOutput={onOpenOutput}
           onRetry={onRetry}
-          onSaveFeedback={onSaveFeedback}
           task={task}
         />
       ))}

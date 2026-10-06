@@ -6,8 +6,6 @@ import type { Readable } from 'node:stream'
 
 import { ipcMain, type WebContents } from 'electron'
 
-import { getClipFeedbackFilePath, saveClipFeedbackEntry, type ClipFeedbackLabel } from '../clipFeedbackStore.js'
-
 // Tipos locais que descrevem os jobs do Pre-Editor enquanto rodam no processo principal.
 type ClipSplitterMode = 'fixed' | 'silence'
 type ClipSplitterPreEditMode = 'conservative' | 'balanced' | 'aggressive'
@@ -36,8 +34,6 @@ interface ClipExportPayload {
   durationSec: number
   reason: string
   transcriptSnippet: string
-  feedbackLabel?: ClipFeedbackLabel | null
-  feedbackUpdatedAt?: number | null
 }
 
 interface ClipSplitterEventPayload {
@@ -363,8 +359,6 @@ function buildProcessArgs(serviceScriptPath: string, clipSplitterRoot: string, t
     String(task.options.silenceMinDurationSec),
     '--analysis-audio-track',
     task.options.analysisAudioTrack,
-    '--feedback-file',
-    getClipFeedbackFilePath(),
   ]
 
   if (task.useCpu) {
@@ -789,31 +783,5 @@ export function registerClipSplitterHandlers() {
     }
 
     return false
-  })
-
-  // Persiste o feedback humano do clipe para orientar cortes futuros.
-  ipcMain.handle('clipSplitter:saveFeedback', async (_event, clip: ClipExportPayload, label: ClipFeedbackLabel | null) => {
-    if (!clip?.clipId || !label) {
-      return false
-    }
-
-    const ownerTask = [...tasks.values()].find((task) => task.clips.some((taskClip) => taskClip.clipId === clip.clipId))
-
-    await saveClipFeedbackEntry({
-      clipId: clip.clipId,
-      sourcePath: ownerTask?.sourcePath ?? '',
-      sourceName: ownerTask?.sourceName ?? '',
-      filePath: clip.filePath,
-      fileName: clip.fileName,
-      startSec: clip.startSec,
-      endSec: clip.endSec,
-      durationSec: clip.durationSec,
-      reason: clip.reason,
-      transcriptSnippet: clip.transcriptSnippet,
-      label,
-      updatedAt: Date.now(),
-    })
-
-    return true
   })
 }
