@@ -12,6 +12,7 @@ import ffmpeg_utils
 import glossary_service
 import translate_service
 import translation_pipeline
+from events import emit
 
 try:
     from faster_whisper import WhisperModel
@@ -77,18 +78,6 @@ WEAK_TRAILING_WORDS = {
     "me",
     "te",
 }
-
-
-# Emite eventos JSON no stdout para o Electron acompanhar o progresso em tempo real.
-def emit(event: str, status: str, stage: str, message: str, **extra: Any) -> None:
-    payload = {
-        "event": event,
-        "status": status,
-        "stage": stage,
-        "message": message,
-        **extra,
-    }
-    print(json.dumps(payload, ensure_ascii=False), flush=True)
 
 
 # Converte segundos para o formato padrao do arquivo .srt.

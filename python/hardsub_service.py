@@ -1,5 +1,4 @@
 import argparse
-import json
 import sys
 from pathlib import Path
 from typing import Any
@@ -8,6 +7,7 @@ import ffmpeg_utils
 import srt_utils
 import translate_service
 import translation_pipeline
+from events import emit
 
 MODE_LANGS = {
     "zh": ["zh"],
@@ -52,11 +52,6 @@ TOP_MARGIN_EXTRA_LINE_FACTOR = 1.6
 # ainda podem encostar por poucos pixels — esse empurrao sempre aplicado resolve sem
 # precisar de um modo "video antigo" separado.
 SHORTS_MARGIN_NUDGE_PX = 5
-
-
-def emit(event: str, status: str, stage: str, message: str, **extra: Any) -> None:
-    payload = {"event": event, "status": status, "stage": stage, "message": message, **extra}
-    print(json.dumps(payload, ensure_ascii=False), flush=True)
 
 
 def resolve_mode_langs(mode: str) -> list[str]:

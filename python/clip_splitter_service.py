@@ -13,6 +13,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from events import emit
+
 
 # Limites para evitar [WinError 206] e MAX_PATH (260) no Windows.
 MAX_OUTPUT_STEM_CHARS = 60
@@ -60,18 +62,6 @@ def assert_safe_path_lengths(**paths: Path) -> None:
         "Use pasta curta como D:\\cs\\ no input/output ou defina CLIPFORGE_TEMP para uma pasta curta.\n"
         f"{details}"
     )
-
-
-# Emite eventos JSON padronizados no stdout para o processo principal do Electron.
-def emit(event: str, status: str, stage: str, message: str, **extra: Any) -> None:
-    payload = {
-        "event": event,
-        "status": status,
-        "stage": stage,
-        "message": message,
-        **extra,
-    }
-    print(json.dumps(payload, ensure_ascii=False), flush=True)
 
 
 # Resolve onde esta o projeto externo que contem FFmpeg, Whisper e a engine base.
