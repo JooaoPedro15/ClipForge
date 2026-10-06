@@ -72,7 +72,7 @@ export function useSubtitleForge() {
       offBurnDone()
       offBurnError()
     }
-  }, [clipForgeApi, handleBurnEvent, handleDone, handleError, handleProgress])
+  }, [clipForgeApi])
 
   // Converte arquivos vindos do navegador/drag and drop em caminhos absolutos.
   function resolvePathsFromFiles(files: FileList | null): string[] {

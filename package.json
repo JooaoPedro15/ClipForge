@@ -14,6 +14,8 @@
     "test:watch": "vitest",
     "test:py": "node scripts/run-python-tests.mjs",
     "test:all": "vitest run && node scripts/run-python-tests.mjs",
+    "lint": "eslint . && node scripts/run-ruff.mjs",
+    "lint:ts": "eslint .",
     "lint:py": "node scripts/run-ruff.mjs"
   },
   "keywords": [],
@@ -26,6 +28,7 @@
     "zustand": "^5.0.12"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@tailwindcss/vite": "^4.2.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
@@ -33,9 +36,13 @@
     "@vitest/ui": "^3.2.4",
     "concurrently": "^9.2.1",
     "electron": "^41.1.1",
+    "eslint": "^10.12.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.13.0",
     "tailwindcss": "^4.2.2",
     "tsx": "^4.21.0",
     "typescript": "^6.0.2",
+    "typescript-eslint": "^8.71.1",
     "vite": "^8.0.3",
     "vitest": "^3.2.4",
     "wait-on": "^9.0.4"

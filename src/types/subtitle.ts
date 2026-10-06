@@ -84,7 +84,7 @@ export interface SubtitleTaskEventBase {
 }
 
 // Evento intermediario de progresso emitido durante o processamento.
-export interface SubtitleProgressEvent extends SubtitleTaskEventBase {}
+export type SubtitleProgressEvent = SubtitleTaskEventBase
 
 export interface SubtitleDoneEvent extends SubtitleTaskEventBase {
   // Evento final emitido quando a transcricao conclui com sucesso.

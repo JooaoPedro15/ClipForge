@@ -62,7 +62,7 @@ export interface ClipSplitterTaskEventBase {
 }
 
 // Evento emitido durante planejamento e exportacao dos clipes.
-export interface ClipSplitterProgressEvent extends ClipSplitterTaskEventBase {}
+export type ClipSplitterProgressEvent = ClipSplitterTaskEventBase
 
 export interface ClipSplitterDoneEvent extends ClipSplitterTaskEventBase {
   // Evento final quando o job termina com sucesso.

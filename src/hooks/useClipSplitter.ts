@@ -60,7 +60,7 @@ export function useClipSplitter() {
       offDone()
       offError()
     }
-  }, [clipForgeApi, handleDone, handleError, handleProgress])
+  }, [clipForgeApi])
 
   // Mantem o caminho do video fonte compartilhado entre os componentes da pagina.
   function setSourcePath(sourcePath: string | null) {
