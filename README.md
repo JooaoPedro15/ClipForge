@@ -135,6 +135,12 @@ Variaveis opcionais:
 npm install
 ```
 
+Dependencias Python (no venv usado pelo app, por padrao `D:\Projetos\subtitle-forge\.venv`):
+
+```bash
+D:\Projetos\subtitle-forge\.venv\Scripts\python.exe -m pip install -r python/requirements.txt
+```
+
 ## Desenvolvimento
 
 ```bash
@@ -153,6 +159,8 @@ Esse comando inicia o Vite, compila o processo principal do Electron em modo wat
 | `npm run electron:build` | Gera build do app Electron. |
 | `npm test` | Executa a suite de testes com Vitest. |
 | `npm run test:watch` | Executa os testes em modo watch. |
+| `npm run test:py` | Executa os testes Python (`python/*_test.py`) com o Python do app. `npm run test:py -- srt` roda so `srt*_test.py`. |
+| `npm run test:all` | Vitest + testes Python. |
 
 ## Estrutura
 
@@ -161,7 +169,11 @@ clip-forge/
 ├─ electron/             # Processo principal, preload e handlers IPC
 │  ├─ ipc/               # Handlers IPC (clipSplitter, subtitle)
 │  └─ clipFeedbackStore.ts
-├─ python/               # Workers locais (faster-whisper, FFmpeg)
+├─ python/               # Workers locais (faster-whisper, FFmpeg) + modulos puros
+│  ├─ events.py          # Protocolo de eventos JSON com o Electron
+│  ├─ text_utils.py      # Helpers de texto (limpeza, timestamps, quebra de linha)
+│  ├─ segmentation.py    # Palavras do Whisper -> legendas (cards)
+│  └─ requirements.txt   # Dependencias Python fixadas
 ├─ resources/            # Icones do aplicativo
 ├─ scripts/              # Scripts utilitarios
 ├─ src/

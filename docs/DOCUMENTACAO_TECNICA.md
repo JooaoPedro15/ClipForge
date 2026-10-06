@@ -66,7 +66,11 @@ clip-forge/
 |   `-- preload.ts
 |-- python/
 |   |-- clip_splitter_service.py
-|   `-- subtitle_service.py
+|   |-- events.py
+|   |-- segmentation.py
+|   |-- srt_utils.py
+|   |-- subtitle_service.py
+|   `-- text_utils.py
 |-- src/
 |   |-- components/
 |   |   |-- clipSplitter/
@@ -91,7 +95,7 @@ clip-forge/
 1. O usuario escolhe ou arrasta um arquivo.
 2. `useSubtitleForge` chama `window.clipforge.subtitle.process`.
 3. `electron/ipc/subtitle.ts` inicia o worker Python.
-4. `python/subtitle_service.py` transcreve e emite progresso.
+4. `python/subtitle_service.py` transcreve (Whisper), `segmentation.py` transforma as palavras em legendas e `srt_utils.render_srt` grava o `.srt`; o progresso sai como eventos JSON (`events.py`).
 5. O Electron repassa eventos para o renderer.
 6. A store atualiza a lista de tarefas.
 7. A UI mostra progresso, erro ou o arquivo `.srt` final.
