@@ -1,10 +1,8 @@
 ﻿import argparse
 import json
 import math
-import re
 import sys
 import time
-import unicodedata
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +11,7 @@ import glossary_service
 import translate_service
 import translation_pipeline
 from events import emit
+from text_utils import WEAK_TRAILING_WORDS, clean_text, format_timestamp, normalize_token, split_text_into_lines
 
 try:
     from faster_whisper import WhisperModel
@@ -59,56 +58,6 @@ NATURAL_SPLIT_MAX_WORDS_FAST = 18
 NATURAL_SPLIT_MIN_SUBTITLE_DURATION = 1.0
 NATURAL_SPLIT_IDEAL_DURATION_MIN = 2.5
 NATURAL_SPLIT_IDEAL_DURATION_MAX = 5.0
-
-WEAK_TRAILING_WORDS = {
-    "que",
-    "de",
-    "do",
-    "da",
-    "pra",
-    "para",
-    "com",
-    "em",
-    "e",
-    "o",
-    "a",
-    "um",
-    "uma",
-    "se",
-    "me",
-    "te",
-}
-
-
-# Converte segundos para o formato padrao do arquivo .srt.
-def format_timestamp(seconds: float) -> str:
-    hours, remainder = divmod(seconds, 3600)
-    minutes, secs = divmod(remainder, 60)
-    milliseconds = math.floor((secs % 1) * 1000)
-    return f"{int(hours):02}:{int(minutes):02}:{int(secs):02},{milliseconds:03}"
-
-
-# Helpers de limpeza de texto aplicados antes de salvar a legenda final.
-def remove_accents(text: str) -> str:
-    normalized = unicodedata.normalize("NFKD", text)
-    return "".join(char for char in normalized if not unicodedata.combining(char))
-
-
-def remove_punctuation(text: str) -> str:
-    return re.sub(r"[^\w\s]", "", text)
-
-
-def clean_text(text: str, no_accents: bool = False, no_punctuation: bool = False) -> str:
-    if no_punctuation:
-        text = remove_punctuation(text)
-    if no_accents:
-        text = remove_accents(text)
-    return re.sub(r"\s+", " ", text).strip()
-
-
-# Normaliza palavras apenas para decidir cortes de legenda, sem alterar o texto exibido.
-def normalize_boundary_word(word: str) -> str:
-    return remove_accents(remove_punctuation(word)).strip().lower()
 
 
 # Mede a duracao coberta por um grupo de palavras com timestamps do Whisper.
@@ -162,7 +111,7 @@ def segment_words_naturally(
             candidate = word_items[index : index + count]
             duration = get_words_duration(candidate)
             remaining_after = remaining - count
-            trailing_word = normalize_boundary_word(str(getattr(candidate[-1], "word", "")))
+            trailing_word = normalize_token(str(getattr(candidate[-1], "word", "")))
             score = abs(count - target_words) * 10
 
             if trailing_word in WEAK_TRAILING_WORDS and remaining_after > 0:
@@ -191,7 +140,7 @@ def segment_words_naturally(
                 best_count = count
 
         while best_count < limit:
-            trailing_word = normalize_boundary_word(str(getattr(word_items[index + best_count - 1], "word", "")))
+            trailing_word = normalize_token(str(getattr(word_items[index + best_count - 1], "word", "")))
             if trailing_word not in WEAK_TRAILING_WORDS:
                 break
             best_count += 1
@@ -203,25 +152,6 @@ def segment_words_naturally(
         index += best_count
 
     return segments
-
-
-# Quebra a fala em linhas menores para melhorar a leitura do subtitulo.
-def split_text_into_lines(text: str, max_width: int) -> str:
-    words = text.split()
-    lines: list[str] = []
-    current_line = ""
-
-    for word in words:
-        if current_line and len(current_line) + 1 + len(word) > max_width:
-            lines.append(current_line)
-            current_line = word
-        else:
-            current_line = f"{current_line} {word}".strip()
-
-    if current_line:
-        lines.append(current_line)
-
-    return "\n".join(lines)
 
 
 # Deteta a orientacao real do video (retrato x paisagem) pra pre-definir max_words sem
