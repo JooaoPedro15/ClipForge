@@ -8,10 +8,11 @@ from typing import Any
 
 import ffmpeg_utils
 import glossary_service
+import segmentation
+import srt_utils
 import translate_service
 import translation_pipeline
 from events import emit
-from text_utils import WEAK_TRAILING_WORDS, clean_text, format_timestamp, normalize_token, split_text_into_lines
 
 # Carregado sob demanda em load_whisper_model: importar este modulo nao exige o
 # faster-whisper (testes e outros servicos reaproveitam funcoes daqui).
@@ -32,127 +33,10 @@ DEFAULT_MODEL = "large-v3"
 DEFAULT_LANGUAGE = "pt"
 DEFAULT_BEAM_SIZE = 5
 DEFAULT_MAX_LINE_WIDTH = 42
-DEFAULT_TARGET_WORDS = 3
-DEFAULT_MIN_SUBTITLE_WORDS = 1
-DEFAULT_MAX_SUBTITLE_WORDS = 5
-DEFAULT_MAX_FAST_SUBTITLE_WORDS = 6
-DEFAULT_MIN_SUBTITLE_DURATION = 0.45
-DEFAULT_MAX_SUBTITLE_DURATION = 2.0
-DEFAULT_IDEAL_SUBTITLE_DURATION_MIN = 0.8
-DEFAULT_IDEAL_SUBTITLE_DURATION_MAX = 1.4
 
 # max_words padrao aplicado automaticamente a videos verticais (retrato) quando o
 # chamador nao pede um valor explicito (max_words=0) — ver resolve_max_words_for_video.
 DEFAULT_MAX_WORDS_SHORTS = 3
-
-# Alguns segmentos "naturais" do Whisper (max_words=0, sem quebra por contagem de
-# palavras) podem ficar longos demais quando a fala e continua e a VAD nao detecta
-# pausa — sem limite, a legenda fica parada na tela por varios segundos (ou o video
-# inteiro) em vez de acompanhar a fala. Acima desse limite, refatia o segmento em
-# blocos menores usando os timestamps por palavra, com parametros mais soltos que o
-# modo "shorts" (frases mais longas, tipico de legenda de video horizontal).
-NATURAL_SPLIT_MAX_DURATION = 7.0
-NATURAL_SPLIT_TARGET_WORDS = 8
-NATURAL_SPLIT_MIN_WORDS = 3
-NATURAL_SPLIT_MAX_WORDS = 14
-NATURAL_SPLIT_MAX_WORDS_FAST = 18
-NATURAL_SPLIT_MIN_SUBTITLE_DURATION = 1.0
-NATURAL_SPLIT_IDEAL_DURATION_MIN = 2.5
-NATURAL_SPLIT_IDEAL_DURATION_MAX = 5.0
-
-
-# Mede a duracao coberta por um grupo de palavras com timestamps do Whisper.
-def get_words_duration(words: list[Any]) -> float:
-    if not words:
-        return 0.0
-
-    start = getattr(words[0], "start", None)
-    end = getattr(words[-1], "end", None)
-
-    if not isinstance(start, (int, float)) or not isinstance(end, (int, float)):
-        return 0.0
-
-    return max(0.0, float(end) - float(start))
-
-
-# Segmenta timestamps por palavra buscando blocos naturais em torno de 3 palavras.
-def segment_words_naturally(
-    words: list[Any],
-    target_words: int = DEFAULT_TARGET_WORDS,
-    min_words: int = DEFAULT_MIN_SUBTITLE_WORDS,
-    max_words: int = DEFAULT_MAX_SUBTITLE_WORDS,
-    max_words_fast_speech: int = DEFAULT_MAX_FAST_SUBTITLE_WORDS,
-    min_duration: float = DEFAULT_MIN_SUBTITLE_DURATION,
-    max_duration: float = DEFAULT_MAX_SUBTITLE_DURATION,
-    ideal_duration_min: float = DEFAULT_IDEAL_SUBTITLE_DURATION_MIN,
-    ideal_duration_max: float = DEFAULT_IDEAL_SUBTITLE_DURATION_MAX,
-) -> list[list[Any]]:
-    word_items = list(words)
-    if not word_items:
-        return []
-
-    min_words = max(1, min_words)
-    target_words = max(min_words, target_words or DEFAULT_TARGET_WORDS)
-    max_words = max(target_words, max_words)
-    max_words_fast_speech = max(max_words, max_words_fast_speech)
-
-    segments: list[list[Any]] = []
-    index = 0
-
-    while index < len(word_items):
-        remaining = len(word_items) - index
-        normal_limit = min(max_words, remaining)
-        fast_limit = min(max_words_fast_speech, remaining)
-        fast_duration = get_words_duration(word_items[index : index + fast_limit])
-        limit = fast_limit if fast_limit > normal_limit and 0 < fast_duration <= max_duration else normal_limit
-        best_count = min(target_words, limit)
-        best_score = float("inf")
-
-        for count in range(min(min_words, remaining), limit + 1):
-            candidate = word_items[index : index + count]
-            duration = get_words_duration(candidate)
-            remaining_after = remaining - count
-            trailing_word = normalize_token(str(getattr(candidate[-1], "word", "")))
-            score = abs(count - target_words) * 10
-
-            if trailing_word in WEAK_TRAILING_WORDS and remaining_after > 0:
-                score += 80
-
-            if remaining_after == 1 and count < limit:
-                score += 45
-
-            if duration > 0:
-                if duration < min_duration:
-                    score += (min_duration - duration) * 30
-                elif ideal_duration_min <= duration <= ideal_duration_max:
-                    score -= 6
-                elif duration < ideal_duration_min:
-                    score += (ideal_duration_min - duration) * 8
-                elif duration <= max_duration:
-                    score += (duration - ideal_duration_max) * 8
-                else:
-                    score += 40 + (duration - max_duration) * 60
-
-            if count > max_words:
-                score += (count - max_words) * 6
-
-            if score < best_score:
-                best_score = score
-                best_count = count
-
-        while best_count < limit:
-            trailing_word = normalize_token(str(getattr(word_items[index + best_count - 1], "word", "")))
-            if trailing_word not in WEAK_TRAILING_WORDS:
-                break
-            best_count += 1
-
-        if remaining - best_count == 1 and best_count < limit:
-            best_count += 1
-
-        segments.append(word_items[index : index + best_count])
-        index += best_count
-
-    return segments
 
 
 # Deteta a orientacao real do video (retrato x paisagem) pra pre-definir max_words sem
@@ -175,48 +59,12 @@ def resolve_max_words_for_video(input_path: str, max_words: int) -> int:
     return max_words
 
 
-# Monta e adiciona ao .srt uma entrada curta (grupo de poucas palavras), usada tanto no
-# modo "shorts" (max_words explicito) quanto no fallback de segmentos naturais longos.
-def append_word_group_entry(
-    words_group: list[Any],
-    segment_count: int,
-    srt_content: list[str],
-    subtitle_entries: list[tuple[str, str, str]],
-    no_accents: bool,
-    no_punctuation: bool,
-    uppercase: bool,
-    lowercase: bool,
-    card_records: list[dict[str, Any]],
-    segment_index: int,
-    avg_logprob: float | None,
-    max_line_width: int = DEFAULT_MAX_LINE_WIDTH,
-) -> None:
-    sub_start = format_timestamp(words_group[0].start)
-    sub_end = format_timestamp(words_group[-1].end)
-    raw_text = " ".join(word.word.strip() for word in words_group)
-    text = clean_text(raw_text, no_accents, no_punctuation)
-    if uppercase:
-        text = text.upper()
-    elif lowercase:
-        text = text.lower()
-
-    subtitle_entries.append((sub_start, sub_end, text))
-
-    srt_content.append(f"{segment_count}")
-    srt_content.append(f"{sub_start} --> {sub_end}")
-    srt_content.append(split_text_into_lines(text, max_line_width))
-    srt_content.append("")
-
-    card_records.append(
-        {
-            "i": len(card_records),
-            "start": words_group[0].start,
-            "end": words_group[-1].end,
-            "text": raw_text,
-            "segment_id": segment_index,
-            "avg_logprob": avg_logprob,
-        }
-    )
+# Fronteira com o Whisper: palavras viram dicts simples, o formato que a segmentacao usa.
+def whisper_word_dicts(segment: Any) -> list[dict[str, Any]]:
+    return [
+        {"word": str(word.word), "start": float(word.start), "end": float(word.end)}
+        for word in (getattr(segment, "words", None) or [])
+    ]
 
 
 # Gera um progresso aproximado mesmo quando o Whisper ainda nao terminou tudo.
@@ -330,96 +178,25 @@ def transcribe_video(
         languageProbability=language_probability,
     )
 
-    srt_content: list[str] = []
-    subtitle_entries: list[tuple[str, str, str]] = []
-    segment_count = 0
     card_records: list[dict[str, Any]] = []
+    segment_count = 0
     segment_index = -1
 
     for segment in segments:
         segment_index += 1
-        if max_words > 0 and word_timestamps and segment.words:
-            # Neste modo, usa timestamps por palavra para fatiar legendas por ritmo e limites naturais.
-            for words_group in segment_words_naturally(segment.words, target_words=max_words):
-                segment_count += 1
-                append_word_group_entry(
-                    words_group,
-                    segment_count,
-                    srt_content,
-                    subtitle_entries,
-                    no_accents,
-                    no_punctuation,
-                    uppercase,
-                    lowercase,
-                    card_records=card_records,
-                    segment_index=segment_index,
-                    avg_logprob=getattr(segment, "avg_logprob", None),
-                    max_line_width=max_line_width,
-                )
-
-            segment_end = getattr(segment, "end", None)
-        elif word_timestamps and segment.words and (segment.end - segment.start) > NATURAL_SPLIT_MAX_DURATION:
-            # Segmento natural longo demais (fala continua sem pausa detectada pela VAD) —
-            # refatia em blocos menores em vez de deixar uma legenda estatica na tela.
-            for words_group in segment_words_naturally(
-                segment.words,
-                target_words=NATURAL_SPLIT_TARGET_WORDS,
-                min_words=NATURAL_SPLIT_MIN_WORDS,
-                max_words=NATURAL_SPLIT_MAX_WORDS,
-                max_words_fast_speech=NATURAL_SPLIT_MAX_WORDS_FAST,
-                min_duration=NATURAL_SPLIT_MIN_SUBTITLE_DURATION,
-                max_duration=NATURAL_SPLIT_MAX_DURATION,
-                ideal_duration_min=NATURAL_SPLIT_IDEAL_DURATION_MIN,
-                ideal_duration_max=NATURAL_SPLIT_IDEAL_DURATION_MAX,
-            ):
-                segment_count += 1
-                append_word_group_entry(
-                    words_group,
-                    segment_count,
-                    srt_content,
-                    subtitle_entries,
-                    no_accents,
-                    no_punctuation,
-                    uppercase,
-                    lowercase,
-                    card_records=card_records,
-                    segment_index=segment_index,
-                    avg_logprob=getattr(segment, "avg_logprob", None),
-                    max_line_width=max_line_width,
-                )
-
-            segment_end = getattr(segment, "end", None)
-        else:
-            # Sem max_words, cada segmento do Whisper vira uma entrada do .srt.
-            segment_count += 1
-            raw_text = segment.text.strip()
-            text = clean_text(raw_text, no_accents, no_punctuation)
-            if uppercase:
-                text = text.upper()
-            elif lowercase:
-                text = text.lower()
-
-            subtitle_entries.append((format_timestamp(segment.start), format_timestamp(segment.end), text))
-
-            card_records.append(
-                {
-                    "i": len(card_records),
-                    "start": segment.start,
-                    "end": segment.end,
-                    "text": raw_text,
-                    "segment_id": segment_index,
-                    "avg_logprob": getattr(segment, "avg_logprob", None),
-                }
-            )
-
-            text = split_text_into_lines(text, max_line_width)
-
-            srt_content.append(f"{segment_count}")
-            srt_content.append(f"{format_timestamp(segment.start)} --> {format_timestamp(segment.end)}")
-            srt_content.append(text)
-            srt_content.append("")
-
-            segment_end = getattr(segment, "end", None)
+        segment_info = {
+            "id": segment_index,
+            "start": segment.start,
+            "end": segment.end,
+            "text": segment.text,
+            "avg_logprob": getattr(segment, "avg_logprob", None),
+        }
+        words = whisper_word_dicts(segment) if word_timestamps else []
+        card_records.extend(
+            segmentation.cards_for_segment(words, segment_info, max_words, first_index=len(card_records))
+        )
+        segment_count = len(card_records)
+        segment_end = getattr(segment, "end", None)
 
         if segment_count == 1 or segment_count % 25 == 0:
             # Emite checkpoints periodicos para a UI nao ficar "morta" durante arquivos longos.
@@ -445,8 +222,16 @@ def transcribe_video(
         outputPath=str(output_file),
     )
 
+    srt_text = srt_utils.render_srt(
+        card_records,
+        max_line_width=max_line_width,
+        uppercase=uppercase,
+        lowercase=lowercase,
+        no_accents=no_accents,
+        no_punctuation=no_punctuation,
+    )
     with open(output_file, "w", encoding="utf-8") as file_handle:
-        file_handle.write("\n".join(srt_content))
+        file_handle.write(srt_text)
 
     cards_path = output_file.with_suffix(".cards.json")
     cards_path.write_text(json.dumps(card_records, ensure_ascii=False, indent=2), encoding="utf-8")
