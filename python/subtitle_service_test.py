@@ -400,5 +400,40 @@ class TranscribeVideoTranslationTest(unittest.TestCase):
             self.assertIn("Bernardo", " ".join(c["text"] for c in cards))  # case original, nao "BERNARDO"
 
 
+class LazyWhisperImportTest(unittest.TestCase):
+    def load_without_faster_whisper(self):
+        module_path = Path(__file__).with_name("subtitle_service.py")
+        spec = importlib.util.spec_from_file_location("subtitle_service_without_whisper", module_path)
+        module = importlib.util.module_from_spec(spec)
+        assert spec.loader is not None
+        spec.loader.exec_module(module)  # antes desta mudanca: sys.exit(1) aqui
+        return module
+
+    def test_module_imports_without_faster_whisper_and_fails_only_when_loading_model(self):
+        with mock.patch.dict(sys.modules, {"faster_whisper": None}):
+            module = self.load_without_faster_whisper()
+
+            with self.assertRaises(ImportError):
+                module.load_whisper_model("tiny", "cpu", "int8")
+
+    def test_main_reports_bootstrap_error_when_faster_whisper_is_missing(self):
+        import contextlib
+        import io
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir, mock.patch.dict(sys.modules, {"faster_whisper": None}):
+            module = self.load_without_faster_whisper()
+            video = Path(tmp_dir) / "video.mp4"
+            video.write_bytes(b"fake")
+            output = io.StringIO()
+
+            with mock.patch.object(sys, "argv", ["subtitle_service.py", str(video)]), contextlib.redirect_stdout(output):
+                code = module.main()
+
+        self.assertEqual(code, 1)
+        self.assertIn('"stage": "bootstrap"', output.getvalue())
+        self.assertIn("faster-whisper nao instalado.", output.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main()

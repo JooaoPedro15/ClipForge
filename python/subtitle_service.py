@@ -13,18 +13,19 @@ import translation_pipeline
 from events import emit
 from text_utils import WEAK_TRAILING_WORDS, clean_text, format_timestamp, normalize_token, split_text_into_lines
 
-try:
-    from faster_whisper import WhisperModel
-except ImportError as error:
-    payload = {
-        "event": "error",
-        "status": "error",
-        "stage": "bootstrap",
-        "message": "faster-whisper nao instalado.",
-        "error": str(error),
-    }
-    print(json.dumps(payload, ensure_ascii=False), flush=True)
-    sys.exit(1)
+# Carregado sob demanda em load_whisper_model: importar este modulo nao exige o
+# faster-whisper (testes e outros servicos reaproveitam funcoes daqui).
+WhisperModel: Any = None
+
+
+# Importa o faster-whisper so na hora de abrir o modelo; sem ele, ImportError aqui.
+def load_whisper_model(model_size: str, device: str, compute_type: str) -> Any:
+    global WhisperModel
+    if WhisperModel is None:
+        from faster_whisper import WhisperModel as faster_whisper_model
+
+        WhisperModel = faster_whisper_model
+    return WhisperModel(model_size, device=device, compute_type=compute_type)
 
 
 DEFAULT_MODEL = "large-v3"
@@ -281,11 +282,7 @@ def transcribe_video(
     )
 
     load_started_at = time.time()
-    model = WhisperModel(
-        model_size,
-        device=device,
-        compute_type=compute_type,
-    )
+    model = load_whisper_model(model_size, device, compute_type)
     load_time = round(time.time() - load_started_at, 1)
 
     emit(
@@ -571,6 +568,15 @@ def main() -> int:
             error="Processo interrompido.",
         )
         return 130
+    except ImportError as error:
+        emit(
+            "error",
+            "error",
+            "bootstrap",
+            "faster-whisper nao instalado.",
+            error=str(error),
+        )
+        return 1
     except Exception as error:
         print(str(error), file=sys.stderr, flush=True)
         emit(
