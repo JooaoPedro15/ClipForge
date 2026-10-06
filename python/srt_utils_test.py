@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-import srt_utils  # noqa: E402
+import srt_utils
 
 
 class SrtRoundTripTest(unittest.TestCase):

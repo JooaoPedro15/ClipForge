@@ -221,7 +221,7 @@ def _fit_line(zh: str, bucket: list[dict[str, Any]], max_chars: int, min_duratio
     buckets = split_cards_into_parts(bucket, [len(line) for line in lines], min_duration)
     if buckets is None:
         return None
-    return list(zip(buckets, lines))
+    return list(zip(buckets, lines, strict=True))
 
 
 def _translate_sentence(
@@ -465,7 +465,7 @@ def translate_with_llm(
     groups: list[dict[str, Any]] = []
     previous_lines: list[dict[str, Any]] = []
     previous_connective = ""
-    for sentence, target in zip(sentences, payload):
+    for sentence, target in zip(sentences, payload, strict=True):
         bucket = [by_index[i] for i in sentence["cards"]]
         line, parts, review = _translate_sentence(
             target, payload, previous_lines, sheet, client, bucket, max_chars, min_duration, previous_connective,

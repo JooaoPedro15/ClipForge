@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-import segmentation  # noqa: E402
+import segmentation
 
 
 def make_words(tokens: list[str], step: float = 0.25) -> list[dict]:

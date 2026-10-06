@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-import review_store  # noqa: E402
+import review_store
 
 
 def _group(cards, start, end, zh, sentence_id, text="frase", back="", note=""):

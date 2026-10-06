@@ -5,7 +5,7 @@ from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).parent))
-import llm_service  # noqa: E402
+import llm_service
 
 
 def _fake_response(payload: dict) -> mock.MagicMock:
@@ -55,9 +55,11 @@ class OllamaClientTest(unittest.TestCase):
     def test_chat_json_raises_unavailable_when_server_down(self):
         client = llm_service.OllamaClient(model="qwen-test", base_url="http://host:1")
 
-        with mock.patch.object(llm_service.request, "urlopen", side_effect=llm_service.error.URLError("refused")):
-            with self.assertRaises(llm_service.LLMUnavailableError):
-                client.chat_json(system="sys", user="usr")
+        with (
+            mock.patch.object(llm_service.request, "urlopen", side_effect=llm_service.error.URLError("refused")),
+            self.assertRaises(llm_service.LLMUnavailableError),
+        ):
+            client.chat_json(system="sys", user="usr")
 
     def test_is_available_false_when_server_down(self):
         client = llm_service.OllamaClient(model="qwen-test", base_url="http://host:1")

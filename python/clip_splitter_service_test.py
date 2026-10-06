@@ -1,10 +1,10 @@
-import unittest
 import importlib.util
 import json
 import sys
 import tempfile
-from types import SimpleNamespace
+import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 

@@ -107,10 +107,7 @@ def transcribe_video(
         )
         raise FileNotFoundError(input_path)
 
-    if output_path is None:
-        output_file = input_file.with_suffix(".srt")
-    else:
-        output_file = Path(output_path)
+    output_file = input_file.with_suffix(".srt") if output_path is None else Path(output_path)
 
     max_words = resolve_max_words_for_video(str(input_file), max_words)
 

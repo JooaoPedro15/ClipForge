@@ -21,7 +21,7 @@ class FakeTranslator:
 
     def translate_batch(self, source, target_prefix):
         results = []
-        for tokens, prefix in zip(source, target_prefix):
+        for tokens, prefix in zip(source, target_prefix, strict=True):
             # tokens = [source_lang_code, *words, "</s>"]; devolve prefix + [TRANSLATED:words]
             words = tokens[1:-1]
             translated = [f"TRANSLATED:{word}" for word in words]

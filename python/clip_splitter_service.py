@@ -1,4 +1,5 @@
 import argparse
+import contextlib
 import hashlib
 import importlib.util
 import json
@@ -12,7 +13,6 @@ from pathlib import Path
 from typing import Any
 
 from events import emit
-
 
 # Limites para evitar [WinError 206] e MAX_PATH (260) no Windows.
 MAX_OUTPUT_STEM_CHARS = 60
@@ -472,7 +472,7 @@ def build_preedit_export_payload(
     decisions_count: int,
 ) -> dict:
     output_path = Path(output_file)
-    clip_id = hashlib.sha1(f"{Path(source_path).resolve()}|preedit|{output_path}".encode("utf-8")).hexdigest()[:16]
+    clip_id = hashlib.sha1(f"{Path(source_path).resolve()}|preedit|{output_path}".encode()).hexdigest()[:16]
     removed_sec = max(0.0, float(source_duration_sec) - float(edited_duration_sec))
 
     return {
@@ -797,7 +797,7 @@ def main() -> int:
         return 1
 
     try:
-        target_duration_sec, min_duration_sec, max_duration_sec = normalize_duration_settings(
+        _target_duration_sec, min_duration_sec, max_duration_sec = normalize_duration_settings(
             args.target_duration,
             args.min_duration,
             args.max_duration,
@@ -805,8 +805,8 @@ def main() -> int:
         silence_min_duration_sec = max(0.1, float(args.silence_min_duration))
         silence_threshold_db = float(args.silence_threshold_db)
 
-        module.MIN_PART_DURATION = max(5, int(math.floor(min_duration_sec)))
-        module.MAX_PART_DURATION = max(module.MIN_PART_DURATION + 1, int(math.ceil(max_duration_sec)))
+        module.MIN_PART_DURATION = max(5, math.floor(min_duration_sec))
+        module.MAX_PART_DURATION = max(module.MIN_PART_DURATION + 1, math.ceil(max_duration_sec))
 
         emit(
             "status",
@@ -960,10 +960,9 @@ def main() -> int:
         )
 
         for cleanup_path in (Path(audio_path), filter_script_path):
-            try:
+            # Limpeza de temporario e best-effort: arquivo travado nao derruba o job.
+            with contextlib.suppress(OSError):
                 cleanup_path.unlink(missing_ok=True)
-            except Exception:
-                pass
 
         emit(
             "done",

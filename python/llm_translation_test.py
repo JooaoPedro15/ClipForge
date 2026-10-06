@@ -5,7 +5,7 @@ from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).parent))
-import llm_translation  # noqa: E402
+import llm_translation
 
 
 def _card(i, start, end, text, segment_id=0, logprob=-0.2):

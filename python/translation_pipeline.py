@@ -62,7 +62,7 @@ def _translate_with_nllb(
         else []
     )
 
-    for group, zh in zip(groups, translated_texts):
+    for group, zh in zip(groups, translated_texts, strict=True):
         zh = translation_postprocess.normalize_names(zh, video_glossary)
         zh = translation_postprocess.fix_gender_and_marriage_verb(zh, source_text=group["text"], glossary=video_glossary)
         group["zh"] = zh

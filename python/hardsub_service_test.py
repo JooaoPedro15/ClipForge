@@ -6,8 +6,7 @@ from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).parent))
-import hardsub_service  # noqa: E402
-
+import hardsub_service
 
 FAKE_VIDEO_INFO = types.SimpleNamespace(duration_sec=10.0, width=1920, height=1080)
 

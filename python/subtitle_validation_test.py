@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-import subtitle_validation as v  # noqa: E402
+import subtitle_validation as v
 
 
 class ValidateTranslationOutputTest(unittest.TestCase):

@@ -114,7 +114,7 @@ def ensure_srt_for_lang(
 
     translated_entries = [
         (start, end, translated_text)
-        for (start, end, _original_text), translated_text in zip(entries, translated_texts)
+        for (start, end, _original_text), translated_text in zip(entries, translated_texts, strict=True)
     ]
     srt_utils.write_srt(translated_entries, candidate_path)
 

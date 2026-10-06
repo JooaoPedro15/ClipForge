@@ -4,10 +4,10 @@ import os
 import subprocess
 import sys
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from shutil import which
-from typing import Callable
 
 WINDOWS_PATH_WARN_CHARS = 240
 
@@ -20,7 +20,7 @@ def _resolve_binary(name: str, windows_name: str) -> str:
     candidates = [
         Path("C:/ffmpeg/bin") / windows_name,
         Path("C:/tools/ffmpeg/bin") / windows_name,
-        Path(os.environ.get("ProgramFiles", "")) / "ffmpeg" / "bin" / windows_name,
+        Path(os.environ.get("PROGRAMFILES", "")) / "ffmpeg" / "bin" / windows_name,
     ]
     for candidate in candidates:
         if candidate.exists():

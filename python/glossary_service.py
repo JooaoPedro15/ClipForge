@@ -120,7 +120,7 @@ def build_video_glossary(
     translated_lookup: dict[str, str] = {}
     if names_to_translate:
         translated = translator.translate_segments(names_to_translate, source_lang=source_lang, target_lang=target_lang)
-        translated_lookup = dict(zip(names_to_translate, translated))
+        translated_lookup = dict(zip(names_to_translate, translated, strict=True))
 
     for name in candidates:
         if name in known_by_name:

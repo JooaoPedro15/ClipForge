@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-import translation_postprocess as pp  # noqa: E402
+import translation_postprocess as pp
 
 
 class NormalizeNamesTest(unittest.TestCase):

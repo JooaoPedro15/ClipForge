@@ -51,7 +51,7 @@ def back_translate(zh: str, sheet: dict[str, Any], client: Any) -> str:
     user = json.dumps({"names": names, "zh": zh}, ensure_ascii=False)
     try:
         raw = client.chat_json(system=llm_prompts.PROMPT_RETRADUCAO, user=user, temperature=0)
-    except Exception:  # noqa: BLE001 — qualquer erro do modelo vira "sem retraducao"
+    except Exception:
         return ""
     if not isinstance(raw, dict):
         return ""

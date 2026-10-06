@@ -5,8 +5,7 @@ from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).parent))
-import meaning_check  # noqa: E402
-
+import meaning_check
 
 SHEET = {
     "characters": [

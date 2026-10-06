@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).parent))
-import translation_pipeline  # noqa: E402
+import translation_pipeline
 
 
 class TraduzirVideoTest(unittest.TestCase):

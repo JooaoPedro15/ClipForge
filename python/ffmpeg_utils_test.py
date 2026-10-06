@@ -1,12 +1,11 @@
 import subprocess
 import sys
-import types
 import unittest
 from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).parent))
-import ffmpeg_utils  # noqa: E402
+import ffmpeg_utils
 
 
 class EscapePathForSubtitlesFilterTest(unittest.TestCase):
@@ -139,13 +138,12 @@ class RunFfmpegWithProgressTest(unittest.TestCase):
             def wait(self):
                 return self.returncode
 
-        with mock.patch("subprocess.Popen", return_value=FakeProcess()):
-            with self.assertRaises(RuntimeError):
-                ffmpeg_utils.run_ffmpeg_with_progress(
-                    ["ffmpeg", "-i", "in.mp4", "out.mp4"],
-                    total_duration_sec=10.0,
-                    on_progress=lambda _p: None,
-                )
+        with mock.patch("subprocess.Popen", return_value=FakeProcess()), self.assertRaises(RuntimeError):
+            ffmpeg_utils.run_ffmpeg_with_progress(
+                ["ffmpeg", "-i", "in.mp4", "out.mp4"],
+                total_duration_sec=10.0,
+                on_progress=lambda _p: None,
+            )
 
 
 if __name__ == "__main__":

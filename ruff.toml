@@ -1,0 +1,18 @@
+# Lint do Python (pasta python/). Rodar: npm run lint:py
+target-version = "py312"
+line-length = 120
+
+[lint]
+# E/W: pycodestyle  F: pyflakes (import/variavel sem uso, nome indefinido)
+# I: ordem dos imports  B: bugbear (armadilhas comuns)  UP: sintaxe moderna
+# SIM: simplificacoes  RUF: regras do proprio Ruff
+select = ["E", "W", "F", "I", "B", "UP", "SIM", "RUF"]
+ignore = [
+  "E501",   # tamanho de linha fica a criterio; comentarios longos sao comuns aqui
+  "RUF001", # pontuacao chinesa (，。) e proposital nas strings da traducao
+  "RUF003", # idem em comentarios
+]
+
+[lint.per-file-ignores]
+# Testes: listas fixas como atributo de classe e "a b c".split() deixam o caso legivel.
+"python/*_test.py" = ["RUF012", "SIM905"]

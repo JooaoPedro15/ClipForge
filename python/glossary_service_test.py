@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).parent))
-import glossary_service  # noqa: E402
+import glossary_service
 
 
 class ExtractCandidateNamesTest(unittest.TestCase):

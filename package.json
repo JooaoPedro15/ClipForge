@@ -13,7 +13,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:py": "node scripts/run-python-tests.mjs",
-    "test:all": "vitest run && node scripts/run-python-tests.mjs"
+    "test:all": "vitest run && node scripts/run-python-tests.mjs",
+    "lint:py": "node scripts/run-ruff.mjs"
   },
   "keywords": [],
   "author": "",

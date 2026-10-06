@@ -1,0 +1,4 @@
+# Ferramentas de desenvolvimento (nao vao pro app).
+# Instalar: D:\Projetos\subtitle-forge\.venv\Scripts\python.exe -m pip install -r python/requirements-dev.txt
+-r requirements.txt
+ruff==0.16.10

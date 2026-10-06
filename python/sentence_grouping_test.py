@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-import sentence_grouping  # noqa: E402
+import sentence_grouping
 
 
 class GroupCardsIntoSentencesTest(unittest.TestCase):
