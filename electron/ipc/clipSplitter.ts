@@ -14,7 +14,6 @@ type ClipSplitterPreEditMode = 'conservative' | 'balanced' | 'aggressive'
 type ClipSplitterStatus = 'queued' | 'preparing' | 'processing' | 'completed' | 'error' | 'cancelled'
 
 interface ClipSplitterTaskOptions {
-  useAi: boolean
   mode: ClipSplitterMode
   preEditMode: ClipSplitterPreEditMode
   writeDebugJson: boolean
@@ -46,9 +45,6 @@ interface ClipSplitterEventPayload {
   sourcePath: string
   sourceName: string
   mode: ClipSplitterMode
-  aiRequested?: boolean
-  aiUsed?: boolean
-  fallbackReason?: string
   status: ClipSplitterStatus
   stage: string
   message: string
@@ -74,9 +70,6 @@ interface RunnerStatusEvent {
   status: 'preparing' | 'processing'
   stage: string
   message: string
-  aiRequested?: boolean
-  aiUsed?: boolean
-  fallbackReason?: string
   progress?: number | null
   outputDir?: string | null
   debugPath?: string | null
@@ -92,9 +85,6 @@ interface RunnerDoneEvent {
   status: 'completed'
   stage: string
   message: string
-  aiRequested?: boolean
-  aiUsed?: boolean
-  fallbackReason?: string
   progress?: number | null
   outputDir?: string | null
   debugPath?: string | null
@@ -111,9 +101,6 @@ interface RunnerErrorEvent {
   stage: string
   message: string
   error: string
-  aiRequested?: boolean
-  aiUsed?: boolean
-  fallbackReason?: string
   progress?: number | null
   outputDir?: string | null
   debugPath?: string | null
@@ -132,8 +119,6 @@ interface ClipSplitterTaskRecord {
   sourceName: string
   options: ClipSplitterTaskOptions
   useCpu: boolean
-  aiUsed: boolean | null
-  fallbackReason: string | null
   status: ClipSplitterStatus
   outputDir: string | null
   debugPath: string | null
@@ -159,7 +144,6 @@ const queue: string[] = []
 let activeTaskId: string | null = null
 
 const defaultOptions: ClipSplitterTaskOptions = {
-  useAi: false,
   mode: 'silence',
   preEditMode: 'balanced',
   writeDebugJson: false,
@@ -187,7 +171,6 @@ function normalizeOptions(options: Partial<ClipSplitterTaskOptions> | undefined)
   return {
     ...defaultOptions,
     ...options,
-    useAi: false,
     mode: options?.mode === 'fixed' ? 'fixed' : 'silence',
     preEditMode:
       options?.preEditMode === 'conservative' || options?.preEditMode === 'aggressive'
@@ -222,9 +205,6 @@ function toPayload(task: ClipSplitterTaskRecord, overrides: Partial<ClipSplitter
     sourcePath: task.sourcePath,
     sourceName: task.sourceName,
     mode: task.options.mode,
-    aiRequested: task.options.useAi,
-    aiUsed: task.aiUsed ?? undefined,
-    fallbackReason: task.fallbackReason ?? undefined,
     status: task.status,
     stage: 'idle',
     message: task.lastMessage,
@@ -391,10 +371,6 @@ function buildProcessArgs(serviceScriptPath: string, clipSplitterRoot: string, t
     args.push('--cpu')
   }
 
-  if (!task.options.useAi) {
-    args.push('--no-ai')
-  }
-
   if (task.options.writeDebugJson) {
     args.push('--write-debug-json')
   }
@@ -489,14 +465,6 @@ function applyRunnerEvent(task: ClipSplitterTaskRecord, event: RunnerEvent) {
 
   if (Array.isArray(event.clips)) {
     task.clips = event.clips
-  }
-
-  if (typeof event.aiUsed === 'boolean') {
-    task.aiUsed = event.aiUsed
-  }
-
-  if (typeof event.fallbackReason === 'string') {
-    task.fallbackReason = event.fallbackReason
   }
 
   if (event.event === 'status') {
@@ -640,9 +608,7 @@ async function runNextTask() {
   task.startedAt = Date.now()
   task.lastMessage = task.useCpu
     ? 'Inicializando Pre-Editor com Whisper em CPU...'
-    : task.options.useAi
-      ? 'Inicializando Pre-Editor com IA de contexto...'
-      : 'Inicializando Pre-Editor em modo local...'
+    : 'Inicializando Pre-Editor em modo local...'
 
   emitProgress(task, {
     status: 'preparing',
@@ -761,8 +727,6 @@ export function registerClipSplitterHandlers() {
       sourceName,
       options: resolvedOptions,
       useCpu: false,
-      aiUsed: false,
-      fallbackReason: 'Pre-edicao local de pausas.',
       status: 'queued',
       outputDir: resolvedOptions.outputDir ?? null,
       debugPath: null,

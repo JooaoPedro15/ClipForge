@@ -38,7 +38,6 @@ const defaultSubtitleSettings: SubtitleTaskOptions = {
 
 // Configuracao inicial do Pre-Editor com o modo padrao da ferramenta.
 const defaultClipSplitterSettings: ClipSplitterOptions = {
-  useAi: false,
   mode: 'silence',
   preEditMode: 'balanced',
   writeDebugJson: false,
@@ -147,9 +146,6 @@ function upsertClipSplitterTask(
     sourcePath: event.sourcePath,
     sourceName: event.sourceName,
     mode: event.mode,
-    aiRequested: event.aiRequested ?? currentTask?.aiRequested ?? false,
-    aiUsed: event.aiUsed ?? currentTask?.aiUsed ?? null,
-    fallbackReason: event.fallbackReason ?? currentTask?.fallbackReason ?? null,
     status: event.status,
     stage: event.stage,
     message: event.message,

@@ -73,13 +73,6 @@ export function ClipSplitterTaskItem({ task, onCancel, onOpenOutput, onRetry, on
             <h4 className="text-lg font-medium text-text-primary">{task.sourceName}</h4>
             <Badge tone={resolveTone(task.status)}>{formatTaskStatus(task.status)}</Badge>
             <Badge>{task.mode === 'silence' ? 'Pre-edicao' : 'Fixo'}</Badge>
-            {task.aiRequested ? (
-              <Badge tone={task.aiUsed === false ? 'blue' : task.aiUsed ? 'green' : 'neutral'}>
-                {task.aiUsed === false ? 'Local' : task.aiUsed ? 'IA contexto' : 'Pendente'}
-              </Badge>
-            ) : (
-              <Badge>Local</Badge>
-            )}
           </div>
           <p className="font-mono text-xs text-text-muted">{task.sourcePath}</p>
         </div>
@@ -156,7 +149,6 @@ export function ClipSplitterTaskItem({ task, onCancel, onOpenOutput, onRetry, on
             {task.error}
           </span>
         ) : null}
-        {task.fallbackReason ? <span>Fallback: {task.fallbackReason}</span> : null}
         {task.debugPath ? <span>Debug: {task.debugPath}</span> : null}
         {isActive ? (
           <span className="inline-flex items-center gap-1 text-status-yellow">

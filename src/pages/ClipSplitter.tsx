@@ -67,8 +67,6 @@ export function ClipSplitterPage({
   const activeTasks = tasks.filter(
     (task) => task.status === 'queued' || task.status === 'preparing' || task.status === 'processing',
   )
-  // ── Tarefas que pediram IA mas caíram em fallback local (Whisper/Gemini indisponível)
-  const fallbackTasks = tasks.filter((task) => task.aiRequested && task.aiUsed === false)
 
   // ── Soma total de arquivos limpos gerados por todas as tarefas concluídas nesta sessão
   const exportedClips = completedTasks.reduce((total, task) => total + task.clipsCreated, 0)
@@ -142,13 +140,6 @@ export function ClipSplitterPage({
               </Badge>
             </div>
 
-            {/* ── Alerta de fallback: aparece quando algum job pediu IA mas não conseguiu usar */}
-            {fallbackTasks.length > 0 ? (
-              <div className="rounded-2xl border border-status-yellow/25 bg-status-yellow/8 px-4 py-3 text-sm text-status-yellow">
-                {fallbackTasks.length} job(s) desta sessao cairam em fallback local sem IA. Veja o motivo em cada card.
-              </div>
-            ) : null}
-
             {/* ── Box com o nome e caminho completo do arquivo selecionado ──── */}
             <div className="rounded-2xl border border-white/8 bg-black/16 p-5">
               <p className="text-sm font-medium text-text-secondary">Arquivo selecionado</p>
@@ -199,14 +190,6 @@ export function ClipSplitterPage({
             <div>
               <h3 className="text-xl font-semibold text-text-primary">Configuração de pausas</h3>
               <p className="mt-1 text-sm text-text-secondary">Regras usadas na próxima pré-edição.</p>
-            </div>
-
-            {/* ── Toggle para ativar/desativar a IA de contexto (Whisper + Gemini) */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between rounded-xl border border-white/8 bg-white/[0.03] px-4 py-3 text-sm text-text-secondary">
-                <span>Usar contexto transcrito</span>
-                <Toggle checked={settings.useAi} onChange={(checked) => patchSettings({ useAi: checked })} />
-              </div>
             </div>
 
             {/* ── Seletor de modo: "Silêncio + alvo de duração" ou "Duração fixa" */}

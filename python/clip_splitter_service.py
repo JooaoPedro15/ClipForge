@@ -747,7 +747,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--feedback-file", default=None)
     parser.add_argument("--write-debug-json", action="store_true")
     parser.add_argument("--cpu", action="store_true")
-    parser.add_argument("--no-ai", action="store_true")
     return parser.parse_args()
 
 
@@ -808,9 +807,6 @@ def main() -> int:
 
         module.MIN_PART_DURATION = max(5, int(math.floor(min_duration_sec)))
         module.MAX_PART_DURATION = max(module.MIN_PART_DURATION + 1, int(math.ceil(max_duration_sec)))
-        ai_requested = False
-        ai_used = False
-        fallback_reason: str | None = "Pre-edicao usa heuristicas locais de pausa; nao escolhe shorts automaticamente."
 
         emit(
             "status",
@@ -819,9 +815,6 @@ def main() -> int:
             "Lendo duracao do video...",
             progress=10,
             outputDir=str(output_dir),
-            aiRequested=ai_requested,
-            aiUsed=ai_used,
-            fallbackReason=fallback_reason,
             transcriptionDevice=whisper_device,
             transcriptionComputeType=whisper_compute,
         )
@@ -847,9 +840,6 @@ def main() -> int:
             progress=18,
             outputDir=str(output_dir),
             sourceDurationSec=total_duration,
-            aiRequested=ai_requested,
-            aiUsed=ai_used,
-            fallbackReason=fallback_reason,
             transcriptionDevice=whisper_device,
             transcriptionComputeType=whisper_compute,
         )
@@ -863,9 +853,6 @@ def main() -> int:
             progress=34,
             outputDir=str(output_dir),
             sourceDurationSec=total_duration,
-            aiRequested=ai_requested,
-            aiUsed=ai_used,
-            fallbackReason=fallback_reason,
             transcriptionDevice=whisper_device,
             transcriptionComputeType=whisper_compute,
         )
@@ -911,9 +898,6 @@ def main() -> int:
             outputDir=str(output_dir),
             debugPath=debug_path,
             sourceDurationSec=total_duration,
-            aiRequested=ai_requested,
-            aiUsed=ai_used,
-            fallbackReason=fallback_reason,
         )
 
         if not keep_ranges:
@@ -930,9 +914,6 @@ def main() -> int:
             sourceDurationSec=total_duration,
             totalClips=1,
             clipsCreated=0,
-            aiRequested=ai_requested,
-            aiUsed=ai_used,
-            fallbackReason=fallback_reason,
             transcriptionDevice=whisper_device,
             transcriptionComputeType=whisper_compute,
         )
@@ -948,9 +929,6 @@ def main() -> int:
             sourceDurationSec=total_duration,
             totalClips=1,
             clipsCreated=0,
-            aiRequested=ai_requested,
-            aiUsed=ai_used,
-            fallbackReason=fallback_reason,
             transcriptionDevice=whisper_device,
             transcriptionComputeType=whisper_compute,
         )
@@ -999,9 +977,6 @@ def main() -> int:
             totalClips=1,
             clipsCreated=1,
             durationSec=round(time.time() - started_at, 1),
-            aiRequested=ai_requested,
-            aiUsed=ai_used,
-            fallbackReason=fallback_reason,
             clips=clip_exports,
             transcriptionDevice=whisper_device,
             transcriptionComputeType=whisper_compute,
@@ -1015,7 +990,6 @@ def main() -> int:
             "Falha ao processar o Pre-Editor.",
             error=str(error),
             outputDir=str(output_dir),
-            aiRequested=False,
             transcriptionDevice=whisper_device,
             transcriptionComputeType=whisper_compute,
         )

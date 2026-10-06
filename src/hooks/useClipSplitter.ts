@@ -97,7 +97,6 @@ export function useClipSplitter() {
           sourcePath: resolvedSourcePath,
           sourceName: getFileName(resolvedSourcePath),
           mode: settings.mode ?? 'silence',
-          aiRequested: false,
           status: 'queued',
           stage: 'queued',
           message: 'Job adicionado a fila de pre-edicao.',

@@ -16,7 +16,6 @@ export type ClipSplitterTaskStatus =
 
 export interface ClipSplitterOptions {
   // Configuracoes enviadas para o processo de corte/exportacao.
-  useAi: boolean
   mode: ClipSplitterMode
   preEditMode: ClipSplitterPreEditMode
   writeDebugJson: boolean
@@ -50,9 +49,6 @@ export interface ClipSplitterTaskEventBase {
   sourcePath: string
   sourceName: string
   mode: ClipSplitterMode
-  aiRequested?: boolean
-  aiUsed?: boolean
-  fallbackReason?: string
   status: ClipSplitterTaskStatus
   stage: string
   message: string
@@ -92,9 +88,6 @@ export interface ClipSplitterTask {
   sourcePath: string
   sourceName: string
   mode: ClipSplitterMode
-  aiRequested: boolean
-  aiUsed: boolean | null
-  fallbackReason: string | null
   status: ClipSplitterTaskStatus
   stage: string
   message: string
