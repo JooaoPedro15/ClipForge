@@ -189,6 +189,7 @@ def append_word_group_entry(
     card_records: list[dict[str, Any]],
     segment_index: int,
     avg_logprob: float | None,
+    max_line_width: int = DEFAULT_MAX_LINE_WIDTH,
 ) -> None:
     sub_start = format_timestamp(words_group[0].start)
     sub_end = format_timestamp(words_group[-1].end)
@@ -203,7 +204,7 @@ def append_word_group_entry(
 
     srt_content.append(f"{segment_count}")
     srt_content.append(f"{sub_start} --> {sub_end}")
-    srt_content.append(text)
+    srt_content.append(split_text_into_lines(text, max_line_width))
     srt_content.append("")
 
     card_records.append(
@@ -353,6 +354,7 @@ def transcribe_video(
                     card_records=card_records,
                     segment_index=segment_index,
                     avg_logprob=getattr(segment, "avg_logprob", None),
+                    max_line_width=max_line_width,
                 )
 
             segment_end = getattr(segment, "end", None)
@@ -383,6 +385,7 @@ def transcribe_video(
                     card_records=card_records,
                     segment_index=segment_index,
                     avg_logprob=getattr(segment, "avg_logprob", None),
+                    max_line_width=max_line_width,
                 )
 
             segment_end = getattr(segment, "end", None)

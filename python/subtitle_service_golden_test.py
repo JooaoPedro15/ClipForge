@@ -56,7 +56,7 @@ SEGMENTS = [
 NATURAL_SRT = (
     "1\n00:00:00,000 --> 00:00:04,500\nEntão, ela falou que não ia voltar pra\ncasa hoje de jeito nenhum.\n\n"
     "2\n00:00:05,000 --> 00:00:09,100\naí o cara chegou correndo e gritou\n\n"
-    "3\n00:00:09,200 --> 00:00:14,500\nque a casa tava pegando fogo de verdade mano\n\n"
+    "3\n00:00:09,200 --> 00:00:14,500\nque a casa tava pegando fogo de verdade\nmano\n\n"
     "4\n00:00:15,000 --> 00:00:16,200\nValeu, galera!\n"
 )
 NATURAL_CARDS = [
