@@ -114,7 +114,7 @@ clip-forge/
 3. `electron/ipc/clipSplitter.ts` coloca o job na mesma fila unica de GPU e, na vez dele, sobe o worker Python.
 4. `python/clip_splitter_service.py` adapta o pipeline de corte.
 5. O Electron repassa progresso e resultado.
-6. A store atualiza tarefas e feedback de clipes.
+6. A store atualiza a lista de tarefas e o video limpo gerado.
 
 ## API exposta pelo preload
 
@@ -124,7 +124,7 @@ clip-forge/
 - `dialog`: selecionar arquivos e diretorios;
 - `shell`: abrir ou revelar caminhos;
 - `subtitle`: processar, cancelar e escutar eventos de legenda;
-- `clipSplitter`: processar, cancelar, salvar feedback e escutar eventos de corte.
+- `clipSplitter`: processar, cancelar e escutar eventos do Pre-Editor.
 
 ## Manutencao
 
