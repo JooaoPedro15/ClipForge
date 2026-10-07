@@ -6,6 +6,7 @@ import type { Readable } from 'node:stream'
 import { ipcMain, type WebContents } from 'electron'
 
 import { resolveNvidiaBinPaths, resolveProjectRoot, resolvePythonCommand, resolveScriptPath } from '../python/pythonEnv.js'
+import { decideOutcome, describeExitCode, looksLikeGpuFailure, parseRunnerLine } from '../python/runnerEvents.js'
 
 // Tipos locais que descrevem a fila do SubtitleForge dentro do processo principal.
 type SubtitleModel = 'tiny' | 'base' | 'small' | 'medium' | 'large-v3'
@@ -116,6 +117,8 @@ interface RunnerTranslationErrorEvent {
 type RunnerTranslationEvent = RunnerTranslationDoneEvent | RunnerTranslationErrorEvent
 
 type RunnerEvent = RunnerStatusEvent | RunnerDoneEvent | RunnerErrorEvent | RunnerTranslationEvent
+
+const RUNNER_EVENTS = ['status', 'done', 'error', 'translation-done', 'translation-error'] as const
 
 interface SubtitleTaskRecord {
   id: string
@@ -384,27 +387,7 @@ function flushBuffer(buffer: string, onLine: (line: string) => void) {
 
 // Identifica eventos JSON emitidos pelo runner; logs livres seguem outro caminho.
 export function parseRunnerEvent(line: string): RunnerEvent | null {
-  try {
-    const parsed = JSON.parse(line) as Partial<RunnerEvent>
-
-    if (
-      parsed &&
-      (parsed.event === 'status' ||
-        parsed.event === 'done' ||
-        parsed.event === 'error' ||
-        parsed.event === 'translation-done' ||
-        parsed.event === 'translation-error') &&
-      typeof parsed.status === 'string' &&
-      typeof parsed.stage === 'string' &&
-      typeof parsed.message === 'string'
-    ) {
-      return parsed as RunnerEvent
-    }
-  } catch {
-    return null
-  }
-
-  return null
+  return parseRunnerLine<RunnerEvent>(line, RUNNER_EVENTS)
 }
 
 // Interpreta logs em texto puro para aproveitar mensagens mesmo sem JSON estruturado.
@@ -514,56 +497,41 @@ function applyRunnerEvent(task: SubtitleTaskRecord, event: RunnerEvent) {
 function finishTask(task: SubtitleTaskRecord, code: number | null) {
   task.completedAt = Date.now()
   const fallbackDurationSec = task.startedAt ? Number(((task.completedAt - task.startedAt) / 1000).toFixed(1)) : 0
+  const outcome = decideOutcome({
+    cancelRequested: task.cancelRequested,
+    terminalEvent: task.terminalEvent,
+    code,
+    lastError: task.lastError,
+    lastMessage: task.lastMessage,
+    defaultDoneMessage: 'Transcricao concluida.',
+    describeExit: (exitCode) => describeExitCode(exitCode, 'SubtitleForge'),
+  })
 
-  if (task.cancelRequested) {
+  task.lastMessage = outcome.message
+  if (outcome.kind === 'done') {
+    task.status = 'completed'
+    emitDone(task, outcome.durationSec ?? fallbackDurationSec)
+    return
+  }
+
+  if (outcome.kind === 'cancelled') {
     task.status = 'cancelled'
-    task.lastMessage = 'Processo cancelado pelo usuario.'
-    emitError(task, task.lastMessage, 'cancelled')
-    return
-  }
-
-  if (task.terminalEvent?.event === 'done') {
-    task.status = 'completed'
-    task.lastMessage = task.terminalEvent.message
-    emitDone(task, task.terminalEvent.durationSec ?? fallbackDurationSec)
-    return
-  }
-
-  if (task.terminalEvent?.event === 'error') {
-    task.status = 'error'
-    task.lastMessage = task.terminalEvent.message
-    task.lastError = task.terminalEvent.error
-    emitError(task, task.lastError ?? task.lastMessage, 'error')
-    return
-  }
-
-  if (code === 0) {
-    task.status = 'completed'
-    task.lastMessage = task.lastMessage || 'Transcricao concluida.'
-    emitDone(task, fallbackDurationSec)
+    emitError(task, outcome.message, 'cancelled')
     return
   }
 
   task.status = 'error'
-  task.lastMessage = task.lastError ?? `Processo finalizado com codigo ${code ?? 'desconhecido'}.`
-  emitError(task, task.lastMessage, 'error')
+  task.lastError = outcome.error
+  emitError(task, outcome.error, 'error')
 }
 
 // Detecta erros tipicos de GPU/CUDA para decidir se vale reexecutar em CPU.
-function shouldRetryOnCpu(task: SubtitleTaskRecord) {
+function shouldRetryOnCpu(task: SubtitleTaskRecord, code: number | null) {
   if (task.options.useCpu || task.hasRetriedWithCpu) {
     return false
   }
 
-  const errorText = `${task.lastError ?? ''}\n${task.lastMessage}`.toLowerCase()
-
-  return (
-    errorText.includes('cublas64_12.dll') ||
-    errorText.includes('cudnn') ||
-    errorText.includes('cuda') ||
-    errorText.includes('device not found') ||
-    errorText.includes('failed to load library')
-  )
+  return looksLikeGpuFailure(`${task.lastError ?? ''}\n${task.lastMessage}`, code)
 }
 
 // Motor da fila: pega o proximo item, inicia o processo Python e encadeia o restante.
@@ -690,7 +658,7 @@ async function runNextTask() {
       task.lastError = stderrBuffer.trim().split(/\r?\n/).filter(Boolean).at(-1) ?? stderrBuffer.trim()
     }
 
-    if (shouldRetryOnCpu(task)) {
+    if (shouldRetryOnCpu(task, code)) {
       // Recoloca a task no topo da fila quando o ambiente GPU falha antes de desistir.
       task.child = null
       task.terminalEvent = null

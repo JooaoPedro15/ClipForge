@@ -6,6 +6,7 @@ import type { Readable } from 'node:stream'
 import { ipcMain, type WebContents } from 'electron'
 
 import { resolveNvidiaBinPaths, resolveProjectRoot, resolvePythonCommand, resolveScriptPath } from '../python/pythonEnv.js'
+import { decideOutcome, describeExitCode, looksLikeGpuFailure, parseRunnerLine } from '../python/runnerEvents.js'
 
 // Tipos locais que descrevem os jobs do Pre-Editor enquanto rodam no processo principal.
 type ClipSplitterMode = 'fixed' | 'silence'
@@ -108,6 +109,8 @@ interface RunnerErrorEvent {
 }
 
 type RunnerEvent = RunnerStatusEvent | RunnerDoneEvent | RunnerErrorEvent
+
+const RUNNER_EVENTS = ['status', 'done', 'error'] as const
 
 interface ClipSplitterTaskRecord {
   id: string
@@ -349,23 +352,7 @@ function flushBuffer(buffer: string, onLine: (line: string) => void) {
 
 // Detecta quando o stdout trouxe um evento JSON estruturado do runner.
 function parseRunnerEvent(line: string): RunnerEvent | null {
-  try {
-    const parsed = JSON.parse(line) as Partial<RunnerEvent>
-
-    if (
-      parsed &&
-      (parsed.event === 'status' || parsed.event === 'done' || parsed.event === 'error') &&
-      typeof parsed.status === 'string' &&
-      typeof parsed.stage === 'string' &&
-      typeof parsed.message === 'string'
-    ) {
-      return parsed as RunnerEvent
-    }
-  } catch {
-    return null
-  }
-
-  return null
+  return parseRunnerLine<RunnerEvent>(line, RUNNER_EVENTS)
 }
 
 // Aproveita logs livres do runner para atualizar mensagem e pasta de saida.
@@ -437,56 +424,36 @@ function applyRunnerEvent(task: ClipSplitterTaskRecord, event: RunnerEvent) {
   task.terminalEvent = event
 }
 
-// Converte codigos de saida nativos do Windows em mensagens mais diagnosticas.
-function describeProcessExit(code: number | null) {
-  if (code === 3221226505) {
-    return 'O Pre-Editor encerrou com erro nativo do Windows (3221226505 / 0xC0000409). Isso costuma indicar falha em CUDA, CTranslate2 ou driver de GPU.'
-  }
-
-  if (code === 3221225477) {
-    return 'O Pre-Editor encerrou com violacao de acesso do Windows (3221225477 / 0xC0000005). Isso costuma indicar falha em biblioteca nativa, driver ou memoria da GPU.'
-  }
-
-  return `Processo finalizado com codigo ${code ?? 'desconhecido'}.`
-}
-
 // Consolida o desfecho do job quando o processo filho encerra.
 function finishTask(task: ClipSplitterTaskRecord, code: number | null) {
   task.completedAt = Date.now()
   const fallbackDurationSec = task.startedAt ? Number(((task.completedAt - task.startedAt) / 1000).toFixed(1)) : 0
+  const outcome = decideOutcome({
+    cancelRequested: task.cancelRequested,
+    terminalEvent: task.terminalEvent,
+    code,
+    lastError: task.lastError,
+    lastMessage: task.lastMessage,
+    defaultDoneMessage: 'Pre-Editor concluido.',
+    describeExit: (exitCode) => describeExitCode(exitCode, 'Pre-Editor'),
+  })
 
-  if (task.cancelRequested) {
+  task.lastMessage = outcome.message
+  if (outcome.kind === 'done') {
+    task.status = 'completed'
+    emitDone(task, outcome.durationSec ?? fallbackDurationSec)
+    return
+  }
+
+  if (outcome.kind === 'cancelled') {
     task.status = 'cancelled'
-    task.lastMessage = 'Processo cancelado pelo usuario.'
-    emitError(task, task.lastMessage, 'cancelled')
-    return
-  }
-
-  if (task.terminalEvent?.event === 'done') {
-    task.status = 'completed'
-    task.lastMessage = task.terminalEvent.message
-    emitDone(task, task.terminalEvent.durationSec ?? fallbackDurationSec)
-    return
-  }
-
-  if (task.terminalEvent?.event === 'error') {
-    task.status = 'error'
-    task.lastMessage = task.terminalEvent.message
-    task.lastError = task.terminalEvent.error
-    emitError(task, task.lastError ?? task.lastMessage, 'error')
-    return
-  }
-
-  if (code === 0) {
-    task.status = 'completed'
-    task.lastMessage = task.lastMessage || 'Pre-Editor concluido.'
-    emitDone(task, fallbackDurationSec)
+    emitError(task, outcome.message, 'cancelled')
     return
   }
 
   task.status = 'error'
-  task.lastMessage = task.lastError ?? describeProcessExit(code)
-  emitError(task, task.lastMessage, 'error')
+  task.lastError = outcome.error
+  emitError(task, outcome.error, 'error')
 }
 
 // Decide se um erro tem cara de falha de GPU e merece retry em CPU.
@@ -495,18 +462,7 @@ function shouldRetryOnCpu(task: ClipSplitterTaskRecord, code: number | null) {
     return false
   }
 
-  const errorText = `${task.lastError ?? ''}\n${task.lastMessage}`.toLowerCase()
-
-  return (
-    code === 3221226505 ||
-    code === 3221225477 ||
-    errorText.includes('cublas64_12.dll') ||
-    errorText.includes('cudnn') ||
-    errorText.includes('cuda') ||
-    errorText.includes('ctranslate2') ||
-    errorText.includes('device not found') ||
-    errorText.includes('failed to load library')
-  )
+  return looksLikeGpuFailure(`${task.lastError ?? ''}\n${task.lastMessage}`, code)
 }
 
 // Motor da fila de exportacao: inicia o proximo job, acompanha logs e encadeia retries.

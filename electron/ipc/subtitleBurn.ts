@@ -6,6 +6,7 @@ import type { Readable } from 'node:stream'
 import { ipcMain, type WebContents } from 'electron'
 
 import { resolveNvidiaBinPaths, resolvePythonCommand, resolveScriptPath } from '../python/pythonEnv.js'
+import { decideOutcome, describeExitCode, parseRunnerLine } from '../python/runnerEvents.js'
 import { getSubtitleTaskSnapshot, resolveSubtitleForgeRoot } from './subtitle.js'
 
 // 'translate-zh' nao queima: so refaz a traducao (botao "Traduzir de novo").
@@ -63,6 +64,8 @@ interface RunnerErrorEvent {
 }
 
 type HardsubRunnerEvent = RunnerStatusEvent | RunnerDoneEvent | RunnerErrorEvent
+
+const RUNNER_EVENTS = ['status', 'done', 'error'] as const
 
 interface HardsubJobRecord {
   id: string
@@ -142,23 +145,7 @@ export function buildHardsubProcessArgs(serviceScriptPath: string, options: Hard
 }
 
 export function parseHardsubRunnerEvent(line: string): HardsubRunnerEvent | null {
-  try {
-    const parsed = JSON.parse(line) as Partial<HardsubRunnerEvent>
-
-    if (
-      parsed &&
-      (parsed.event === 'status' || parsed.event === 'done' || parsed.event === 'error') &&
-      typeof parsed.status === 'string' &&
-      typeof parsed.stage === 'string' &&
-      typeof parsed.message === 'string'
-    ) {
-      return parsed as HardsubRunnerEvent
-    }
-  } catch {
-    return null
-  }
-
-  return null
+  return parseRunnerLine<HardsubRunnerEvent>(line, RUNNER_EVENTS)
 }
 
 function flushBuffer(buffer: string, onLine: (line: string) => void) {
@@ -176,22 +163,28 @@ function flushBuffer(buffer: string, onLine: (line: string) => void) {
 }
 
 function finishJob(job: HardsubJobRecord, code: number | null) {
-  if (job.terminalEvent?.event === 'done') {
+  const outcome = decideOutcome({
+    cancelRequested: false,
+    terminalEvent: job.terminalEvent,
+    code,
+    lastError: job.lastError,
+    lastMessage: job.lastMessage,
+    defaultDoneMessage: 'Queima concluida.',
+    describeExit: (exitCode) => describeExitCode(exitCode, 'processo de queima'),
+    // Sem o evento 'done' nao ha caminho do video gerado: conta como erro.
+    requireDoneEvent: true,
+  })
+
+  if (outcome.kind === 'done' && job.terminalEvent?.event === 'done') {
     job.status = 'completed'
     job.outputPath = job.terminalEvent.outputPath ?? job.outputPath
     emit(job.sender, 'subtitle:burn-done', toPayload(job, { status: 'completed', progress: 100, outputPath: job.outputPath }))
     return
   }
 
-  if (job.terminalEvent?.event === 'error') {
-    job.status = 'error'
-    emit(job.sender, 'subtitle:burn-error', toPayload(job, { status: 'error', error: job.terminalEvent.error }))
-    return
-  }
-
   job.status = 'error'
-  const message = job.lastError ?? `Processo finalizado com codigo ${code ?? 'desconhecido'}.`
-  emit(job.sender, 'subtitle:burn-error', toPayload(job, { status: 'error', error: message }))
+  const error = outcome.kind === 'error' ? outcome.error : outcome.message
+  emit(job.sender, 'subtitle:burn-error', toPayload(job, { status: 'error', error }))
 }
 
 async function runNextJob() {
