@@ -103,6 +103,7 @@ clip-forge/
 2. `useSubtitleForge` chama `window.clipforge.subtitle.process`.
 3. `electron/ipc/subtitle.ts` coloca a tarefa na fila unica de GPU; quando chega a vez, sobe o worker Python com `runPython`.
 4. `python/subtitle_service.py` transcreve (Whisper), `segmentation.py` transforma as palavras em legendas e `srt_utils.render_srt` grava o `.srt`; o progresso sai como eventos JSON (`events.py`).
+   Com `--style-store` e um perfil pronto (3+ videos), a segmentacao vem da arvore aprendida (`style_model.py`); o ensino roda em `style_service.py` como job da fila de GPU (`electron/ipc/subtitleStyle.ts`).
 5. O Electron repassa eventos para o renderer.
 6. A store atualiza a lista de tarefas.
 7. A UI mostra progresso, erro ou o arquivo `.srt` final.

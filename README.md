@@ -79,6 +79,16 @@ Isso baixa o modelo original do Facebook (~2,4GB) e gera a versao ctranslate2 em
 
 No caminho NLLB a traducao agrupa os cards do mesmo segmento do Whisper e usa um glossario heuristico (nome capitalizado com frequencia >= 2, genero por artigo/concordancia) com pos-processamento de nome/pronome — bem mais fraco que o caminho LLM.
 
+### Aprender o seu estilo de legenda (SubtitleForge)
+
+O app aprende onde voce quebra as legendas e como ajusta entrada/saida, a partir dos videos que voce corrige no Premiere:
+
+1. Gere a legenda no app (ela salva tambem `video.words.json`, com o tempo de cada palavra).
+2. Corrija no Premiere e exporte o `.srt` corrigido e o video final (com os cortes).
+3. No painel **Meu estilo**, escolha video original, SRT corrigido e video final e clique **Ensinar**.
+
+A comparacao e pelo texto (cortes de silencio nao atrapalham). Uma arvore de decisao (scikit-learn) aprende as quebras e medianas aprendem os tempos, com um perfil para vertical e outro para horizontal. Com 3+ videos ensinados no formato, a chave **Usar meu estilo** passa a segmentar novas legendas assim. Biblioteca em `%APPDATA%/<app>/subtitle-style` (cada video pode ser removido e o perfil e retreinado).
+
 ### Queima de legenda no video (hardsub)
 
 Apos a transcricao de um video terminar, o SubtitleForge oferece 3 botoes pra gerar um arquivo de video final com a legenda queimada (hardsub): **"So chines"**, **"Chines + ingles"** e **"Chines + [idioma original]"** — as duas ultimas empilham 2 legendas no video (chines em cima), gerando a traducao que faltar automaticamente se ainda nao existir. O preset **"Formato"** (Shorts/Video longo) na configuracao ajusta o tamanho de fonte e a segmentacao padrao (`maxWords`) pro tipo de video. O arquivo final sai como `video.hardsub.<modo>.mp4` ao lado do original.
@@ -175,6 +185,7 @@ clip-forge/
 │  ├─ events.py          # Protocolo de eventos JSON com o Electron
 │  ├─ text_utils.py      # Helpers de texto (limpeza, timestamps, quebra de linha)
 │  ├─ segmentation.py    # Palavras do Whisper -> legendas (cards)
+│  ├─ style_*.py         # Aprendizado do estilo (alinhamento, features, arvore, biblioteca, servico)
 │  └─ requirements.txt   # Dependencias Python fixadas
 ├─ resources/            # Icones do aplicativo
 ├─ scripts/              # Scripts utilitarios
