@@ -838,7 +838,7 @@ def run_preedit(
         "status",
         "preparing",
         "extracting-audio",
-        f"Extraindo audio de analise da faixa {analysis_audio_index}/{audio_stream_count - 1}...",
+        f"Extraindo audio de analise da faixa 0:a:{analysis_audio_index} ({audio_stream_count} faixas no video)...",
         progress=18,
         outputDir=output_dir,
         sourceDurationSec=total_duration,

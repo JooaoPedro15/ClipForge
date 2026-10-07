@@ -38,7 +38,7 @@ SILENCE_KEEP_RANGES = [
 PIPELINE_STAGES = [
     ("status", "bootstrap", 5, "Carregando engine do Clip-Splitter..."),
     ("status", "probing", 10, "Lendo duracao do video..."),
-    ("status", "extracting-audio", 18, "Extraindo audio de analise da faixa 1/1..."),
+    ("status", "extracting-audio", 18, "Extraindo audio de analise da faixa 0:a:1 (2 faixas no video)..."),
     ("status", "transcribing", 34, "Transcrevendo audio com Whisper..."),
 ]
 
