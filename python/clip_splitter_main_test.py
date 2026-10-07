@@ -171,8 +171,8 @@ class PreEditorMainFlowTest(unittest.TestCase):
         error = run.events[-1]
         self.assertEqual((error["event"], error["stage"], error["message"]), ("error", "processing", "Falha ao processar o Pre-Editor."))
         self.assertEqual(error["error"], "Possivel downmix acidental: entrada tinha 2 faixa(s) de audio, saida preservou 1.")
-        # Comportamento atual: o audio temporario fica pra tras quando o job falha.
-        self.assertTrue(run.audio_left)
+        # Temporario sai mesmo quando o job falha (o .wav tem o tamanho do audio do video).
+        self.assertFalse(run.audio_left)
 
     def test_engine_failure_stops_at_bootstrap(self):
         run = run_main([], engine_error="sem clip_splitter.py")

@@ -932,11 +932,6 @@ def main() -> int:
             flush=True,
         )
 
-        for cleanup_path in (Path(audio_path), filter_script_path):
-            # Limpeza de temporario e best-effort: arquivo travado nao derruba o job.
-            with contextlib.suppress(OSError):
-                cleanup_path.unlink(missing_ok=True)
-
         emit(
             "done",
             "completed",
@@ -966,6 +961,11 @@ def main() -> int:
             transcriptionComputeType=whisper_compute,
         )
         return 1
+    finally:
+        for cleanup_path in (temp_audio_path, filter_script_path):
+            # Limpeza de temporario e best-effort: arquivo travado nao derruba o job.
+            with contextlib.suppress(OSError):
+                cleanup_path.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":
