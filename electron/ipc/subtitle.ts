@@ -3,58 +3,13 @@ import path from 'node:path'
 
 import { ipcMain, type WebContents } from 'electron'
 
-import { resolveProjectRoot, resolveScriptPath } from '../python/pythonEnv.js'
+import type { SubtitleErrorEvent, SubtitleTaskEventBase, SubtitleTaskOptions, SubtitleTaskStatus } from '../../src/types/subtitle.js'
 import { gpuQueue, type JobResult } from '../python/gpuQueue.js'
+import { resolveProjectRoot, resolveScriptPath } from '../python/pythonEnv.js'
 import { runPython, type PythonRun } from '../python/pythonProcess.js'
 import { decideOutcome, describeExitCode, looksLikeGpuFailure, parseRunnerLine } from '../python/runnerEvents.js'
 
-// Tipos locais que descrevem a fila do SubtitleForge dentro do processo principal.
-type SubtitleModel = 'tiny' | 'base' | 'small' | 'medium' | 'large-v3'
-type SubtitleStatus = 'queued' | 'preparing' | 'processing' | 'completed' | 'error' | 'cancelled'
-
-interface SubtitleTaskOptions {
-  model: SubtitleModel
-  language: string
-  beamSize: number
-  maxWidth: number
-  maxWords: number
-  uppercase: boolean
-  lowercase: boolean
-  noAccents: boolean
-  noPunctuation: boolean
-  useCpu: boolean
-  translateTo: string[]
-  videoType: string
-  outputPath?: string | null
-}
-
-interface SubtitleEventPayload {
-  taskId: string
-  filePath: string
-  fileName: string
-  model: SubtitleModel
-  language: string
-  device: 'cpu' | 'cuda'
-  status: SubtitleStatus
-  stage: string
-  message: string
-  progress: number | null
-  queuePosition?: number
-  processedSegments?: number
-  totalSegments?: number
-  outputPath?: string | null
-  startedAt?: number
-  completedAt?: number
-  durationSec?: number
-  detectedLanguage?: string
-  translatedOutputs?: Record<string, string>
-  translationErrors?: Record<string, string>
-}
-
-interface SubtitleErrorPayload extends SubtitleEventPayload {
-  error: string
-}
-
+// Tipos crus do runner e o registro da tarefa sao so do processo principal; o contrato com a tela vem de src/types.
 interface RunnerStatusEvent {
   event: 'status'
   status: 'preparing' | 'processing'
@@ -126,7 +81,7 @@ interface SubtitleTaskRecord {
   filePath: string
   fileName: string
   options: SubtitleTaskOptions
-  status: SubtitleStatus
+  status: SubtitleTaskStatus
   outputPath: string | null
   createdAt: number
   startedAt: number | null
@@ -160,6 +115,7 @@ const defaultOptions: SubtitleTaskOptions = {
   useCpu: false,
   translateTo: [],
   videoType: '',
+  format: 'long',
   outputPath: null,
 }
 
@@ -184,7 +140,7 @@ function normalizeOptions(options: Partial<SubtitleTaskOptions> | undefined): Su
 function emit(
   sender: WebContents,
   channel: 'subtitle:progress' | 'subtitle:done' | 'subtitle:error',
-  payload: SubtitleEventPayload | SubtitleErrorPayload,
+  payload: SubtitleTaskEventBase | SubtitleErrorEvent,
 ) {
   if (!sender.isDestroyed()) {
     sender.send(channel, payload)
@@ -192,7 +148,7 @@ function emit(
 }
 
 // Construi o payload padrao usado em progresso, conclusao e erro.
-function toPayload(task: SubtitleTaskRecord, overrides: Partial<SubtitleEventPayload>): SubtitleEventPayload {
+function toPayload(task: SubtitleTaskRecord, overrides: Partial<SubtitleTaskEventBase>): SubtitleTaskEventBase {
   return {
     taskId: task.id,
     filePath: task.filePath,
@@ -217,7 +173,7 @@ function toPayload(task: SubtitleTaskRecord, overrides: Partial<SubtitleEventPay
 }
 
 // Emissores especializados para simplificar o fluxo de notificacoes do renderer.
-function emitProgress(task: SubtitleTaskRecord, overrides: Partial<SubtitleEventPayload>) {
+function emitProgress(task: SubtitleTaskRecord, overrides: Partial<SubtitleTaskEventBase>) {
   emit(task.sender, 'subtitle:progress', toPayload(task, overrides))
 }
 
@@ -239,7 +195,7 @@ function emitDone(task: SubtitleTaskRecord, durationSec: number) {
 }
 
 function emitError(task: SubtitleTaskRecord, message: string, status: 'error' | 'cancelled') {
-  const payload: SubtitleErrorPayload = {
+  const payload: SubtitleErrorEvent = {
     ...toPayload(task, {
       status,
       stage: status,

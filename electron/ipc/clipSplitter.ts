@@ -3,66 +3,19 @@ import path from 'node:path'
 
 import { ipcMain, type WebContents } from 'electron'
 
-import { resolveProjectRoot, resolveScriptPath } from '../python/pythonEnv.js'
+import type {
+  ClipSplitterClip,
+  ClipSplitterErrorEvent,
+  ClipSplitterOptions,
+  ClipSplitterTaskEventBase,
+  ClipSplitterTaskStatus,
+} from '../../src/types/clipSplitter.js'
 import { gpuQueue, type JobResult } from '../python/gpuQueue.js'
+import { resolveProjectRoot, resolveScriptPath } from '../python/pythonEnv.js'
 import { runPython, type PythonRun } from '../python/pythonProcess.js'
 import { decideOutcome, describeExitCode, looksLikeGpuFailure, parseRunnerLine } from '../python/runnerEvents.js'
 
-// Tipos locais que descrevem os jobs do Pre-Editor enquanto rodam no processo principal.
-type ClipSplitterMode = 'fixed' | 'silence'
-type ClipSplitterPreEditMode = 'conservative' | 'balanced' | 'aggressive'
-type ClipSplitterStatus = 'queued' | 'preparing' | 'processing' | 'completed' | 'error' | 'cancelled'
-
-interface ClipSplitterTaskOptions {
-  mode: ClipSplitterMode
-  preEditMode: ClipSplitterPreEditMode
-  writeDebugJson: boolean
-  analysisAudioTrack: string
-  targetDurationSec: number
-  minClipDurationSec: number
-  maxClipDurationSec: number
-  silenceThresholdDb: number
-  silenceMinDurationSec: number
-  outputDir?: string | null
-}
-
-interface ClipExportPayload {
-  clipId: string
-  index: number
-  filePath: string
-  fileName: string
-  startSec: number
-  endSec: number
-  durationSec: number
-  reason: string
-  transcriptSnippet: string
-}
-
-interface ClipSplitterEventPayload {
-  taskId: string
-  sourcePath: string
-  sourceName: string
-  mode: ClipSplitterMode
-  status: ClipSplitterStatus
-  stage: string
-  message: string
-  progress: number | null
-  queuePosition?: number
-  outputDir?: string | null
-  debugPath?: string | null
-  clipsCreated?: number
-  totalClips?: number
-  sourceDurationSec?: number
-  startedAt?: number
-  completedAt?: number
-  durationSec?: number
-  clips?: ClipExportPayload[]
-}
-
-interface ClipSplitterErrorPayload extends ClipSplitterEventPayload {
-  error: string
-}
-
+// Tipos crus do runner e o registro do job sao so do processo principal; o contrato com a tela vem de src/types.
 interface RunnerStatusEvent {
   event: 'status'
   status: 'preparing' | 'processing'
@@ -75,7 +28,7 @@ interface RunnerStatusEvent {
   totalClips?: number
   sourceDurationSec?: number
   durationSec?: number
-  clips?: ClipExportPayload[]
+  clips?: ClipSplitterClip[]
 }
 
 interface RunnerDoneEvent {
@@ -90,7 +43,7 @@ interface RunnerDoneEvent {
   totalClips?: number
   sourceDurationSec?: number
   durationSec?: number
-  clips?: ClipExportPayload[]
+  clips?: ClipSplitterClip[]
 }
 
 interface RunnerErrorEvent {
@@ -105,7 +58,7 @@ interface RunnerErrorEvent {
   clipsCreated?: number
   totalClips?: number
   sourceDurationSec?: number
-  clips?: ClipExportPayload[]
+  clips?: ClipSplitterClip[]
 }
 
 type RunnerEvent = RunnerStatusEvent | RunnerDoneEvent | RunnerErrorEvent
@@ -117,9 +70,9 @@ interface ClipSplitterTaskRecord {
   sender: WebContents
   sourcePath: string
   sourceName: string
-  options: ClipSplitterTaskOptions
+  options: ClipSplitterOptions
   useCpu: boolean
-  status: ClipSplitterStatus
+  status: ClipSplitterTaskStatus
   outputDir: string | null
   debugPath: string | null
   createdAt: number
@@ -134,13 +87,13 @@ interface ClipSplitterTaskRecord {
   lastError: string | null
   terminalEvent: RunnerDoneEvent | RunnerErrorEvent | null
   hasRetriedWithCpu: boolean
-  clips: ClipExportPayload[]
+  clips: ClipSplitterClip[]
 }
 
 // Jobs desta sessao (a ordem de execucao fica na fila unica de GPU).
 const tasks = new Map<string, ClipSplitterTaskRecord>()
 
-const defaultOptions: ClipSplitterTaskOptions = {
+const defaultOptions: ClipSplitterOptions = {
   mode: 'silence',
   preEditMode: 'balanced',
   writeDebugJson: false,
@@ -154,7 +107,7 @@ const defaultOptions: ClipSplitterTaskOptions = {
 }
 
 // Corrige limites de duracao e limpa valores antes de iniciar um novo job.
-function normalizeOptions(options: Partial<ClipSplitterTaskOptions> | undefined): ClipSplitterTaskOptions {
+function normalizeOptions(options: Partial<ClipSplitterOptions> | undefined): ClipSplitterOptions {
   const minClipDurationSec = Math.max(5, Number(options?.minClipDurationSec ?? defaultOptions.minClipDurationSec))
   const maxClipDurationSec = Math.max(
     minClipDurationSec + 1,
@@ -188,7 +141,7 @@ function normalizeOptions(options: Partial<ClipSplitterTaskOptions> | undefined)
 function emit(
   sender: WebContents,
   channel: 'clipSplitter:progress' | 'clipSplitter:done' | 'clipSplitter:error',
-  payload: ClipSplitterEventPayload | ClipSplitterErrorPayload,
+  payload: ClipSplitterTaskEventBase | ClipSplitterErrorEvent,
 ) {
   if (!sender.isDestroyed()) {
     sender.send(channel, payload)
@@ -196,7 +149,7 @@ function emit(
 }
 
 // Monta o payload base que o frontend usa para renderizar o estado do job.
-function toPayload(task: ClipSplitterTaskRecord, overrides: Partial<ClipSplitterEventPayload>): ClipSplitterEventPayload {
+function toPayload(task: ClipSplitterTaskRecord, overrides: Partial<ClipSplitterTaskEventBase>): ClipSplitterTaskEventBase {
   return {
     taskId: task.id,
     sourcePath: task.sourcePath,
@@ -219,7 +172,7 @@ function toPayload(task: ClipSplitterTaskRecord, overrides: Partial<ClipSplitter
 }
 
 // Helpers de emissao para reduzir duplicacao entre progresso, done e error.
-function emitProgress(task: ClipSplitterTaskRecord, overrides: Partial<ClipSplitterEventPayload>) {
+function emitProgress(task: ClipSplitterTaskRecord, overrides: Partial<ClipSplitterTaskEventBase>) {
   emit(task.sender, 'clipSplitter:progress', toPayload(task, overrides))
 }
 
@@ -241,7 +194,7 @@ function emitDone(task: ClipSplitterTaskRecord, durationSec: number) {
 }
 
 function emitError(task: ClipSplitterTaskRecord, message: string, status: 'error' | 'cancelled') {
-  const payload: ClipSplitterErrorPayload = {
+  const payload: ClipSplitterErrorEvent = {
     ...toPayload(task, {
       status,
       stage: status,
@@ -527,7 +480,7 @@ async function runTask(task: ClipSplitterTaskRecord): Promise<JobResult> {
 
 export function registerClipSplitterHandlers() {
   // Registra a criacao de jobs de corte/exportacao vindos do renderer.
-  ipcMain.handle('clipSplitter:process', async (event, sourcePath: string, options?: Partial<ClipSplitterTaskOptions>) => {
+  ipcMain.handle('clipSplitter:process', async (event, sourcePath: string, options?: Partial<ClipSplitterOptions>) => {
     const resolvedOptions = normalizeOptions(options)
     const taskId = crypto.randomUUID()
     const sourceName = path.basename(sourcePath)

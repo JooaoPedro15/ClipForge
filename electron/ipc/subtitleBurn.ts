@@ -3,17 +3,14 @@ import path from 'node:path'
 
 import { ipcMain, type WebContents } from 'electron'
 
-import { resolveScriptPath } from '../python/pythonEnv.js'
+import type { HardsubEvent, HardsubFormat, HardsubJobStatus, HardsubMode } from '../../src/types/subtitle.js'
 import { gpuQueue, type JobResult } from '../python/gpuQueue.js'
+import { resolveScriptPath } from '../python/pythonEnv.js'
 import { runPython, type PythonRun } from '../python/pythonProcess.js'
 import { decideOutcome, describeExitCode, parseRunnerLine } from '../python/runnerEvents.js'
 import { getSubtitleTaskSnapshot, resolveSubtitleForgeRoot } from './subtitle.js'
 
-// 'translate-zh' nao queima: so refaz a traducao (botao "Traduzir de novo").
-export type HardsubMode = 'zh' | 'zh-en' | 'zh-original' | 'translate-zh'
-export type HardsubFormat = 'shorts' | 'long'
-type HardsubStatus = 'queued' | 'preparing' | 'processing' | 'completed' | 'error' | 'cancelled'
-
+// Tipos crus do runner e o registro do job sao so do processo principal; o contrato com a tela vem de src/types.
 interface HardsubOptions {
   videoPath: string
   originalSrtPath: string
@@ -23,19 +20,6 @@ interface HardsubOptions {
   useCpu: boolean
   // Mesma linha de contexto da transcricao — o registro do chines depende dela.
   videoType?: string
-}
-
-interface HardsubEventPayload {
-  taskId: string
-  jobId: string
-  mode: HardsubMode
-  format: HardsubFormat
-  status: HardsubStatus
-  stage: string
-  message: string
-  progress: number | null
-  outputPath?: string | null
-  error?: string
 }
 
 interface RunnerStatusEvent {
@@ -73,7 +57,7 @@ interface HardsubJobRecord {
   sender: WebContents
   mode: HardsubMode
   format: HardsubFormat
-  status: HardsubStatus
+  status: HardsubJobStatus
   outputPath: string | null
   lastMessage: string
   lastError: string | null
@@ -86,14 +70,14 @@ const jobs = new Map<string, HardsubJobRecord>()
 function emit(
   sender: WebContents,
   channel: 'subtitle:burn-progress' | 'subtitle:burn-done' | 'subtitle:burn-error',
-  payload: HardsubEventPayload,
+  payload: HardsubEvent,
 ) {
   if (!sender.isDestroyed()) {
     sender.send(channel, payload)
   }
 }
 
-function toPayload(job: HardsubJobRecord, overrides: Partial<HardsubEventPayload>): HardsubEventPayload {
+function toPayload(job: HardsubJobRecord, overrides: Partial<HardsubEvent>): HardsubEvent {
   return {
     taskId: job.taskId,
     jobId: job.id,
