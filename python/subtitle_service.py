@@ -79,6 +79,20 @@ def whisper_word_dicts(segment: Any, segment_id: int = 0, first_index: int = 0) 
     ]
 
 
+# Transcricao com os parametros do app (VAD corta silencios de 300ms+). Devolve (segmentos, info) do Whisper.
+def run_whisper(model: Any, media_path: str, language: str, beam_size: int, word_timestamps: bool = True) -> tuple[Any, Any]:
+    return model.transcribe(
+        media_path,
+        beam_size=beam_size,
+        language=language,
+        word_timestamps=word_timestamps,
+        vad_filter=True,
+        vad_parameters={
+            "min_silence_duration_ms": 300,
+        },
+    )
+
+
 # Perfil de estilo pela orientacao real do video; sem stream de video (ex.: so audio), horizontal.
 def resolve_style_profile_name(input_path: str) -> str:
     try:
@@ -221,16 +235,7 @@ def transcribe_video(
     )
 
     transcribe_started_at = time.time()
-    segments, info = model.transcribe(
-        str(input_file),
-        beam_size=beam_size,
-        language=language,
-        word_timestamps=word_timestamps,
-        vad_filter=True,
-        vad_parameters={
-            "min_silence_duration_ms": 300,
-        },
-    )
+    segments, info = run_whisper(model, str(input_file), language, beam_size, word_timestamps)
 
     detected_language = getattr(info, "language", language)
     language_probability = getattr(info, "language_probability", None)

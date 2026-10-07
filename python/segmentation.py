@@ -139,10 +139,23 @@ def split_long_segment_words(words: list[dict[str, Any]]) -> list[list[dict[str,
     )
 
 
-# Transforma um segmento do Whisper em cards de legenda:
+# Como a formula quebra um segmento do Whisper:
 # - max_words > 0 (shorts): grupos curtos de palavras;
 # - segmento natural longo (> NATURAL_SPLIT_MAX_DURATION): refatiado;
-# - senao (ou sem palavras): o segmento inteiro vira um card.
+# - senao (ou sem palavras): None = o segmento inteiro vira uma legenda so.
+def word_groups_for_segment(
+    words: list[dict[str, Any]],
+    segment_duration: float,
+    max_words: int,
+) -> list[list[dict[str, Any]]] | None:
+    if max_words > 0 and words:
+        return segment_words_naturally(words, target_words=max_words)
+    if words and segment_duration > NATURAL_SPLIT_MAX_DURATION:
+        return split_long_segment_words(words)
+    return None
+
+
+# Transforma um segmento do Whisper em cards de legenda.
 # `text` guarda o texto cru (case original): a traducao usa os cards.
 def cards_for_segment(
     words: list[dict[str, Any]],
@@ -150,11 +163,8 @@ def cards_for_segment(
     max_words: int,
     first_index: int,
 ) -> list[dict[str, Any]]:
-    if max_words > 0 and words:
-        groups = segment_words_naturally(words, target_words=max_words)
-    elif words and (segment["end"] - segment["start"]) > NATURAL_SPLIT_MAX_DURATION:
-        groups = split_long_segment_words(words)
-    else:
+    groups = word_groups_for_segment(words, segment["end"] - segment["start"], max_words)
+    if groups is None:
         return [
             {
                 "i": first_index,
