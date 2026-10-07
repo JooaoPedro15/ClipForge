@@ -13,5 +13,5 @@
     "resolveJsonModule": true
   },
   "include": ["electron"],
-  "exclude": ["**/*.test.ts"]
+  "exclude": ["**/*.test.ts", "electron/testing/**"]
 }
