@@ -1,11 +1,10 @@
-import { spawn, type ChildProcessByStdio } from 'node:child_process'
 import crypto from 'node:crypto'
 import path from 'node:path'
-import type { Readable } from 'node:stream'
 
 import { ipcMain, type WebContents } from 'electron'
 
-import { resolveNvidiaBinPaths, resolveProjectRoot, resolvePythonCommand, resolveScriptPath } from '../python/pythonEnv.js'
+import { resolveProjectRoot, resolveScriptPath } from '../python/pythonEnv.js'
+import { runPython, type PythonRun } from '../python/pythonProcess.js'
 import { decideOutcome, describeExitCode, looksLikeGpuFailure, parseRunnerLine } from '../python/runnerEvents.js'
 
 // Tipos locais que descrevem os jobs do Pre-Editor enquanto rodam no processo principal.
@@ -125,7 +124,7 @@ interface ClipSplitterTaskRecord {
   createdAt: number
   startedAt: number | null
   completedAt: number | null
-  child: ChildProcessByStdio<null, Readable, Readable> | null
+  process: PythonRun | null
   cancelRequested: boolean
   clipsCreated: number
   totalClips: number | null
@@ -335,21 +334,6 @@ function buildProcessArgs(serviceScriptPath: string, clipSplitterRoot: string, t
   return args
 }
 
-// Faz o streaming incremental de stdout/stderr sem perder linhas quebradas.
-function flushBuffer(buffer: string, onLine: (line: string) => void) {
-  const lines = buffer.split(/\r?\n/)
-  const remainder = lines.pop() ?? ''
-
-  for (const line of lines) {
-    const trimmed = line.trim()
-    if (trimmed) {
-      onLine(trimmed)
-    }
-  }
-
-  return remainder
-}
-
 // Detecta quando o stdout trouxe um evento JSON estruturado do runner.
 function parseRunnerEvent(line: string): RunnerEvent | null {
   return parseRunnerLine<RunnerEvent>(line, RUNNER_EVENTS)
@@ -525,72 +509,33 @@ async function runNextTask() {
   })
   refreshQueuedTasks()
 
-  const python = resolvePythonCommand(clipSplitterRoot)
-  const nvidiaBinPaths = resolveNvidiaBinPaths(clipSplitterRoot)
-  const args = [...python.args, ...buildProcessArgs(runnerScriptPath, clipSplitterRoot, task)]
-  // O child process roda com pipes para alimentar progresso em tempo real no renderer.
-  const child = spawn(python.command, args, {
-    cwd: clipSplitterRoot,
-    env: {
-      ...process.env,
-      CLIPFORGE_CLIP_SPLITTER_PATH: clipSplitterRoot,
-      PATH: [...nvidiaBinPaths, process.env.PATH ?? ''].filter(Boolean).join(path.delimiter),
-      PYTHONIOENCODING: 'utf-8',
-      PYTHONUNBUFFERED: '1',
-    },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  })
-
-  task.child = child
-
-  let stdoutBuffer = ''
-  let stderrBuffer = ''
-
-  child.stdout.setEncoding('utf8')
-  child.stderr.setEncoding('utf8')
-
-  child.stdout.on('data', (chunk: string) => {
-    stdoutBuffer += chunk
-    stdoutBuffer = flushBuffer(stdoutBuffer, (line) => {
+  const run = runPython({
+    root: clipSplitterRoot,
+    scriptArgs: buildProcessArgs(runnerScriptPath, clipSplitterRoot, task),
+    extraEnv: { CLIPFORGE_CLIP_SPLITTER_PATH: clipSplitterRoot },
+    logTag: 'clip-splitter-service',
+    onStdoutLine: (line) => {
       const event = parseRunnerEvent(line)
-      if (!event) {
-        applyPlaintextRunnerLine(task, line)
-        return
-      }
-
-      applyRunnerEvent(task, event)
-    })
-  })
-
-  child.stderr.on('data', (chunk: string) => {
-    stderrBuffer += chunk
-    stderrBuffer = flushBuffer(stderrBuffer, (line) => {
-      task.lastError = line
-      console.error('[clip-splitter-service:stderr]', line)
-    })
-  })
-
-  child.once('error', (error) => {
-    task.lastError = error.message
-  })
-
-  child.once('close', async (code) => {
-    if (stdoutBuffer.trim()) {
-      const event = parseRunnerEvent(stdoutBuffer.trim())
       if (event) {
         applyRunnerEvent(task, event)
       } else {
-        applyPlaintextRunnerLine(task, stdoutBuffer.trim())
+        applyPlaintextRunnerLine(task, line)
       }
-    }
+    },
+    onStderrLine: (line) => {
+      task.lastError = line
+    },
+  })
+  task.process = run
 
-    if (stderrBuffer.trim()) {
-      task.lastError = stderrBuffer.trim().split(/\r?\n/).filter(Boolean).at(-1) ?? stderrBuffer.trim()
+  void run.done.then(async ({ code, spawnError, lastStderrLine }) => {
+    if (spawnError && !lastStderrLine) {
+      task.lastError = spawnError
     }
 
     if (shouldRetryOnCpu(task, code)) {
       // Em falhas tipicas de CUDA, o mesmo job volta ao topo da fila usando CPU.
-      task.child = null
+      task.process = null
       task.terminalEvent = null
       task.lastError = null
       task.useCpu = true
@@ -612,7 +557,7 @@ async function runNextTask() {
     }
 
     finishTask(task, code)
-    task.child = null
+    task.process = null
     activeTaskId = null
     refreshQueuedTasks()
     await runNextTask()
@@ -639,7 +584,7 @@ export function registerClipSplitterHandlers() {
       createdAt: Date.now(),
       startedAt: null,
       completedAt: null,
-      child: null,
+      process: null,
       cancelRequested: false,
       clipsCreated: 0,
       totalClips: null,
@@ -689,8 +634,8 @@ export function registerClipSplitterHandlers() {
       return true
     }
 
-    if (task.child) {
-      task.child.kill()
+    if (task.process) {
+      task.process.kill()
       return true
     }
 

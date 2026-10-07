@@ -1,11 +1,10 @@
-import { spawn, type ChildProcessByStdio } from 'node:child_process'
 import crypto from 'node:crypto'
 import path from 'node:path'
-import type { Readable } from 'node:stream'
 
 import { ipcMain, type WebContents } from 'electron'
 
-import { resolveNvidiaBinPaths, resolvePythonCommand, resolveScriptPath } from '../python/pythonEnv.js'
+import { resolveScriptPath } from '../python/pythonEnv.js'
+import { runPython, type PythonRun } from '../python/pythonProcess.js'
 import { decideOutcome, describeExitCode, parseRunnerLine } from '../python/runnerEvents.js'
 import { getSubtitleTaskSnapshot, resolveSubtitleForgeRoot } from './subtitle.js'
 
@@ -77,7 +76,7 @@ interface HardsubJobRecord {
   outputPath: string | null
   lastMessage: string
   lastError: string | null
-  child: ChildProcessByStdio<null, Readable, Readable> | null
+  process: PythonRun | null
   terminalEvent: RunnerDoneEvent | RunnerErrorEvent | null
 }
 
@@ -148,20 +147,6 @@ export function parseHardsubRunnerEvent(line: string): HardsubRunnerEvent | null
   return parseRunnerLine<HardsubRunnerEvent>(line, RUNNER_EVENTS)
 }
 
-function flushBuffer(buffer: string, onLine: (line: string) => void) {
-  const lines = buffer.split(/\r?\n/)
-  const remainder = lines.pop() ?? ''
-
-  for (const line of lines) {
-    const trimmed = line.trim()
-    if (trimmed) {
-      onLine(trimmed)
-    }
-  }
-
-  return remainder
-}
-
 function finishJob(job: HardsubJobRecord, code: number | null) {
   const outcome = decideOutcome({
     cancelRequested: false,
@@ -227,11 +212,9 @@ async function runNextJob() {
   job.status = 'preparing'
   emit(job.sender, 'subtitle:burn-progress', toPayload(job, { status: 'preparing', stage: 'starting', message: 'Preparando queima...', progress: 5 }))
 
-  const python = resolvePythonCommand(forgeRoot)
-  const nvidiaBinPaths = resolveNvidiaBinPaths(forgeRoot)
-  const args = [
-    ...python.args,
-    ...buildHardsubProcessArgs(scriptPath, {
+  const run = runPython({
+    root: forgeRoot,
+    scriptArgs: buildHardsubProcessArgs(scriptPath, {
       videoPath: snapshot.filePath,
       originalSrtPath: snapshot.outputPath,
       sourceLanguage: snapshot.detectedLanguage ?? snapshot.language,
@@ -240,29 +223,8 @@ async function runNextJob() {
       useCpu: false,
       videoType: snapshot.videoType,
     }),
-  ]
-
-  const child = spawn(python.command, args, {
-    cwd: forgeRoot,
-    env: {
-      ...process.env,
-      PATH: [...nvidiaBinPaths, process.env.PATH ?? ''].filter(Boolean).join(path.delimiter),
-      PYTHONIOENCODING: 'utf-8',
-      PYTHONUNBUFFERED: '1',
-    },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  })
-
-  job.child = child
-  let stdoutBuffer = ''
-  let stderrBuffer = ''
-
-  child.stdout.setEncoding('utf8')
-  child.stderr.setEncoding('utf8')
-
-  child.stdout.on('data', (chunk: string) => {
-    stdoutBuffer += chunk
-    stdoutBuffer = flushBuffer(stdoutBuffer, (line) => {
+    logTag: 'hardsub-service',
+    onStdoutLine: (line) => {
       const event = parseHardsubRunnerEvent(line)
       if (!event) {
         job.lastMessage = line
@@ -275,20 +237,20 @@ async function runNextJob() {
       } else {
         job.terminalEvent = event
       }
-    })
-  })
-
-  child.stderr.on('data', (chunk: string) => {
-    stderrBuffer += chunk
-    stderrBuffer = flushBuffer(stderrBuffer, (line) => {
+    },
+    onStderrLine: (line) => {
       job.lastError = line
-      console.error('[hardsub-service:stderr]', line)
-    })
+    },
   })
+  job.process = run
 
-  child.once('close', async (code) => {
+  void run.done.then(async ({ code, spawnError, lastStderrLine }) => {
+    if (spawnError && !lastStderrLine) {
+      job.lastError = spawnError
+    }
+
     finishJob(job, code)
-    job.child = null
+    job.process = null
     activeJobId = null
     await runNextJob()
   })
@@ -308,7 +270,7 @@ export function registerHardsubHandlers() {
       outputPath: null,
       lastMessage: 'Job de queima adicionado a fila.',
       lastError: null,
-      child: null,
+      process: null,
       terminalEvent: null,
     }
 
