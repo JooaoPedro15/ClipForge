@@ -4,6 +4,7 @@ import path from 'node:path'
 import { ipcMain, type WebContents } from 'electron'
 
 import { resolveProjectRoot, resolveScriptPath } from '../python/pythonEnv.js'
+import { gpuQueue, type JobResult } from '../python/gpuQueue.js'
 import { runPython, type PythonRun } from '../python/pythonProcess.js'
 import { decideOutcome, describeExitCode, looksLikeGpuFailure, parseRunnerLine } from '../python/runnerEvents.js'
 
@@ -143,11 +144,8 @@ interface SubtitleTaskRecord {
   translationErrors: Record<string, string>
 }
 
-// Estruturas em memoria que controlam a fila sequencial e a tarefa ativa.
+// Tarefas desta sessao (a ordem de execucao fica na fila unica de GPU).
 const tasks = new Map<string, SubtitleTaskRecord>()
-const queue: string[] = []
-
-let activeTaskId: string | null = null
 
 const defaultOptions: SubtitleTaskOptions = {
   model: 'large-v3',
@@ -256,24 +254,17 @@ function emitError(task: SubtitleTaskRecord, message: string, status: 'error' | 
   emit(task.sender, 'subtitle:error', payload)
 }
 
-function refreshQueuedTasks() {
-  // Recalcula a posicao de cada item da fila sempre que algo entra, sai ou conclui.
-  queue.forEach((taskId, index) => {
-    const task = tasks.get(taskId)
-    if (!task) {
-      return
-    }
+// Avisa a tela da posicao da tarefa na fila unica de GPU (chamado pela fila sempre que ela anda).
+function emitQueued(task: SubtitleTaskRecord, position: number, isNext: boolean) {
+  task.status = 'queued'
+  task.lastMessage = isNext ? 'Aguardando inicializacao...' : `Na fila (${position})`
 
-    task.status = 'queued'
-    task.lastMessage = index === 0 && !activeTaskId ? 'Aguardando inicializacao...' : `Na fila (${index + 1})`
-
-    emitProgress(task, {
-      status: 'queued',
-      stage: 'queued',
-      message: task.lastMessage,
-      progress: null,
-      queuePosition: index + 1,
-    })
+  emitProgress(task, {
+    status: 'queued',
+    stage: 'queued',
+    message: task.lastMessage,
+    progress: null,
+    queuePosition: position,
   })
 }
 
@@ -518,24 +509,8 @@ function shouldRetryOnCpu(task: SubtitleTaskRecord, code: number | null) {
   return looksLikeGpuFailure(`${task.lastError ?? ''}\n${task.lastMessage}`, code)
 }
 
-// Motor da fila: pega o proximo item, inicia o processo Python e encadeia o restante.
-async function runNextTask() {
-  if (activeTaskId || queue.length === 0) {
-    return
-  }
-
-  const nextTaskId = queue.shift()
-  if (!nextTaskId) {
-    return
-  }
-
-  const task = tasks.get(nextTaskId)
-  if (!task) {
-    refreshQueuedTasks()
-    await runNextTask()
-    return
-  }
-
+// Roda uma tarefa da fila de GPU: sobe o Python, acompanha e decide entre retry em CPU e desfecho.
+async function runTask(task: SubtitleTaskRecord): Promise<JobResult> {
   const forgeRoot = resolveSubtitleForgeRoot()
   if (!forgeRoot) {
     task.status = 'error'
@@ -546,9 +521,7 @@ async function runNextTask() {
       'Projeto subtitle-forge nao encontrado. Configure em D:\\Projetos\\subtitle-forge ou use CLIPFORGE_SUBTITLE_FORGE_PATH.',
       'error',
     )
-    refreshQueuedTasks()
-    await runNextTask()
-    return
+    return 'done'
   }
 
   const { scriptPath: runnerScriptPath, checked: runnerCheckedPaths } = resolveRunnerScriptPath(forgeRoot)
@@ -561,12 +534,9 @@ async function runNextTask() {
       `Script Python nao encontrado. Caminhos verificados:\n${runnerCheckedPaths.join('\n')}`,
       'error',
     )
-    refreshQueuedTasks()
-    await runNextTask()
-    return
+    return 'done'
   }
 
-  activeTaskId = task.id
   task.status = 'preparing'
   task.startedAt = Date.now()
   task.lastMessage = 'Inicializando SubtitleForge...'
@@ -578,7 +548,6 @@ async function runNextTask() {
     progress: 5,
     queuePosition: undefined,
   })
-  refreshQueuedTasks()
 
   const run = runPython({
     root: forgeRoot,
@@ -598,43 +567,35 @@ async function runNextTask() {
   })
   task.process = run
 
-  void run.done.then(async ({ code, spawnError, lastStderrLine }) => {
-    if (spawnError && !lastStderrLine) {
-      task.lastError = spawnError
-    }
+  const { code, spawnError, lastStderrLine } = await run.done
+  task.process = null
+  if (spawnError && !lastStderrLine) {
+    task.lastError = spawnError
+  }
 
-    if (shouldRetryOnCpu(task, code)) {
-      // Recoloca a task no topo da fila quando o ambiente GPU falha antes de desistir.
-      task.process = null
-      task.terminalEvent = null
-      task.lastError = null
-      task.options = {
-        ...task.options,
-        useCpu: true,
-      }
-      task.hasRetriedWithCpu = true
-      task.status = 'queued'
-      task.lastMessage = 'CUDA indisponivel. Tentando novamente em CPU...'
-      activeTaskId = null
-      queue.unshift(task.id)
-      emitProgress(task, {
-        status: 'queued',
-        stage: 'retrying-cpu',
-        message: task.lastMessage,
-        progress: null,
-        queuePosition: 1,
-      })
-      refreshQueuedTasks()
-      await runNextTask()
-      return
+  if (shouldRetryOnCpu(task, code)) {
+    // Volta pro topo da fila em CPU quando o ambiente GPU falha, antes de desistir.
+    task.terminalEvent = null
+    task.lastError = null
+    task.options = {
+      ...task.options,
+      useCpu: true,
     }
+    task.hasRetriedWithCpu = true
+    task.status = 'queued'
+    task.lastMessage = 'CUDA indisponivel. Tentando novamente em CPU...'
+    emitProgress(task, {
+      status: 'queued',
+      stage: 'retrying-cpu',
+      message: task.lastMessage,
+      progress: null,
+      queuePosition: 1,
+    })
+    return 'requeue-front'
+  }
 
-    finishTask(task, code)
-    task.process = null
-    activeTaskId = null
-    refreshQueuedTasks()
-    await runNextTask()
-  })
+  finishTask(task, code)
+  return 'done'
 }
 
 export function registerSubtitleHandlers() {
@@ -669,18 +630,12 @@ export function registerSubtitleHandlers() {
     }
 
     tasks.set(taskId, task)
-    queue.push(taskId)
-
-    emitProgress(task, {
-      status: 'queued',
-      stage: 'queued',
-      message: queue.length === 1 && !activeTaskId ? 'Aguardando inicializacao...' : `Na fila (${queue.length})`,
-      progress: null,
-      queuePosition: queue.length,
+    emitQueued(task, gpuQueue.size + 1, gpuQueue.size === 0 && !gpuQueue.busy)
+    gpuQueue.enqueue({
+      id: taskId,
+      onQueued: (position, isNext) => emitQueued(task, position, isNext),
+      run: () => runTask(task),
     })
-
-    refreshQueuedTasks()
-    await runNextTask()
 
     return taskId
   })
@@ -692,7 +647,7 @@ export function registerSubtitleHandlers() {
       return false
     }
 
-    if (task.process && activeTaskId === taskId) {
+    if (task.process) {
       task.cancelRequested = true
       task.status = 'cancelled'
       task.lastMessage = 'Cancelando transcricao...'
@@ -707,14 +662,12 @@ export function registerSubtitleHandlers() {
       return true
     }
 
-    const queuedIndex = queue.indexOf(taskId)
-    if (queuedIndex >= 0) {
-      queue.splice(queuedIndex, 1)
+    if (gpuQueue.has(taskId)) {
       task.status = 'cancelled'
       task.completedAt = Date.now()
       task.lastMessage = 'Tarefa removida da fila.'
       emitError(task, task.lastMessage, 'cancelled')
-      refreshQueuedTasks()
+      gpuQueue.remove(taskId)
       return true
     }
 

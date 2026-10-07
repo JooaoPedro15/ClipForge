@@ -4,6 +4,7 @@ import path from 'node:path'
 import { ipcMain, type WebContents } from 'electron'
 
 import { resolveScriptPath } from '../python/pythonEnv.js'
+import { gpuQueue, type JobResult } from '../python/gpuQueue.js'
 import { runPython, type PythonRun } from '../python/pythonProcess.js'
 import { decideOutcome, describeExitCode, parseRunnerLine } from '../python/runnerEvents.js'
 import { getSubtitleTaskSnapshot, resolveSubtitleForgeRoot } from './subtitle.js'
@@ -81,8 +82,6 @@ interface HardsubJobRecord {
 }
 
 const jobs = new Map<string, HardsubJobRecord>()
-const queue: string[] = []
-let activeJobId: string | null = null
 
 function emit(
   sender: WebContents,
@@ -172,43 +171,29 @@ function finishJob(job: HardsubJobRecord, code: number | null) {
   emit(job.sender, 'subtitle:burn-error', toPayload(job, { status: 'error', error }))
 }
 
-async function runNextJob() {
-  if (activeJobId || queue.length === 0) {
-    return
-  }
-
-  const nextJobId = queue.shift()
-  const job = nextJobId ? jobs.get(nextJobId) : null
-  if (!job) {
-    await runNextJob()
-    return
-  }
-
+// Roda um job de queima da fila de GPU (espera transcricao/Pre-Editor que estiverem na frente).
+async function runJob(job: HardsubJobRecord): Promise<JobResult> {
   const forgeRoot = resolveSubtitleForgeRoot()
   if (!forgeRoot) {
     job.status = 'error'
     emit(job.sender, 'subtitle:burn-error', toPayload(job, { status: 'error', error: 'Projeto subtitle-forge nao encontrado.' }))
-    await runNextJob()
-    return
+    return 'done'
   }
 
   const { scriptPath } = resolveHardsubScriptPath(forgeRoot)
   if (!scriptPath) {
     job.status = 'error'
     emit(job.sender, 'subtitle:burn-error', toPayload(job, { status: 'error', error: 'Script hardsub_service.py nao encontrado.' }))
-    await runNextJob()
-    return
+    return 'done'
   }
 
   const snapshot = getSubtitleTaskSnapshot(job.taskId)
   if (!snapshot || !snapshot.outputPath) {
     job.status = 'error'
     emit(job.sender, 'subtitle:burn-error', toPayload(job, { status: 'error', error: 'Tarefa de transcricao nao encontrada ou sem srt gerado.' }))
-    await runNextJob()
-    return
+    return 'done'
   }
 
-  activeJobId = job.id
   job.status = 'preparing'
   emit(job.sender, 'subtitle:burn-progress', toPayload(job, { status: 'preparing', stage: 'starting', message: 'Preparando queima...', progress: 5 }))
 
@@ -244,16 +229,24 @@ async function runNextJob() {
   })
   job.process = run
 
-  void run.done.then(async ({ code, spawnError, lastStderrLine }) => {
-    if (spawnError && !lastStderrLine) {
-      job.lastError = spawnError
-    }
+  const { code, spawnError, lastStderrLine } = await run.done
+  job.process = null
+  if (spawnError && !lastStderrLine) {
+    job.lastError = spawnError
+  }
 
-    finishJob(job, code)
-    job.process = null
-    activeJobId = null
-    await runNextJob()
-  })
+  finishJob(job, code)
+  return 'done'
+}
+
+// Quando a queima espera atras de outro job da GPU, mostra a posicao na fila.
+function emitQueued(job: HardsubJobRecord, position: number, isNext: boolean) {
+  if (isNext) {
+    return
+  }
+
+  job.lastMessage = `Na fila (${position})`
+  emit(job.sender, 'subtitle:burn-progress', toPayload(job, { status: 'queued', stage: 'queued', message: job.lastMessage, progress: null }))
 }
 
 export function registerHardsubHandlers() {
@@ -275,11 +268,12 @@ export function registerHardsubHandlers() {
     }
 
     jobs.set(jobId, job)
-    queue.push(jobId)
-
     emit(job.sender, 'subtitle:burn-progress', toPayload(job, { status: 'queued', stage: 'queued', message: job.lastMessage, progress: null }))
-
-    await runNextJob()
+    gpuQueue.enqueue({
+      id: jobId,
+      onQueued: (position, isNext) => emitQueued(job, position, isNext),
+      run: () => runJob(job),
+    })
 
     return jobId
   })

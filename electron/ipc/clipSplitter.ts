@@ -4,6 +4,7 @@ import path from 'node:path'
 import { ipcMain, type WebContents } from 'electron'
 
 import { resolveProjectRoot, resolveScriptPath } from '../python/pythonEnv.js'
+import { gpuQueue, type JobResult } from '../python/gpuQueue.js'
 import { runPython, type PythonRun } from '../python/pythonProcess.js'
 import { decideOutcome, describeExitCode, looksLikeGpuFailure, parseRunnerLine } from '../python/runnerEvents.js'
 
@@ -136,11 +137,8 @@ interface ClipSplitterTaskRecord {
   clips: ClipExportPayload[]
 }
 
-// Estruturas em memoria da fila de exportacao e do job atualmente ativo.
+// Jobs desta sessao (a ordem de execucao fica na fila unica de GPU).
 const tasks = new Map<string, ClipSplitterTaskRecord>()
-const queue: string[] = []
-
-let activeTaskId: string | null = null
 
 const defaultOptions: ClipSplitterTaskOptions = {
   mode: 'silence',
@@ -257,24 +255,17 @@ function emitError(task: ClipSplitterTaskRecord, message: string, status: 'error
   emit(task.sender, 'clipSplitter:error', payload)
 }
 
-function refreshQueuedTasks() {
-  // Atualiza a posicao de fila de todos os jobs ainda nao iniciados.
-  queue.forEach((taskId, index) => {
-    const task = tasks.get(taskId)
-    if (!task) {
-      return
-    }
+// Avisa a tela da posicao do job na fila unica de GPU (chamado pela fila sempre que ela anda).
+function emitQueued(task: ClipSplitterTaskRecord, position: number, isNext: boolean) {
+  task.status = 'queued'
+  task.lastMessage = isNext ? 'Aguardando inicializacao...' : `Na fila (${position})`
 
-    task.status = 'queued'
-    task.lastMessage = index === 0 && !activeTaskId ? 'Aguardando inicializacao...' : `Na fila (${index + 1})`
-
-    emitProgress(task, {
-      status: 'queued',
-      stage: 'queued',
-      message: task.lastMessage,
-      progress: null,
-      queuePosition: index + 1,
-    })
+  emitProgress(task, {
+    status: 'queued',
+    stage: 'queued',
+    message: task.lastMessage,
+    progress: null,
+    queuePosition: position,
   })
 }
 
@@ -449,24 +440,8 @@ function shouldRetryOnCpu(task: ClipSplitterTaskRecord, code: number | null) {
   return looksLikeGpuFailure(`${task.lastError ?? ''}\n${task.lastMessage}`, code)
 }
 
-// Motor da fila de exportacao: inicia o proximo job, acompanha logs e encadeia retries.
-async function runNextTask() {
-  if (activeTaskId || queue.length === 0) {
-    return
-  }
-
-  const nextTaskId = queue.shift()
-  if (!nextTaskId) {
-    return
-  }
-
-  const task = tasks.get(nextTaskId)
-  if (!task) {
-    refreshQueuedTasks()
-    await runNextTask()
-    return
-  }
-
+// Roda um job da fila de GPU: sobe o Python, acompanha e decide entre retry em CPU e desfecho.
+async function runTask(task: ClipSplitterTaskRecord): Promise<JobResult> {
   const clipSplitterRoot = resolveClipSplitterRoot()
   if (!clipSplitterRoot) {
     task.status = 'error'
@@ -477,9 +452,7 @@ async function runNextTask() {
       'Projeto Clip-Splitter nao encontrado. Configure em D:\\Projetos\\Clip-Splitter ou use CLIPFORGE_CLIP_SPLITTER_PATH.',
       'error',
     )
-    refreshQueuedTasks()
-    await runNextTask()
-    return
+    return 'done'
   }
 
   const runnerScriptPath = resolveRunnerScriptPath()
@@ -488,12 +461,9 @@ async function runNextTask() {
     task.completedAt = Date.now()
     task.lastMessage = 'Runner do Pre-Editor nao encontrado.'
     emitError(task, `${task.lastMessage} Verifique python/clip_splitter_service.py.`, 'error')
-    refreshQueuedTasks()
-    await runNextTask()
-    return
+    return 'done'
   }
 
-  activeTaskId = task.id
   task.status = 'preparing'
   task.startedAt = Date.now()
   task.lastMessage = task.useCpu
@@ -507,7 +477,6 @@ async function runNextTask() {
     progress: 5,
     queuePosition: undefined,
   })
-  refreshQueuedTasks()
 
   const run = runPython({
     root: clipSplitterRoot,
@@ -528,40 +497,32 @@ async function runNextTask() {
   })
   task.process = run
 
-  void run.done.then(async ({ code, spawnError, lastStderrLine }) => {
-    if (spawnError && !lastStderrLine) {
-      task.lastError = spawnError
-    }
+  const { code, spawnError, lastStderrLine } = await run.done
+  task.process = null
+  if (spawnError && !lastStderrLine) {
+    task.lastError = spawnError
+  }
 
-    if (shouldRetryOnCpu(task, code)) {
-      // Em falhas tipicas de CUDA, o mesmo job volta ao topo da fila usando CPU.
-      task.process = null
-      task.terminalEvent = null
-      task.lastError = null
-      task.useCpu = true
-      task.hasRetriedWithCpu = true
-      task.status = 'queued'
-      task.lastMessage = 'Falha no caminho CUDA. Tentando novamente em CPU...'
-      activeTaskId = null
-      queue.unshift(task.id)
-      emitProgress(task, {
-        status: 'queued',
-        stage: 'retrying-cpu',
-        message: task.lastMessage,
-        progress: null,
-        queuePosition: 1,
-      })
-      refreshQueuedTasks()
-      await runNextTask()
-      return
-    }
+  if (shouldRetryOnCpu(task, code)) {
+    // Em falhas tipicas de CUDA, o mesmo job volta ao topo da fila usando CPU.
+    task.terminalEvent = null
+    task.lastError = null
+    task.useCpu = true
+    task.hasRetriedWithCpu = true
+    task.status = 'queued'
+    task.lastMessage = 'Falha no caminho CUDA. Tentando novamente em CPU...'
+    emitProgress(task, {
+      status: 'queued',
+      stage: 'retrying-cpu',
+      message: task.lastMessage,
+      progress: null,
+      queuePosition: 1,
+    })
+    return 'requeue-front'
+  }
 
-    finishTask(task, code)
-    task.process = null
-    activeTaskId = null
-    refreshQueuedTasks()
-    await runNextTask()
-  })
+  finishTask(task, code)
+  return 'done'
 }
 
 export function registerClipSplitterHandlers() {
@@ -597,19 +558,12 @@ export function registerClipSplitterHandlers() {
     }
 
     tasks.set(taskId, task)
-    queue.push(taskId)
-
-    emitProgress(task, {
-      status: 'queued',
-      stage: 'queued',
-      message: queue.length === 1 && !activeTaskId ? 'Aguardando inicializacao...' : `Na fila (${queue.length})`,
-      progress: null,
-      queuePosition: queue.length,
-      outputDir: task.outputDir,
+    emitQueued(task, gpuQueue.size + 1, gpuQueue.size === 0 && !gpuQueue.busy)
+    gpuQueue.enqueue({
+      id: taskId,
+      onQueued: (position, isNext) => emitQueued(task, position, isNext),
+      run: () => runTask(task),
     })
-
-    refreshQueuedTasks()
-    await runNextTask()
 
     return taskId
   })
@@ -623,14 +577,12 @@ export function registerClipSplitterHandlers() {
 
     task.cancelRequested = true
 
-    const queueIndex = queue.findIndex((queuedTaskId) => queuedTaskId === taskId)
-    if (queueIndex >= 0) {
-      queue.splice(queueIndex, 1)
+    if (gpuQueue.has(taskId)) {
       task.status = 'cancelled'
       task.completedAt = Date.now()
       task.lastMessage = 'Tarefa cancelada antes de iniciar.'
       emitError(task, task.lastMessage, 'cancelled')
-      refreshQueuedTasks()
+      gpuQueue.remove(taskId)
       return true
     }
 
