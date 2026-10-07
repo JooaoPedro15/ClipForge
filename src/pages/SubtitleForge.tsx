@@ -259,8 +259,8 @@ export function SubtitleForgePage({
             <div className="divide-y divide-white/6 rounded-xl border border-white/8 bg-black/20">
               {/* Cada linha descreve uma regra operacional importante do pipeline. */}
               <div className="px-4 py-3.5 text-sm leading-6 text-text-secondary">
-                <p className="font-medium text-text-primary">1 arquivo por vez</p>
-                <p>Evita disputa de VRAM quando o modelo está em GPU.</p>
+                <p className="font-medium text-text-primary">1 job de GPU por vez</p>
+                <p>Transcrição, queima e Pré-Editor dividem a mesma fila pra não disputar VRAM.</p>
               </div>
               <div className="px-4 py-3.5 text-sm leading-6 text-text-secondary">
                 <p className="font-medium text-text-primary">Output padrão inteligente</p>
