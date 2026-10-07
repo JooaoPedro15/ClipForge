@@ -33,6 +33,6 @@ Estão fora de escopo:
 ## Práticas adotadas
 
 - **Electron**: `contextIsolation: true`, `nodeIntegration: false`, preload com whitelist de IPC
-- **Secrets**: chaves de API ficam em `.env` (gitignored). `.env.example` documenta as variáveis necessárias
+- **Secrets**: o app não usa chaves de API hoje; a configuração é por variáveis de ambiente `CLIPFORGE_*` (ver README). `.env` continua no `.gitignore` por precaução
 - **Dependências**: `npm audit` rodado periodicamente
 - **CSP**: política restritiva no `index.html`

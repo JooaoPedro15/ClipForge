@@ -115,8 +115,10 @@ Renderer React  <->  Electron main/preload  <->  Python workers
 
 ## Configuracao
 
+Tudo tem padrao e funciona sem configurar nada. Pra mudar, defina **variaveis de ambiente do sistema** (o app nao le arquivo `.env`) e reabra o terminal/app depois. Exemplo no Windows:
+
 ```bash
-cp .env.example .env
+setx CLIPFORGE_OLLAMA_MODEL qwen2.5:7b-instruct
 ```
 
 Variaveis opcionais:
