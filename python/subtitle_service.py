@@ -10,6 +10,8 @@ import ffmpeg_utils
 import glossary_service
 import segmentation
 import srt_utils
+import style_model
+import style_store
 import translate_service
 import translation_pipeline
 from events import emit
@@ -59,12 +61,81 @@ def resolve_max_words_for_video(input_path: str, max_words: int) -> int:
     return max_words
 
 
-# Fronteira com o Whisper: palavras viram dicts simples, o formato que a segmentacao usa.
-def whisper_word_dicts(segment: Any) -> list[dict[str, Any]]:
+# Fronteira com o Whisper: palavras viram dicts simples (o formato da segmentacao e do words.json).
+# `first_index` continua a numeracao global entre segmentos.
+def whisper_word_dicts(segment: Any, segment_id: int = 0, first_index: int = 0) -> list[dict[str, Any]]:
+    words = list(getattr(segment, "words", None) or [])
     return [
-        {"word": str(word.word), "start": float(word.start), "end": float(word.end)}
-        for word in (getattr(segment, "words", None) or [])
+        {
+            "i": first_index + position,
+            "word": str(word.word),
+            "start": float(word.start),
+            "end": float(word.end),
+            "prob": getattr(word, "probability", None),
+            "segment_id": segment_id,
+            "segment_end": position == len(words) - 1,
+        }
+        for position, word in enumerate(words)
     ]
+
+
+# Perfil de estilo pela orientacao real do video; sem stream de video (ex.: so audio), horizontal.
+def resolve_style_profile_name(input_path: str) -> str:
+    try:
+        video_info = ffmpeg_utils.probe_video(input_path)
+    except Exception:
+        return "horizontal"
+    return "vertical" if video_info.height > video_info.width else "horizontal"
+
+
+# Perfil aprendido pronto pra uso (>= 3 videos) ou None. Perfil ilegivel nao derruba a transcricao.
+def load_style_for_video(input_path: str, style_store_dir: str) -> tuple[Any, dict[str, Any]] | None:
+    profile = resolve_style_profile_name(input_path)
+    try:
+        loaded = style_model.load_profile(style_store.profile_dir(Path(style_store_dir), profile))
+    except Exception as error:
+        emit(
+            "status",
+            "preparing",
+            "style-fallback",
+            f"Perfil de estilo '{profile}' ilegivel; usando a segmentacao padrao.",
+            progress=30,
+            error=str(error),
+        )
+        return None
+
+    if loaded is not None:
+        emit(
+            "status",
+            "preparing",
+            "style-loaded",
+            f"Usando seu estilo de legenda ({profile}, {loaded[1].get('videos', 0)} videos ensinados).",
+            progress=30,
+        )
+    return loaded
+
+
+# Cards a partir dos grupos de palavras escolhidos pela arvore (uma legenda pode juntar segmentos do Whisper).
+def build_style_cards(
+    words: list[dict[str, Any]],
+    groups: list[tuple[int, int]],
+    segment_logprobs: dict[int, Any],
+) -> list[dict[str, Any]]:
+    cards = []
+    for start_index, end_index in groups:
+        group = words[start_index:end_index]
+        segment_id = group[0]["segment_id"]
+        cards.append(
+            {
+                "i": len(cards),
+                "start": group[0]["start"],
+                "end": group[-1]["end"],
+                "text": " ".join(str(word["word"]).strip() for word in group),
+                "segment_id": segment_id,
+                "avg_logprob": segment_logprobs.get(segment_id),
+            }
+        )
+    return cards
 
 
 # Gera um progresso aproximado mesmo quando o Whisper ainda nao terminou tudo.
@@ -94,6 +165,7 @@ def transcribe_video(
     translate_to: list[str] | None = None,
     channel_glossary_path: str = glossary_service.DEFAULT_CHANNEL_GLOSSARY_PATH,
     video_type: str = "",
+    style_store_dir: str | None = None,
 ) -> str:
     input_file = Path(input_path)
 
@@ -139,6 +211,7 @@ def transcribe_video(
         progress=28,
         loadTimeSec=load_time,
     )
+    style = load_style_for_video(str(input_file), style_store_dir) if style_store_dir and word_timestamps else None
     emit(
         "status",
         "processing",
@@ -176,6 +249,8 @@ def transcribe_video(
     )
 
     card_records: list[dict[str, Any]] = []
+    all_words: list[dict[str, Any]] = []
+    segment_logprobs: dict[int, Any] = {}
     segment_count = 0
     segment_index = -1
 
@@ -188,23 +263,34 @@ def transcribe_video(
             "text": segment.text,
             "avg_logprob": getattr(segment, "avg_logprob", None),
         }
-        words = whisper_word_dicts(segment) if word_timestamps else []
-        card_records.extend(
-            segmentation.cards_for_segment(words, segment_info, max_words, first_index=len(card_records))
-        )
+        words = whisper_word_dicts(segment, segment_index, len(all_words)) if word_timestamps else []
+        all_words.extend(words)
+        segment_logprobs[segment_index] = segment_info["avg_logprob"]
+        if style is None:
+            card_records.extend(
+                segmentation.cards_for_segment(words, segment_info, max_words, first_index=len(card_records))
+            )
         segment_count = len(card_records)
         segment_end = getattr(segment, "end", None)
 
-        if segment_count == 1 or segment_count % 25 == 0:
+        # Com estilo aprendido as legendas so nascem no fim (segmentacao global): conta segmentos do Whisper.
+        processed = segment_count if style is None else segment_index + 1
+        if processed == 1 or processed % 25 == 0:
             # Emite checkpoints periodicos para a UI nao ficar "morta" durante arquivos longos.
             emit(
                 "status",
                 "processing",
                 "segments",
-                f"{segment_count} segmentos processados.",
-                progress=estimate_progress(segment_end, total_duration, segment_count),
-                processedSegments=segment_count,
+                f"{processed} segmentos processados.",
+                progress=estimate_progress(segment_end, total_duration, processed),
+                processedSegments=processed,
             )
+
+    if style is not None:
+        tree, params = style
+        groups = style_model.segment_with_model(all_words, tree, params)
+        card_records = style_model.apply_timing(build_style_cards(all_words, groups, segment_logprobs), params)
+        segment_count = len(card_records)
 
     transcribe_time = round(time.time() - transcribe_started_at, 1)
 
@@ -232,6 +318,10 @@ def transcribe_video(
 
     cards_path = output_file.with_suffix(".cards.json")
     cards_path.write_text(json.dumps(card_records, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    # Tempo de cada palavra no video cru: materia-prima do aprendizado de estilo.
+    if all_words:
+        output_file.with_suffix(".words.json").write_text(json.dumps(all_words, ensure_ascii=False), encoding="utf-8")
 
     if translate_to:
         # Um Translator so pro loop inteiro: o construtor e leve, mas
@@ -313,6 +403,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cpu", action="store_true")
     parser.add_argument("--translate-to", default="")
     parser.add_argument("--video-type", default="", help="Contexto do video (ex.: gameplay de terror) pra traducao")
+    parser.add_argument("--style-store", default=None, help="Pasta do aprendizado de estilo (userData/subtitle-style)")
     return parser.parse_args()
 
 
@@ -340,6 +431,7 @@ def main() -> int:
             no_punctuation=args.no_punctuation,
             translate_to=translate_to,
             video_type=args.video_type,
+            style_store_dir=args.style_store,
         )
         return 0
     except FileNotFoundError:

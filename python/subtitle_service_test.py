@@ -407,5 +407,124 @@ class LazyWhisperImportTest(unittest.TestCase):
         self.assertIn("faster-whisper nao instalado.", output.getvalue())
 
 
+@dataclass
+class StyleSegment:
+    start: float
+    end: float
+    text: str
+    words: list
+    avg_logprob: float | None = None
+
+
+class AlwaysBreakTree:
+    """Arvore falsa: quer quebrar em todo espaco (as travas decidem o tamanho)."""
+
+    classes_ = [0, 1]
+
+    def predict_proba(self, rows):
+        return [[0.0, 1.0] for _ in rows]
+
+
+STYLE_PARAMS = {
+    "min_words": 2,
+    "max_words": 2,
+    "max_card_ms": 1e9,
+    "lead_in_ms": 0.0,
+    "hold_ms": 0.0,
+    "glue_ms": 0.0,
+    "min_card_ms": 0.0,
+    "videos": 3,
+}
+
+
+class TranscribeVideoStyleTest(unittest.TestCase):
+    SEGMENTS = [
+        StyleSegment(0.0, 1.0, "eu fui", [WordInfo(" eu", 0.0, 0.4), WordInfo(" fui", 0.5, 1.0)], -0.1),
+        StyleSegment(1.5, 2.6, "la ontem", [WordInfo(" la", 1.5, 2.0), WordInfo(" ontem", 2.1, 2.6)], -0.2),
+    ]
+
+    def setUp(self):
+        self.service = load_subtitle_service()
+
+    def transcribe(self, tmp_dir: str, **options) -> Path:
+        import contextlib
+        import io
+
+        input_path = Path(tmp_dir) / "video.mp4"
+        input_path.write_bytes(b"fake")
+        info = types.SimpleNamespace(language="pt", language_probability=0.99, duration=2.6)
+        segments = self.SEGMENTS
+
+        class FakeWhisperModel:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def transcribe(self, *args, **kwargs):
+                return segments, info
+
+        self.service.WhisperModel = FakeWhisperModel
+        with contextlib.redirect_stdout(io.StringIO()):
+            return Path(self.service.transcribe_video(input_path=str(input_path), **options))
+
+    def srt_texts(self, srt_path: Path) -> list[str]:
+        return [block.split("\n", 2)[2] for block in srt_path.read_text(encoding="utf-8").strip().split("\n\n")]
+
+    def test_writes_words_json_with_segment_info(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            output = self.transcribe(tmp_dir)
+            words = json.loads(output.with_suffix(".words.json").read_text(encoding="utf-8"))
+
+        self.assertEqual([word["word"] for word in words], [" eu", " fui", " la", " ontem"])
+        self.assertEqual([word["i"] for word in words], [0, 1, 2, 3])
+        self.assertEqual([word["segment_id"] for word in words], [0, 0, 1, 1])
+        self.assertEqual([word["segment_end"] for word in words], [False, True, False, True])
+
+    def test_learned_style_segments_across_whisper_segments(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir, mock.patch.object(
+            self.service.style_model, "load_profile", return_value=(AlwaysBreakTree(), STYLE_PARAMS)
+        ):
+            output = self.transcribe(tmp_dir, style_store_dir=str(Path(tmp_dir) / "store"))
+            cards = json.loads(output.with_suffix(".cards.json").read_text(encoding="utf-8"))
+            texts = self.srt_texts(output)
+
+        self.assertEqual(texts, ["eu fui", "la ontem"])
+        self.assertEqual([card["segment_id"] for card in cards], [0, 1])
+        self.assertEqual([card["avg_logprob"] for card in cards], [-0.1, -0.2])
+
+    def test_unreadable_profile_falls_back_to_the_formula(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir, mock.patch.object(
+            self.service.style_model, "load_profile", side_effect=ValueError("pickle quebrado")
+        ):
+            output = self.transcribe(tmp_dir, style_store_dir=str(Path(tmp_dir) / "store"))
+            texts = self.srt_texts(output)
+
+        self.assertEqual(texts, ["eu fui", "la ontem"])
+
+    def test_without_style_store_the_profile_is_not_even_loaded(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir, mock.patch.object(self.service.style_model, "load_profile") as load:
+            self.transcribe(tmp_dir)
+
+        load.assert_not_called()
+
+    def test_profile_name_follows_video_orientation(self):
+        portrait = types.SimpleNamespace(duration_sec=5.0, width=1080, height=1920)
+        landscape = types.SimpleNamespace(duration_sec=5.0, width=1920, height=1080)
+
+        with mock.patch.object(self.service.ffmpeg_utils, "probe_video", return_value=portrait):
+            self.assertEqual(self.service.resolve_style_profile_name("v.mp4"), "vertical")
+        with mock.patch.object(self.service.ffmpeg_utils, "probe_video", return_value=landscape):
+            self.assertEqual(self.service.resolve_style_profile_name("v.mp4"), "horizontal")
+        with mock.patch.object(self.service.ffmpeg_utils, "probe_video", side_effect=RuntimeError("sem video")):
+            self.assertEqual(self.service.resolve_style_profile_name("v.mp3"), "horizontal")
+
+
 if __name__ == "__main__":
     unittest.main()
