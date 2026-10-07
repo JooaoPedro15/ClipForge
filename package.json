@@ -7,6 +7,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "clean:electron": "node -e \"require('node:fs').rmSync('dist-electron', { recursive: true, force: true })\"",
+    "prebuild": "npm run clean:electron",
+    "preelectron:dev": "npm run clean:electron",
+    "preelectron:build": "npm run clean:electron",
     "build": "tsc && vite build && tsc -p tsconfig.electron.json",
     "electron:dev": "concurrently -k -n vite,tsc,electron \"vite\" \"tsc -p tsconfig.electron.json --watch --preserveWatchOutput\" \"wait-on http://localhost:5173 dist-electron/electron/main.js && electron .\"",
     "electron:build": "vite build && tsc -p tsconfig.electron.json",
