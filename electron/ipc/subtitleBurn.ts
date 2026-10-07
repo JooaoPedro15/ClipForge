@@ -146,13 +146,13 @@ function finishJob(job: HardsubJobRecord, code: number | null) {
   if (outcome.kind === 'done' && job.terminalEvent?.event === 'done') {
     job.status = 'completed'
     job.outputPath = job.terminalEvent.outputPath ?? job.outputPath
-    emit(job.sender, 'subtitle:burn-done', toPayload(job, { status: 'completed', progress: 100, outputPath: job.outputPath }))
+    emit(job.sender, 'subtitle:burn-done', toPayload(job, { status: 'completed', stage: 'done', progress: 100, outputPath: job.outputPath }))
     return
   }
 
   job.status = 'error'
   const error = outcome.kind === 'error' ? outcome.error : outcome.message
-  emit(job.sender, 'subtitle:burn-error', toPayload(job, { status: 'error', error }))
+  emit(job.sender, 'subtitle:burn-error', toPayload(job, { status: 'error', stage: 'error', error }))
 }
 
 // Roda um job de queima da fila de GPU (espera transcricao/Pre-Editor que estiverem na frente).
@@ -160,21 +160,21 @@ async function runJob(job: HardsubJobRecord): Promise<JobResult> {
   const forgeRoot = resolveSubtitleForgeRoot()
   if (!forgeRoot) {
     job.status = 'error'
-    emit(job.sender, 'subtitle:burn-error', toPayload(job, { status: 'error', error: 'Projeto subtitle-forge nao encontrado.' }))
+    emit(job.sender, 'subtitle:burn-error', toPayload(job, { status: 'error', stage: 'error', error: 'Projeto subtitle-forge nao encontrado.' }))
     return 'done'
   }
 
   const { scriptPath } = resolveHardsubScriptPath(forgeRoot)
   if (!scriptPath) {
     job.status = 'error'
-    emit(job.sender, 'subtitle:burn-error', toPayload(job, { status: 'error', error: 'Script hardsub_service.py nao encontrado.' }))
+    emit(job.sender, 'subtitle:burn-error', toPayload(job, { status: 'error', stage: 'error', error: 'Script hardsub_service.py nao encontrado.' }))
     return 'done'
   }
 
   const snapshot = getSubtitleTaskSnapshot(job.taskId)
   if (!snapshot || !snapshot.outputPath) {
     job.status = 'error'
-    emit(job.sender, 'subtitle:burn-error', toPayload(job, { status: 'error', error: 'Tarefa de transcricao nao encontrada ou sem srt gerado.' }))
+    emit(job.sender, 'subtitle:burn-error', toPayload(job, { status: 'error', stage: 'error', error: 'Tarefa de transcricao nao encontrada ou sem srt gerado.' }))
     return 'done'
   }
 

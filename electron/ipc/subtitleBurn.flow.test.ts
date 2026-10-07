@@ -143,7 +143,7 @@ describe('fluxo IPC da queima (caracterizacao)', () => {
           "mode": "zh-en",
           "outputPath": "C:\\videos\\aula.hardsub.zh-en.mp4",
           "progress": 100,
-          "stage": "idle",
+          "stage": "done",
           "status": "completed",
         },
       ]
@@ -172,7 +172,7 @@ describe('fluxo IPC da queima (caracterizacao)', () => {
           "format": "shorts",
           "message": "Job de queima adicionado a fila.",
           "mode": "zh",
-          "stage": "idle",
+          "stage": "error",
           "status": "error",
         },
       ]
@@ -218,7 +218,7 @@ describe('fluxo IPC da queima (caracterizacao)', () => {
           "format": "shorts",
           "message": "Falha ao queimar.",
           "mode": "zh",
-          "stage": "idle",
+          "stage": "error",
           "status": "error",
         },
       ]
