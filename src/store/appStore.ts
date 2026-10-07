@@ -41,28 +41,15 @@ const defaultClipSplitterSettings: ClipSplitterOptions = {
   preEditMode: 'balanced',
   writeDebugJson: false,
   analysisAudioTrack: '1',
-  targetDurationSec: 35,
-  minClipDurationSec: 20,
-  maxClipDurationSec: 50,
   silenceThresholdDb: -35,
   silenceMinDurationSec: 0.45,
   outputDir: null,
 }
 
-// Garante que minimo, maximo e alvo de duracao nunca fiquem em combinacoes invalidas.
+// Garante que o silencio minimo nunca fique abaixo do que o detector aceita.
 function normalizeClipSplitterSettings(settings: ClipSplitterOptions): ClipSplitterOptions {
-  const minClipDurationSec = Math.max(5, Number(settings.minClipDurationSec))
-  const maxClipDurationSec = Math.max(minClipDurationSec + 1, Number(settings.maxClipDurationSec))
-  const targetDurationSec = Math.min(
-    maxClipDurationSec,
-    Math.max(minClipDurationSec, Number(settings.targetDurationSec)),
-  )
-
   return {
     ...settings,
-    targetDurationSec,
-    minClipDurationSec,
-    maxClipDurationSec,
     silenceMinDurationSec: Math.max(0.1, Number(settings.silenceMinDurationSec)),
   }
 }

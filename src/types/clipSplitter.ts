@@ -18,9 +18,6 @@ export interface ClipSplitterOptions {
   preEditMode: ClipSplitterPreEditMode
   writeDebugJson: boolean
   analysisAudioTrack: string
-  targetDurationSec: number
-  minClipDurationSec: number
-  maxClipDurationSec: number
   silenceThresholdDb: number
   silenceMinDurationSec: number
   outputDir?: string | null

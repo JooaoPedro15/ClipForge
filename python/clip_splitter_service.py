@@ -3,7 +3,6 @@ import contextlib
 import hashlib
 import importlib.util
 import json
-import math
 import os
 import re
 import subprocess
@@ -141,18 +140,6 @@ DEFAULT_ANALYSIS_AUDIO_TRACK = "1"
 HARD_SILENCE_DURATION = 1.20
 KEEP_PADDING_BEFORE = 0.08
 KEEP_PADDING_AFTER = 0.12
-
-
-# Mantem as duracoes em um intervalo seguro antes de planejar os cortes.
-def normalize_duration_settings(
-    target_duration_sec: float,
-    min_duration_sec: float,
-    max_duration_sec: float,
-) -> tuple[float, float, float]:
-    min_duration = max(5.0, float(min_duration_sec))
-    max_duration = max(min_duration + 1.0, float(max_duration_sec))
-    target_duration = min(max(float(target_duration_sec), min_duration), max_duration)
-    return target_duration, min_duration, max_duration
 
 
 # Extrai intervalos de pausa entre segmentos transcritos para complementar o silencedetect.
@@ -736,9 +723,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--project-root", default=None)
     parser.add_argument("--mode", choices=["fixed", "silence"], default="silence")
     parser.add_argument("--preedit-mode", choices=["conservative", "balanced", "aggressive"], default=DEFAULT_PREEDIT_MODE)
-    parser.add_argument("--target-duration", type=float, default=35.0)
-    parser.add_argument("--min-duration", type=float, default=20.0)
-    parser.add_argument("--max-duration", type=float, default=50.0)
     parser.add_argument("--silence-threshold-db", type=float, default=-35.0)
     parser.add_argument("--silence-min-duration", type=float, default=0.45)
     parser.add_argument("--analysis-audio-track", "--voice-track-index", default=DEFAULT_ANALYSIS_AUDIO_TRACK)
@@ -794,16 +778,8 @@ def main() -> int:
         return 1
 
     try:
-        _target_duration_sec, min_duration_sec, max_duration_sec = normalize_duration_settings(
-            args.target_duration,
-            args.min_duration,
-            args.max_duration,
-        )
         silence_min_duration_sec = max(0.1, float(args.silence_min_duration))
         silence_threshold_db = float(args.silence_threshold_db)
-
-        module.MIN_PART_DURATION = max(5, math.floor(min_duration_sec))
-        module.MAX_PART_DURATION = max(module.MIN_PART_DURATION + 1, math.ceil(max_duration_sec))
 
         emit(
             "status",

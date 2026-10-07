@@ -229,44 +229,6 @@ export function ClipSplitterPage({
                   value={settings.analysisAudioTrack}
                 />
               </label>
-              {/* Duração alvo por clip em segundos (o FFmpeg tenta cortar perto disso) */}
-              <label className="space-y-2">
-                <span className="text-sm font-medium text-text-secondary">Alvo legado (s)</span>
-                <input
-                  className="w-full rounded-xl border border-white/10 bg-black/16 px-4 py-3 text-text-primary outline-none transition focus:border-white/30"
-                  max={settings.maxClipDurationSec}
-                  min={settings.minClipDurationSec}
-                  onChange={(event) => patchSettings({ targetDurationSec: Number(event.target.value) || 10 })}
-                  type="number"
-                  value={settings.targetDurationSec}
-                />
-              </label>
-
-              {/* Duração mínima — clips menores que isso são descartados ou mesclados */}
-              <label className="space-y-2">
-                <span className="text-sm font-medium text-text-secondary">Min. legado (s)</span>
-                <input
-                  className="w-full rounded-xl border border-white/10 bg-black/16 px-4 py-3 text-text-primary outline-none transition focus:border-white/30"
-                  min={3}
-                  max={Math.max(3, settings.maxClipDurationSec - 1)}
-                  onChange={(event) => patchSettings({ minClipDurationSec: Number(event.target.value) || 3 })}
-                  type="number"
-                  value={settings.minClipDurationSec}
-                />
-              </label>
-
-              {/* Duração máxima — clips maiores que isso são divididos novamente */}
-              <label className="space-y-2">
-                <span className="text-sm font-medium text-text-secondary">Max. legado (s)</span>
-                <input
-                  className="w-full rounded-xl border border-white/10 bg-black/16 px-4 py-3 text-text-primary outline-none transition focus:border-white/30"
-                  min={settings.minClipDurationSec + 1}
-                  onChange={(event) => patchSettings({ maxClipDurationSec: Number(event.target.value) || 5 })}
-                  type="number"
-                  value={settings.maxClipDurationSec}
-                />
-              </label>
-
               {/* Duração mínima de silêncio para ser considerado pausa (modo silêncio) */}
               <label className="space-y-2">
                 <span className="text-sm font-medium text-text-secondary">Silencio min. (s)</span>

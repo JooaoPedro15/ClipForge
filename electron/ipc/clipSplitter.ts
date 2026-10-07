@@ -98,26 +98,13 @@ const defaultOptions: ClipSplitterOptions = {
   preEditMode: 'balanced',
   writeDebugJson: false,
   analysisAudioTrack: '1',
-  targetDurationSec: 35,
-  minClipDurationSec: 20,
-  maxClipDurationSec: 50,
   silenceThresholdDb: -35,
   silenceMinDurationSec: 0.45,
   outputDir: null,
 }
 
-// Corrige limites de duracao e limpa valores antes de iniciar um novo job.
+// Limpa e valida as opcoes vindas da tela antes de iniciar um novo job.
 function normalizeOptions(options: Partial<ClipSplitterOptions> | undefined): ClipSplitterOptions {
-  const minClipDurationSec = Math.max(5, Number(options?.minClipDurationSec ?? defaultOptions.minClipDurationSec))
-  const maxClipDurationSec = Math.max(
-    minClipDurationSec + 1,
-    Number(options?.maxClipDurationSec ?? defaultOptions.maxClipDurationSec),
-  )
-  const targetDurationSec = Math.min(
-    maxClipDurationSec,
-    Math.max(minClipDurationSec, Number(options?.targetDurationSec ?? defaultOptions.targetDurationSec)),
-  )
-
   return {
     ...defaultOptions,
     ...options,
@@ -128,9 +115,6 @@ function normalizeOptions(options: Partial<ClipSplitterOptions> | undefined): Cl
         : defaultOptions.preEditMode,
     writeDebugJson: options?.writeDebugJson ?? defaultOptions.writeDebugJson,
     analysisAudioTrack: String(options?.analysisAudioTrack ?? defaultOptions.analysisAudioTrack).trim() || defaultOptions.analysisAudioTrack,
-    targetDurationSec,
-    minClipDurationSec,
-    maxClipDurationSec,
     silenceThresholdDb: Number(options?.silenceThresholdDb ?? defaultOptions.silenceThresholdDb),
     silenceMinDurationSec: Math.max(0.1, Number(options?.silenceMinDurationSec ?? defaultOptions.silenceMinDurationSec)),
     outputDir: options?.outputDir?.trim() || null,
@@ -249,12 +233,6 @@ function buildProcessArgs(serviceScriptPath: string, clipSplitterRoot: string, t
     task.options.mode,
     '--preedit-mode',
     task.options.preEditMode,
-    '--target-duration',
-    String(task.options.targetDurationSec),
-    '--min-duration',
-    String(task.options.minClipDurationSec),
-    '--max-duration',
-    String(task.options.maxClipDurationSec),
     '--silence-threshold-db',
     String(task.options.silenceThresholdDb),
     '--silence-min-duration',
