@@ -1,17 +1,12 @@
 import { spawn, type ChildProcessByStdio } from 'node:child_process'
 import crypto from 'node:crypto'
-import { existsSync } from 'node:fs'
 import path from 'node:path'
 import type { Readable } from 'node:stream'
 
 import { ipcMain, type WebContents } from 'electron'
 
-import {
-  getSubtitleTaskSnapshot,
-  resolveNvidiaBinPaths,
-  resolvePythonCommand,
-  resolveSubtitleForgeRoot,
-} from './subtitle.js'
+import { resolveNvidiaBinPaths, resolvePythonCommand, resolveScriptPath } from '../python/pythonEnv.js'
+import { getSubtitleTaskSnapshot, resolveSubtitleForgeRoot } from './subtitle.js'
 
 // 'translate-zh' nao queima: so refaz a traducao (botao "Traduzir de novo").
 export type HardsubMode = 'zh' | 'zh-en' | 'zh-original' | 'translate-zh'
@@ -113,15 +108,11 @@ function toPayload(job: HardsubJobRecord, overrides: Partial<HardsubEventPayload
 }
 
 export function resolveHardsubScriptPath(forgeRoot: string): { scriptPath: string | null; checked: string[] } {
-  const candidates = [
+  return resolveScriptPath([
     path.resolve(process.cwd(), 'python', 'hardsub_service.py'),
     path.resolve(process.cwd(), '..', 'clip-forge', 'python', 'hardsub_service.py'),
     path.join(forgeRoot, 'hardsub_service.py'),
-  ]
-
-  const scriptPath = candidates.find((candidate) => existsSync(candidate)) ?? null
-
-  return { scriptPath, checked: candidates }
+  ])
 }
 
 export function buildHardsubProcessArgs(serviceScriptPath: string, options: HardsubOptions) {

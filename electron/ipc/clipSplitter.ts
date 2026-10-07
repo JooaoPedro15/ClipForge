@@ -1,10 +1,11 @@
 import { spawn, type ChildProcessByStdio } from 'node:child_process'
 import crypto from 'node:crypto'
-import { existsSync } from 'node:fs'
 import path from 'node:path'
 import type { Readable } from 'node:stream'
 
 import { ipcMain, type WebContents } from 'electron'
+
+import { resolveNvidiaBinPaths, resolveProjectRoot, resolvePythonCommand, resolveScriptPath } from '../python/pythonEnv.js'
 
 // Tipos locais que descrevem os jobs do Pre-Editor enquanto rodam no processo principal.
 type ClipSplitterMode = 'fixed' | 'silence'
@@ -277,63 +278,18 @@ function refreshQueuedTasks() {
 
 // Descobre onde esta o projeto externo Clip-Splitter e seu ambiente Python.
 function resolveClipSplitterRoot() {
-  const candidates = [
-    process.env.CLIPFORGE_CLIP_SPLITTER_PATH,
-    path.resolve(process.cwd(), '../Clip-Splitter'),
-    'D:\\Projetos\\Clip-Splitter',
-  ].filter((value): value is string => Boolean(value))
-
-  return (
-    candidates.find((candidate) => {
-      return (
-        existsSync(path.join(candidate, '.venv', 'Scripts', 'python.exe')) ||
-        existsSync(path.join(candidate, 'venv', 'Scripts', 'python.exe')) ||
-        existsSync(path.join(candidate, 'clip_splitter.py'))
-      )
-    }) ?? null
+  return resolveProjectRoot(
+    [process.env.CLIPFORGE_CLIP_SPLITTER_PATH, path.resolve(process.cwd(), '../Clip-Splitter'), 'D:\\Projetos\\Clip-Splitter'],
+    'clip_splitter.py',
   )
-}
-
-// Prioriza o Python do venv local para manter dependencia e versao corretas.
-function resolvePythonCommand(root: string) {
-  const localCandidates = [
-    path.join(root, '.venv', 'Scripts', 'python.exe'),
-    path.join(root, 'venv', 'Scripts', 'python.exe'),
-  ]
-
-  for (const candidate of localCandidates) {
-    if (existsSync(candidate)) {
-      return { command: candidate, args: [] as string[] }
-    }
-  }
-
-  return { command: 'python', args: [] as string[] }
-}
-
-// Junta os diretorios de DLLs CUDA quando o pipeline tenta rodar em GPU.
-function resolveNvidiaBinPaths(root: string) {
-  const candidates = [
-    path.join(root, '.venv', 'Lib', 'site-packages', 'nvidia', 'cublas', 'bin'),
-    path.join(root, '.venv', 'Lib', 'site-packages', 'nvidia', 'cudnn', 'bin'),
-    path.join(root, '.venv', 'Lib', 'site-packages', 'nvidia', 'cuda_runtime', 'bin'),
-    path.join(root, '.venv', 'Lib', 'site-packages', 'nvidia', 'cuda_nvrtc', 'bin'),
-    path.join(root, 'venv', 'Lib', 'site-packages', 'nvidia', 'cublas', 'bin'),
-    path.join(root, 'venv', 'Lib', 'site-packages', 'nvidia', 'cudnn', 'bin'),
-    path.join(root, 'venv', 'Lib', 'site-packages', 'nvidia', 'cuda_runtime', 'bin'),
-    path.join(root, 'venv', 'Lib', 'site-packages', 'nvidia', 'cuda_nvrtc', 'bin'),
-  ]
-
-  return candidates.filter((candidate) => existsSync(candidate))
 }
 
 // Localiza o runner Python mantido dentro deste repo.
 function resolveRunnerScriptPath() {
-  const candidates = [
+  return resolveScriptPath([
     path.resolve(process.cwd(), 'python', 'clip_splitter_service.py'),
     path.resolve(process.cwd(), '..', 'clip-forge', 'python', 'clip_splitter_service.py'),
-  ]
-
-  return candidates.find((candidate) => existsSync(candidate)) ?? null
+  ]).scriptPath
 }
 
 // Converte o estado da tarefa em argumentos CLI aceitos pelo service Python.

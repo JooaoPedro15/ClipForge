@@ -1,10 +1,11 @@
 import { spawn, type ChildProcessByStdio } from 'node:child_process'
 import crypto from 'node:crypto'
-import { existsSync } from 'node:fs'
 import path from 'node:path'
 import type { Readable } from 'node:stream'
 
 import { ipcMain, type WebContents } from 'electron'
+
+import { resolveNvidiaBinPaths, resolveProjectRoot, resolvePythonCommand, resolveScriptPath } from '../python/pythonEnv.js'
 
 // Tipos locais que descrevem a fila do SubtitleForge dentro do processo principal.
 type SubtitleModel = 'tiny' | 'base' | 'small' | 'medium' | 'large-v3'
@@ -276,67 +277,20 @@ function refreshQueuedTasks() {
 
 // Resolve onde esta o projeto subtitle-forge que contem ambiente Python e dependencias.
 export function resolveSubtitleForgeRoot() {
-  const candidates = [
-    process.env.CLIPFORGE_SUBTITLE_FORGE_PATH,
-    path.resolve(process.cwd(), '../subtitle-forge'),
-    'D:\\Projetos\\subtitle-forge',
-  ].filter((value): value is string => Boolean(value))
-
-  return (
-    candidates.find((candidate) => {
-      return (
-        existsSync(path.join(candidate, '.venv', 'Scripts', 'python.exe')) ||
-        existsSync(path.join(candidate, 'venv', 'Scripts', 'python.exe')) ||
-        existsSync(path.join(candidate, 'subtitle_forge.py'))
-      )
-    }) ?? null
+  return resolveProjectRoot(
+    [process.env.CLIPFORGE_SUBTITLE_FORGE_PATH, path.resolve(process.cwd(), '../subtitle-forge'), 'D:\\Projetos\\subtitle-forge'],
+    'subtitle_forge.py',
   )
-}
-
-// Prefere o Python do venv local, mas ainda permite fallback para python do sistema.
-export function resolvePythonCommand(root: string) {
-  const localCandidates = [
-    path.join(root, '.venv', 'Scripts', 'python.exe'),
-    path.join(root, 'venv', 'Scripts', 'python.exe'),
-  ]
-
-  for (const candidate of localCandidates) {
-    if (existsSync(candidate)) {
-      return { command: candidate, args: [] as string[] }
-    }
-  }
-
-  return { command: 'python', args: [] as string[] }
-}
-
-// Coleta caminhos de DLLs NVIDIA quando a execucao usa CUDA em ambiente virtual local.
-export function resolveNvidiaBinPaths(root: string) {
-  const candidates = [
-    path.join(root, '.venv', 'Lib', 'site-packages', 'nvidia', 'cublas', 'bin'),
-    path.join(root, '.venv', 'Lib', 'site-packages', 'nvidia', 'cudnn', 'bin'),
-    path.join(root, '.venv', 'Lib', 'site-packages', 'nvidia', 'cuda_runtime', 'bin'),
-    path.join(root, '.venv', 'Lib', 'site-packages', 'nvidia', 'cuda_nvrtc', 'bin'),
-    path.join(root, 'venv', 'Lib', 'site-packages', 'nvidia', 'cublas', 'bin'),
-    path.join(root, 'venv', 'Lib', 'site-packages', 'nvidia', 'cudnn', 'bin'),
-    path.join(root, 'venv', 'Lib', 'site-packages', 'nvidia', 'cuda_runtime', 'bin'),
-    path.join(root, 'venv', 'Lib', 'site-packages', 'nvidia', 'cuda_nvrtc', 'bin'),
-  ]
-
-  return candidates.filter((candidate) => existsSync(candidate))
 }
 
 // Localiza o script Python que sera usado como runner da transcricao, preferindo o runner local corrigido do Studio.
 // Retorna o caminho encontrado e a lista de candidatos verificados para uso em mensagens de erro.
 export function resolveRunnerScriptPath(forgeRoot: string): { scriptPath: string | null; checked: string[] } {
-  const candidates = [
+  return resolveScriptPath([
     path.resolve(process.cwd(), 'python', 'subtitle_service.py'),
     path.resolve(process.cwd(), '..', 'clip-forge', 'python', 'subtitle_service.py'),
     path.join(forgeRoot, 'subtitle_forge.py'),
-  ]
-
-  const scriptPath = candidates.find((candidate) => existsSync(candidate)) ?? null
-
-  return { scriptPath, checked: candidates }
+  ])
 }
 
 // Expoe um snapshot somente-leitura de uma tarefa pra outros modulos IPC (ex.: subtitleBurn)
