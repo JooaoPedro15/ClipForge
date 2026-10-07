@@ -70,6 +70,19 @@ const api = {
       }
     },
   },
+  subtitleStyle: {
+    // Aprendizado do estilo de legenda a partir de videos corrigidos no Premiere.
+    list: () => ipcRenderer.invoke('subtitleStyle:list'),
+    learn: (request: Record<string, unknown>) => ipcRenderer.invoke('subtitleStyle:learn', request),
+    forget: (videoId: string) => ipcRenderer.invoke('subtitleStyle:forget', videoId),
+    onProgress: (cb: (data: unknown) => void) => {
+      const listener = (_event: unknown, data: unknown) => cb(data)
+      ipcRenderer.on('subtitleStyle:progress', listener)
+      return () => {
+        ipcRenderer.removeListener('subtitleStyle:progress', listener)
+      }
+    },
+  },
   clipSplitter: {
     // Namespace dedicado ao workflow do Pre-Editor.
     process: (sourcePath: string, options: Record<string, unknown>) =>

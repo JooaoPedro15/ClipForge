@@ -8,6 +8,7 @@ import { gpuQueue, type JobResult } from '../python/gpuQueue.js'
 import { resolveProjectRoot, resolveScriptPath } from '../python/pythonEnv.js'
 import { runPython, type PythonRun } from '../python/pythonProcess.js'
 import { decideOutcome, describeExitCode, looksLikeGpuFailure, parseRunnerLine } from '../python/runnerEvents.js'
+import { getStyleStoreDir } from '../styleStorePath.js'
 
 // Tipos crus do runner e o registro da tarefa sao so do processo principal; o contrato com a tela vem de src/types.
 interface RunnerStatusEvent {
@@ -97,6 +98,8 @@ interface SubtitleTaskRecord {
   hasRetriedWithCpu: boolean
   translatedOutputs: Record<string, string>
   translationErrors: Record<string, string>
+  // Pasta da biblioteca de estilo (resolvida aqui no processo principal, nunca vinda da tela).
+  styleStore: string | null
 }
 
 // Tarefas desta sessao (a ordem de execucao fica na fila unica de GPU).
@@ -116,6 +119,7 @@ const defaultOptions: SubtitleTaskOptions = {
   translateTo: [],
   videoType: '',
   format: 'long',
+  useStyle: false,
   outputPath: null,
 }
 
@@ -132,6 +136,7 @@ function normalizeOptions(options: Partial<SubtitleTaskOptions> | undefined): Su
       new Set((options?.translateTo ?? defaultOptions.translateTo).map((lang) => lang.trim()).filter(Boolean)),
     ),
     videoType: (options?.videoType ?? defaultOptions.videoType).trim(),
+    useStyle: Boolean(options?.useStyle),
     outputPath: options?.outputPath?.trim() || null,
   }
 }
@@ -311,6 +316,10 @@ export function buildProcessArgs(serviceScriptPath: string, task: SubtitleTaskRe
 
   if (task.options.outputPath) {
     args.push('--output', task.options.outputPath)
+  }
+
+  if (task.styleStore) {
+    args.push('--style-store', task.styleStore)
   }
 
   return args
@@ -583,6 +592,7 @@ export function registerSubtitleHandlers() {
       hasRetriedWithCpu: false,
       translatedOutputs: {},
       translationErrors: {},
+      styleStore: resolvedOptions.useStyle ? getStyleStoreDir() : null,
     }
 
     tasks.set(taskId, task)

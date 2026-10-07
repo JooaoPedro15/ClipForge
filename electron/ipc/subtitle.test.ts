@@ -66,6 +66,42 @@ describe('buildProcessArgs', () => {
   })
 })
 
+describe('buildProcessArgs com estilo aprendido', () => {
+  const baseOptions = {
+    model: 'large-v3',
+    language: 'pt',
+    beamSize: 5,
+    maxWidth: 42,
+    maxWords: 0,
+    uppercase: false,
+    lowercase: false,
+    noAccents: false,
+    noPunctuation: false,
+    useCpu: false,
+    translateTo: [],
+    videoType: '',
+    format: 'long',
+    useStyle: true,
+    outputPath: null,
+  }
+
+  it('passa --style-store quando o processo principal resolveu a pasta', () => {
+    const task = { filePath: 'C:\\video.mp4', options: baseOptions, styleStore: 'C:\\userData\\subtitle-style' } as unknown as Parameters<
+      typeof buildProcessArgs
+    >[1]
+
+    const args = buildProcessArgs('script.py', task)
+
+    expect(args.slice(-2)).toEqual(['--style-store', 'C:\\userData\\subtitle-style'])
+  })
+
+  it('omite --style-store sem pasta', () => {
+    const task = { filePath: 'C:\\video.mp4', options: baseOptions, styleStore: null } as unknown as Parameters<typeof buildProcessArgs>[1]
+
+    expect(buildProcessArgs('script.py', task)).not.toContain('--style-store')
+  })
+})
+
 describe('parseRunnerEvent', () => {
   it('reconhece eventos translation-done e translation-error', () => {
     const doneEvent = parseRunnerEvent(

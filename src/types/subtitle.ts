@@ -56,6 +56,8 @@ export interface SubtitleTaskOptions {
   // Contexto livre do video ("gameplay de terror", "reacao"), usado pela traducao.
   videoType: string
   format: HardsubFormat
+  // Segmenta com o estilo aprendido (so tem efeito quando o perfil do formato tem 3+ videos).
+  useStyle: boolean
   outputPath?: string | null
 }
 

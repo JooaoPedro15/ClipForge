@@ -418,6 +418,18 @@ describe('fluxo IPC da transcricao (caracterizacao)', () => {
     `)
   })
 
+  it('"usar meu estilo" passa a pasta resolvida no processo principal, ignorando a que vier da tela', async () => {
+    const { processFile } = await setup()
+
+    await processFile('C:\\videos\\aula.mp4', { useStyle: true, styleStore: 'C:\\pasta-maliciosa' })
+    await processFile('C:\\videos\\outra.mp4', { useStyle: false })
+    child(0).close(0)
+    await flush()
+
+    expect(child(0).args.slice(-2)).toEqual(['--style-store', 'C:\\userData\\subtitle-style'])
+    expect(child(1).args).not.toContain('--style-store')
+  })
+
   it('cancelar uma tarefa que ainda esta na fila', async () => {
     const { sent, processFile, cancel } = await setup()
 

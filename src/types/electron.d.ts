@@ -13,6 +13,14 @@ import type {
   SubtitleProgressEvent,
   SubtitleTaskOptions,
 } from './subtitle'
+import type {
+  StyleForgetReport,
+  StyleLearnRequest,
+  StyleLibrary,
+  StyleProgressEvent,
+  StyleReport,
+  StyleRunResult,
+} from './subtitleStyle'
 
 declare global {
   interface Window {
@@ -46,6 +54,13 @@ declare global {
         onBurnProgress: (cb: (data: HardsubEvent) => void) => () => void
         onBurnDone: (cb: (data: HardsubEvent) => void) => () => void
         onBurnError: (cb: (data: HardsubEvent) => void) => () => void
+      }
+      subtitleStyle: {
+        // Ponte com o aprendizado do estilo de legenda (ensinar entra na fila unica de GPU).
+        list: () => Promise<StyleLibrary>
+        learn: (request: StyleLearnRequest) => Promise<StyleRunResult<StyleReport>>
+        forget: (videoId: string) => Promise<StyleRunResult<StyleForgetReport>>
+        onProgress: (cb: (data: StyleProgressEvent) => void) => () => void
       }
       clipSplitter: {
         // Ponte entre o renderer e o pipeline de corte/exportacao.
