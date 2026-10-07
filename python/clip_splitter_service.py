@@ -8,6 +8,7 @@ import re
 import subprocess
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -731,7 +732,190 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-# Orquestra todo o pipeline: probe, audio, transcricao, planejamento e exportacao.
+@dataclass(frozen=True)
+class PreeditPaths:
+    """Onde mora cada arquivo do job: saida final, pasta temporaria curta e intermediarios."""
+
+    output_dir: Path
+    output_file: Path
+    temp_dir: Path
+    temp_audio_path: Path
+    filter_script_path: Path
+
+
+def resolve_preedit_paths(input_file: Path, output_arg: str | None) -> PreeditPaths:
+    safe_stem = safe_short_stem(input_file.stem)
+    output_dir = Path(output_arg) if output_arg else input_file.parent / f"{safe_stem}_preedit"
+    temp_dir = resolve_short_temp_dir(input_file)
+    return PreeditPaths(
+        output_dir=output_dir,
+        output_file=output_dir / f"{safe_stem}_preedit.mp4",
+        temp_dir=temp_dir,
+        temp_audio_path=temp_dir / "audio_temp.wav",
+        filter_script_path=temp_dir / "preedit_filters.txt",
+    )
+
+
+# Decide o que fica do video: modo fixo mantem tudo; modo silencio comprime cada pausa.
+def plan_keep_ranges(
+    mode: str,
+    preedit_mode: str,
+    pause_ranges: list[dict],
+    segments: list[dict],
+    total_duration: float,
+) -> tuple[list[dict], list[dict]]:
+    if mode == "fixed":
+        return [], [{"start": 0.0, "end": round(total_duration, 3)}]
+
+    decisions = build_pause_edit_decisions(pause_ranges, segments, mode=preedit_mode)
+    return decisions, build_preedit_keep_ranges(total_duration, decisions)
+
+
+# Exporta e confere que nenhuma faixa de audio se perdeu no caminho (downmix acidental).
+def export_and_check_audio(
+    module: Any,
+    input_file: Path,
+    paths: PreeditPaths,
+    keep_ranges: list[dict],
+    audio_stream_count: int,
+) -> int:
+    print(
+        f"[debug] keep_ranges={len(keep_ranges)} audio_streams={audio_stream_count} "
+        f"using_filter_script=true script_path={paths.filter_script_path}",
+        flush=True,
+    )
+    export_preedited_video(
+        module,
+        str(input_file),
+        paths.output_file,
+        keep_ranges,
+        audio_stream_count,
+        filter_script_path=paths.filter_script_path,
+    )
+    preserved_audio_count = len(probe_audio_streams(module, str(paths.output_file)))
+    if preserved_audio_count != audio_stream_count:
+        raise RuntimeError(
+            f"Possivel downmix acidental: entrada tinha {audio_stream_count} faixa(s) de audio, "
+            f"saida preservou {preserved_audio_count}."
+        )
+
+    print(
+        f"Audio: {audio_stream_count} faixa(s) na entrada; {preserved_audio_count} preservada(s) na saida.",
+        flush=True,
+    )
+    return preserved_audio_count
+
+
+# Pipeline de um job: duracao -> faixa de voz -> transcricao -> pausas -> plano -> exportacao.
+def run_preedit(
+    args: argparse.Namespace,
+    module: Any,
+    whisper: dict[str, str],
+    input_file: Path,
+    paths: PreeditPaths,
+    started_at: float,
+) -> None:
+    silence_min_duration_sec = max(0.1, float(args.silence_min_duration))
+    silence_threshold_db = float(args.silence_threshold_db)
+    output_dir = str(paths.output_dir)
+
+    emit("status", "preparing", "probing", "Lendo duracao do video...", progress=10, outputDir=output_dir, **whisper)
+    total_duration = float(module.get_duracao(str(input_file)))
+    audio_streams = probe_audio_streams(module, str(input_file))
+    if not audio_streams:
+        raise RuntimeError("Nenhuma faixa de audio encontrada no video de entrada.")
+
+    analysis_audio = resolve_analysis_audio_track(args.analysis_audio_track, audio_streams)
+    analysis_audio_index = int(analysis_audio["audio_index"])
+    audio_stream_count = len(audio_streams)
+    print(
+        f"Audio: {audio_stream_count} faixa(s) detectada(s); analisando faixa {analysis_audio_index} "
+        f"(stream {analysis_audio['stream_index']}). {analysis_audio['reason']}",
+        flush=True,
+    )
+
+    emit(
+        "status",
+        "preparing",
+        "extracting-audio",
+        f"Extraindo audio de analise da faixa {analysis_audio_index}/{audio_stream_count - 1}...",
+        progress=18,
+        outputDir=output_dir,
+        sourceDurationSec=total_duration,
+        **whisper,
+    )
+    audio_path = extract_analysis_audio_track(module, str(input_file), str(paths.temp_dir), analysis_audio_index)
+
+    on_cpu = whisper["transcriptionDevice"] == "cpu"
+    emit(
+        "status",
+        "processing",
+        "transcribing",
+        "Transcrevendo audio com Whisper em CPU..." if on_cpu else "Transcrevendo audio com Whisper...",
+        progress=34,
+        outputDir=output_dir,
+        sourceDurationSec=total_duration,
+        **whisper,
+    )
+    segments = module.transcrever(audio_path)
+    audio_pause_ranges = detect_audio_silence_ranges(
+        module,
+        audio_path,
+        total_duration,
+        silence_threshold_db,
+        silence_min_duration_sec,
+    )
+    transcript_pause_ranges = collect_segment_pause_ranges(segments, total_duration, silence_min_duration_sec)
+    pause_ranges = merge_pause_ranges(audio_pause_ranges + transcript_pause_ranges, total_duration)
+
+    pause_decisions, keep_ranges = plan_keep_ranges(args.mode, args.preedit_mode, pause_ranges, segments, total_duration)
+    edited_duration_sec = round(sum(item["end"] - item["start"] for item in keep_ranges), 3)
+    debug_path = write_debug_decisions(paths.output_file, pause_decisions) if args.write_debug_json else None
+    clip_exports = [
+        build_preedit_export_payload(
+            str(input_file),
+            str(paths.output_file),
+            total_duration,
+            edited_duration_sec,
+            len(pause_decisions),
+        )
+    ]
+
+    emit(
+        "status",
+        "processing",
+        "planning",
+        f"{len(pause_decisions)} pausas analisadas para pre-edicao.",
+        progress=56,
+        outputDir=output_dir,
+        debugPath=debug_path,
+        sourceDurationSec=total_duration,
+    )
+
+    if not keep_ranges:
+        raise RuntimeError("Nenhum trecho valido foi gerado para a pre-edicao.")
+
+    planned = {"outputDir": output_dir, "debugPath": debug_path, "sourceDurationSec": total_duration, "totalClips": 1}
+    emit("status", "processing", "planning-done", "Video unico planejado para pre-edicao.", progress=70, **planned, clipsCreated=0, **whisper)
+    emit("status", "processing", "exporting", "Exportando video limpo unico...", progress=82, **planned, clipsCreated=0, **whisper)
+
+    preserved_audio_count = export_and_check_audio(module, input_file, paths, keep_ranges, audio_stream_count)
+
+    emit(
+        "done",
+        "completed",
+        "done",
+        f"Pre-edicao exportada com sucesso; {preserved_audio_count} faixa(s) de audio preservada(s).",
+        progress=100,
+        **planned,
+        clipsCreated=1,
+        durationSec=round(time.time() - started_at, 1),
+        clips=clip_exports,
+        **whisper,
+    )
+
+
+# Valida a entrada, carrega a engine, prepara os caminhos e roda o pipeline (limpando temporarios no fim).
 def main() -> int:
     args = parse_args()
     started_at = time.time()
@@ -750,204 +934,31 @@ def main() -> int:
         emit("error", "error", "bootstrap", "Falha ao carregar engine do Clip-Splitter.", error=str(error))
         return 1
 
-    safe_stem = safe_short_stem(input_file.stem)
-    output_dir = Path(args.output) if args.output else input_file.parent / f"{safe_stem}_preedit"
-    temp_dir = resolve_short_temp_dir(input_file)
-    filter_script_path = temp_dir / "preedit_filters.txt"
-    temp_audio_path = temp_dir / "audio_temp.wav"
-
+    whisper = {"transcriptionDevice": whisper_device, "transcriptionComputeType": whisper_compute}
+    paths = resolve_preedit_paths(input_file, args.output)
     print(
         f"[debug] input_path ({len(str(input_file))} chars): {input_file}\n"
-        f"[debug] output_dir ({len(str(output_dir))} chars): {output_dir}\n"
-        f"[debug] temp_dir ({len(str(temp_dir))} chars): {temp_dir}\n"
-        f"[debug] filter_script_path: {filter_script_path}\n"
-        f"[debug] temp_audio_path: {temp_audio_path}",
+        f"[debug] output_dir ({len(str(paths.output_dir))} chars): {paths.output_dir}\n"
+        f"[debug] temp_dir ({len(str(paths.temp_dir))} chars): {paths.temp_dir}\n"
+        f"[debug] filter_script_path: {paths.filter_script_path}\n"
+        f"[debug] temp_audio_path: {paths.temp_audio_path}",
         flush=True,
     )
 
     try:
         assert_safe_path_lengths(
             input_path=input_file,
-            output_dir=output_dir,
-            temp_dir=temp_dir,
-            temp_audio_path=temp_audio_path,
-            filter_script_path=filter_script_path,
+            output_dir=paths.output_dir,
+            temp_dir=paths.temp_dir,
+            temp_audio_path=paths.temp_audio_path,
+            filter_script_path=paths.filter_script_path,
         )
     except RuntimeError as path_error:
         emit("error", "error", "paths", str(path_error), error=str(path_error))
         return 1
 
     try:
-        silence_min_duration_sec = max(0.1, float(args.silence_min_duration))
-        silence_threshold_db = float(args.silence_threshold_db)
-
-        emit(
-            "status",
-            "preparing",
-            "probing",
-            "Lendo duracao do video...",
-            progress=10,
-            outputDir=str(output_dir),
-            transcriptionDevice=whisper_device,
-            transcriptionComputeType=whisper_compute,
-        )
-        total_duration = float(module.get_duracao(str(input_file)))
-        audio_streams = probe_audio_streams(module, str(input_file))
-        if not audio_streams:
-            raise RuntimeError("Nenhuma faixa de audio encontrada no video de entrada.")
-
-        analysis_audio = resolve_analysis_audio_track(args.analysis_audio_track, audio_streams)
-        analysis_audio_index = int(analysis_audio["audio_index"])
-        audio_stream_count = len(audio_streams)
-        print(
-            f"Audio: {audio_stream_count} faixa(s) detectada(s); analisando faixa {analysis_audio_index} "
-            f"(stream {analysis_audio['stream_index']}). {analysis_audio['reason']}",
-            flush=True,
-        )
-
-        emit(
-            "status",
-            "preparing",
-            "extracting-audio",
-            f"Extraindo audio de analise da faixa {analysis_audio_index}/{audio_stream_count - 1}...",
-            progress=18,
-            outputDir=str(output_dir),
-            sourceDurationSec=total_duration,
-            transcriptionDevice=whisper_device,
-            transcriptionComputeType=whisper_compute,
-        )
-        audio_path = extract_analysis_audio_track(module, str(input_file), str(temp_dir), analysis_audio_index)
-
-        emit(
-            "status",
-            "processing",
-            "transcribing",
-            "Transcrevendo audio com Whisper em CPU..." if whisper_device == "cpu" else "Transcrevendo audio com Whisper...",
-            progress=34,
-            outputDir=str(output_dir),
-            sourceDurationSec=total_duration,
-            transcriptionDevice=whisper_device,
-            transcriptionComputeType=whisper_compute,
-        )
-        segments = module.transcrever(audio_path)
-        audio_pause_ranges = detect_audio_silence_ranges(
-            module,
-            audio_path,
-            total_duration,
-            silence_threshold_db,
-            silence_min_duration_sec,
-        )
-        transcript_pause_ranges = collect_segment_pause_ranges(segments, total_duration, silence_min_duration_sec)
-        pause_ranges = merge_pause_ranges(audio_pause_ranges + transcript_pause_ranges, total_duration)
-
-        if args.mode == "fixed":
-            # Modo fixo agora preserva o bruto em arquivo unico, sem gerar partes curtas.
-            pause_decisions: list[dict] = []
-            keep_ranges = [{"start": 0.0, "end": round(total_duration, 3)}]
-        else:
-            # Modo silencio virou pre-edicao: cada pausa vira uma decisao de manter, comprimir ou reduzir.
-            pause_decisions = build_pause_edit_decisions(pause_ranges, segments, mode=args.preedit_mode)
-            keep_ranges = build_preedit_keep_ranges(total_duration, pause_decisions)
-
-        edited_duration_sec = round(sum(item["end"] - item["start"] for item in keep_ranges), 3)
-        output_file = output_dir / f"{safe_stem}_preedit.mp4"
-        debug_path = write_debug_decisions(output_file, pause_decisions) if args.write_debug_json else None
-        clip_exports = [
-            build_preedit_export_payload(
-                str(input_file),
-                str(output_file),
-                total_duration,
-                edited_duration_sec,
-                len(pause_decisions),
-            )
-        ]
-
-        emit(
-            "status",
-            "processing",
-            "planning",
-            f"{len(pause_decisions)} pausas analisadas para pre-edicao.",
-            progress=56,
-            outputDir=str(output_dir),
-            debugPath=debug_path,
-            sourceDurationSec=total_duration,
-        )
-
-        if not keep_ranges:
-            raise RuntimeError("Nenhum trecho valido foi gerado para a pre-edicao.")
-
-        emit(
-            "status",
-            "processing",
-            "planning-done",
-            "Video unico planejado para pre-edicao.",
-            progress=70,
-            outputDir=str(output_dir),
-            debugPath=debug_path,
-            sourceDurationSec=total_duration,
-            totalClips=1,
-            clipsCreated=0,
-            transcriptionDevice=whisper_device,
-            transcriptionComputeType=whisper_compute,
-        )
-
-        emit(
-            "status",
-            "processing",
-            "exporting",
-            "Exportando video limpo unico...",
-            progress=82,
-            outputDir=str(output_dir),
-            debugPath=debug_path,
-            sourceDurationSec=total_duration,
-            totalClips=1,
-            clipsCreated=0,
-            transcriptionDevice=whisper_device,
-            transcriptionComputeType=whisper_compute,
-        )
-
-        print(
-            f"[debug] keep_ranges={len(keep_ranges)} audio_streams={audio_stream_count} "
-            f"using_filter_script=true script_path={filter_script_path}",
-            flush=True,
-        )
-        export_preedited_video(
-            module,
-            str(input_file),
-            output_file,
-            keep_ranges,
-            audio_stream_count,
-            filter_script_path=filter_script_path,
-        )
-        preserved_audio_streams = probe_audio_streams(module, str(output_file))
-        preserved_audio_count = len(preserved_audio_streams)
-        if preserved_audio_count != audio_stream_count:
-            raise RuntimeError(
-                f"Possivel downmix acidental: entrada tinha {audio_stream_count} faixa(s) de audio, "
-                f"saida preservou {preserved_audio_count}."
-            )
-
-        print(
-            f"Audio: {audio_stream_count} faixa(s) na entrada; {preserved_audio_count} preservada(s) na saida.",
-            flush=True,
-        )
-
-        emit(
-            "done",
-            "completed",
-            "done",
-            f"Pre-edicao exportada com sucesso; {preserved_audio_count} faixa(s) de audio preservada(s).",
-            progress=100,
-            outputDir=str(output_dir),
-            debugPath=debug_path,
-            sourceDurationSec=total_duration,
-            totalClips=1,
-            clipsCreated=1,
-            durationSec=round(time.time() - started_at, 1),
-            clips=clip_exports,
-            transcriptionDevice=whisper_device,
-            transcriptionComputeType=whisper_compute,
-        )
+        run_preedit(args, module, whisper, input_file, paths, started_at)
         return 0
     except Exception as error:
         emit(
@@ -956,17 +967,15 @@ def main() -> int:
             "processing",
             "Falha ao processar o Pre-Editor.",
             error=str(error),
-            outputDir=str(output_dir),
-            transcriptionDevice=whisper_device,
-            transcriptionComputeType=whisper_compute,
+            outputDir=str(paths.output_dir),
+            **whisper,
         )
         return 1
     finally:
-        for cleanup_path in (temp_audio_path, filter_script_path):
+        for cleanup_path in (paths.temp_audio_path, paths.filter_script_path):
             # Limpeza de temporario e best-effort: arquivo travado nao derruba o job.
             with contextlib.suppress(OSError):
                 cleanup_path.unlink(missing_ok=True)
-
 
 if __name__ == "__main__":
     raise SystemExit(main())
