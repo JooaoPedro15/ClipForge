@@ -3,6 +3,8 @@
 faster-whisper==1.2.1
 ctranslate2==4.7.1
 sentencepiece==0.2.2
+# Aprendizado do estilo de legenda (arvore de decisao; traz joblib e scipy)
+scikit-learn==1.9.1
 # DLLs CUDA da GPU (o Electron poe as pastas bin delas no PATH do processo Python)
 nvidia-cublas-cu12==12.9.2.10
 nvidia-cudnn-cu12==9.20.0.48
