@@ -7,3 +7,9 @@ describe('clip splitter settings', () => {
     expect(useAppStore.getState().clipSplitterSettings.analysisAudioTrack).toBe('1')
   })
 })
+
+describe('subtitle settings', () => {
+  test('usa o estilo aprendido por padrao (so tem efeito quando o perfil estiver pronto)', () => {
+    expect(useAppStore.getState().subtitleSettings.useStyle).toBe(true)
+  })
+})

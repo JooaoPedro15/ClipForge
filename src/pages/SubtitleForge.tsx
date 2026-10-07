@@ -2,6 +2,7 @@ import { HardDriveDownload, Layers3, SlidersHorizontal } from 'lucide-react'
 
 import { DropZone } from '@/components/subtitle/DropZone'
 import { StatsBar } from '@/components/subtitle/StatsBar'
+import { StylePanel } from '@/components/subtitle/StylePanel'
 import { TaskList } from '@/components/subtitle/TaskList'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
@@ -190,6 +191,13 @@ export function SubtitleForgePage({
               </div>
               <div className="flex items-center justify-between rounded-xl border border-white/8 bg-white/[0.03] px-4 py-3 text-sm text-text-secondary">
                 <span className="space-y-0.5">
+                  <span className="block">Usar meu estilo</span>
+                  <span className="block text-xs text-text-muted">Vale quando o formato tiver 3+ vídeos ensinados</span>
+                </span>
+                <Toggle checked={settings.useStyle} onChange={(checked) => patchSettings({ useStyle: checked })} />
+              </div>
+              <div className="flex items-center justify-between rounded-xl border border-white/8 bg-white/[0.03] px-4 py-3 text-sm text-text-secondary">
+                <span className="space-y-0.5">
                   <span className="block">Gerar .srt em inglês também</span>
                   <span className="block text-xs text-text-muted">Opcional — os botões de queima já traduzem sozinhos</span>
                 </span>
@@ -243,6 +251,9 @@ export function SubtitleForgePage({
               </div>
             </div>
           </Card>
+
+          {/* Ensina o app com legendas corrigidas no Premiere. */}
+          <StylePanel />
 
           <Card className="space-y-4">
             {/* Card explicativo para lembrar como o fluxo backend trabalha hoje. */}
