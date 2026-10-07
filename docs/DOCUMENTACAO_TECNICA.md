@@ -39,7 +39,8 @@ Responsabilidades:
 - criar a janela do app;
 - abrir dialogos de arquivo e pasta;
 - registrar IPC de edicao;
-- orquestrar workers Python;
+- orquestrar workers Python (`electron/python/`: `runPython` sobe o processo, `runnerEvents` le os eventos JSON e decide o desfecho);
+- enfileirar tudo que usa GPU numa fila unica (`gpuQueue`), um job por vez;
 - repassar progresso para a interface.
 
 ### Workers Python
@@ -60,8 +61,14 @@ clip-forge/
 |-- electron/
 |   |-- ipc/
 |   |   |-- clipSplitter.ts
-|   |   `-- subtitle.ts
-|   |-- clipFeedbackStore.ts
+|   |   |-- subtitle.ts
+|   |   `-- subtitleBurn.ts
+|   |-- python/
+|   |   |-- gpuQueue.ts
+|   |   |-- pythonEnv.ts
+|   |   |-- pythonProcess.ts
+|   |   `-- runnerEvents.ts
+|   |-- testing/
 |   |-- main.ts
 |   `-- preload.ts
 |-- python/
@@ -94,7 +101,7 @@ clip-forge/
 
 1. O usuario escolhe ou arrasta um arquivo.
 2. `useSubtitleForge` chama `window.clipforge.subtitle.process`.
-3. `electron/ipc/subtitle.ts` inicia o worker Python.
+3. `electron/ipc/subtitle.ts` coloca a tarefa na fila unica de GPU; quando chega a vez, sobe o worker Python com `runPython`.
 4. `python/subtitle_service.py` transcreve (Whisper), `segmentation.py` transforma as palavras em legendas e `srt_utils.render_srt` grava o `.srt`; o progresso sai como eventos JSON (`events.py`).
 5. O Electron repassa eventos para o renderer.
 6. A store atualiza a lista de tarefas.
@@ -104,7 +111,7 @@ clip-forge/
 
 1. O usuario escolhe o video e as opcoes de corte.
 2. `useClipSplitter` chama `window.clipforge.clipSplitter.process`.
-3. `electron/ipc/clipSplitter.ts` inicia o worker Python.
+3. `electron/ipc/clipSplitter.ts` coloca o job na mesma fila unica de GPU e, na vez dele, sobe o worker Python.
 4. `python/clip_splitter_service.py` adapta o pipeline de corte.
 5. O Electron repassa progresso e resultado.
 6. A store atualiza tarefas e feedback de clipes.

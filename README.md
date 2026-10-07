@@ -102,7 +102,7 @@ Renderer React  <->  Electron main/preload  <->  Python workers
 ```
 
 - **Renderer** (`src/`): UI React + Tailwind, estado via Zustand.
-- **Main process** (`electron/`): IPC handlers, dialogs, janela e orquestracao de workers.
+- **Main process** (`electron/`): IPC handlers, dialogs, janela e orquestracao de workers. Tudo que usa GPU (transcricao, queima e Pre-Editor) passa por uma fila unica (`electron/python/gpuQueue.ts`): um job por vez, pra nao disputar VRAM.
 - **Workers Python** (`python/`): pipelines de legenda e corte.
 
 ## Pre-requisitos
@@ -167,8 +167,9 @@ Esse comando inicia o Vite, compila o processo principal do Electron em modo wat
 ```text
 clip-forge/
 ├─ electron/             # Processo principal, preload e handlers IPC
-│  ├─ ipc/               # Handlers IPC (clipSplitter, subtitle)
-│  └─ clipFeedbackStore.ts
+│  ├─ ipc/               # Handlers IPC (subtitle, subtitleBurn, clipSplitter)
+│  ├─ python/            # Runner Python, leitura de eventos e fila unica de GPU
+│  └─ testing/           # Processo falso e utilitarios dos testes de IPC
 ├─ python/               # Workers locais (faster-whisper, FFmpeg) + modulos puros
 │  ├─ events.py          # Protocolo de eventos JSON com o Electron
 │  ├─ text_utils.py      # Helpers de texto (limpeza, timestamps, quebra de linha)
