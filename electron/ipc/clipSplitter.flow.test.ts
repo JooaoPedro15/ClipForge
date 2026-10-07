@@ -91,7 +91,7 @@ describe('fluxo IPC do Pre-Editor (caracterizacao)', () => {
         "args": [
           "D:\\brutos\\live.mp4",
           "--project-root",
-          "C:\\Users\\JOO~1\\AppData\\Local\\Temp\\clip-flow-ADyeXq",
+          "<root>",
           "--mode",
           "silence",
           "--preedit-mode",

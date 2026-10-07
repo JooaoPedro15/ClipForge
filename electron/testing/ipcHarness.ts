@@ -74,7 +74,8 @@ export function spawnSummary(child: FakeChild, root: string) {
   return {
     command: path.relative(root, child.command),
     script: path.basename(child.args[0] ?? ''),
-    args: child.args.slice(1),
+    // A raiz temporaria muda a cada execucao: troca por um marcador fixo.
+    args: child.args.slice(1).map((arg) => (arg === root ? '<root>' : arg)),
     cwdIsRoot: child.options.cwd === root,
     unbuffered: child.options.env?.PYTHONUNBUFFERED,
     ioEncoding: child.options.env?.PYTHONIOENCODING,
