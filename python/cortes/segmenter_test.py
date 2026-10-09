@@ -41,6 +41,13 @@ class ChooseBoundariesTest(unittest.TestCase):
         bounds = choose_boundaries([(294.44, 10.0)], 144.44, 444.44)
         self.assertEqual(bounds, [144.44, 294.44, 444.44])
 
+    def test_many_average_candidates_do_not_multiply_the_clips(self):
+        # Candidato a cada 4s com nota media: o numero de clipes tem que vir do alvo (630s / 150s ~ 4),
+        # e nao de quantos cortes da pra somar.
+        candidates = [(t, 3.0 + (i % 6)) for i, t in enumerate(range(148, 774, 4))]
+        bounds = choose_boundaries(candidates, 144.0, 774.0)
+        self.assertIn(len(bounds) - 1, (4, 5))
+
     def test_empty_trecho_is_an_error(self):
         with self.assertRaises(ValueError):
             choose_boundaries([], 10.0, 10.0)

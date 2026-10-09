@@ -1,13 +1,18 @@
 """Escolhe as fronteiras dos clipes: programacao dinamica no formato do corte de haste.
 
-melhor[j] = max sobre i (MIN <= t_j - t_i <= MAX) de melhor[i] + nota(j) - LAMBDA * |dur - ALVO| / ALVO
+melhor[j] = max sobre i (MIN <= t_j - t_i <= MAX) de melhor[i] + (nota(j) - BASE) - LAMBDA * |dur - ALVO| / ALVO
+
+BASE = mediana das notas dos candidatos do trecho. Sem ela, todo corte somaria nota positiva e a
+programacao dinamica cortaria o maximo que as duracoes deixam; com ela, so vale cortar num ponto
+melhor que o tipico do trecho, e a quantidade de clipes vem do ALVO.
 """
 
 import bisect
 import math
+import statistics
 from dataclasses import dataclass
 
-EMERGENCY_SCORE = -10.0  # ponto sem candidato: so usado quando nao ha outro jeito
+EMERGENCY_SCORE = -20.0  # ponto sem candidato: abaixo de qualquer candidato centrado (>= -10)
 GRID_SEC = 1.0
 NEAR_CANDIDATE_SEC = 0.5
 DEFAULT_LAMBDA = 4.0  # peso do desvio da duracao alvo (calibrado no gabarito)
@@ -74,7 +79,9 @@ def choose_boundaries(
     durations = durations or Durations()
     if end <= start:
         raise ValueError("Trecho vazio: o fim precisa vir depois do inicio.")
-    points = _points(candidates, start, end)
+    inside = [(t, score) for t, score in candidates if start < t < end]
+    base = statistics.median(score for _t, score in inside) if inside else 0.0
+    points = _points([(t, score - base) for t, score in inside], start, end)
     bounds = _solve(points, durations, lam, durations.min_sec)
     if bounds is None:
         bounds = _solve(points, durations, lam, 0.0)
