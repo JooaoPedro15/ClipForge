@@ -1,6 +1,8 @@
 import { startTransition, useEffectEvent } from 'react'
 import { useEffect } from 'react'
 
+import { preEditNotice } from '@/lib/finishNotices'
+import { notifyIfAway } from '@/lib/notify'
 import { getFileName } from '@/lib/utils'
 import { useAppStore } from '@/store/appStore'
 import type {
@@ -38,10 +40,12 @@ export function useClipSplitter() {
 
   const handleDone = useEffectEvent((data: ClipSplitterDoneEvent) => {
     useAppStore.getState().completeClipSplitterTask(data)
+    notifyIfAway(preEditNotice(data))
   })
 
   const handleError = useEffectEvent((data: ClipSplitterErrorEvent) => {
     useAppStore.getState().failClipSplitterTask(data)
+    notifyIfAway(preEditNotice(data))
   })
 
   useEffect(() => {

@@ -1,6 +1,8 @@
 import { startTransition, useEffectEvent } from 'react'
 import { useEffect } from 'react'
 
+import { burnNotice, subtitleNotice } from '@/lib/finishNotices'
+import { notifyIfAway } from '@/lib/notify'
 import { getFileName } from '@/lib/utils'
 import { useAppStore } from '@/store/appStore'
 import type {
@@ -40,14 +42,19 @@ export function useSubtitleForge() {
 
   const handleDone = useEffectEvent((data: SubtitleDoneEvent) => {
     useAppStore.getState().completeSubtitleTask(data)
+    notifyIfAway(subtitleNotice(data))
   })
 
   const handleError = useEffectEvent((data: SubtitleErrorEvent) => {
     useAppStore.getState().failSubtitleTask(data)
+    notifyIfAway(subtitleNotice(data))
   })
 
   const handleBurnEvent = useEffectEvent((data: HardsubEvent) => {
     useAppStore.getState().upsertHardsubJob(data)
+    // O evento da queima so traz o id da tarefa; o nome do arquivo vem da fila.
+    const task = useAppStore.getState().subtitleTasks.find((item) => item.id === data.taskId)
+    notifyIfAway(burnNotice(data, task?.fileName ?? 'Vídeo'))
   })
 
   useEffect(() => {
