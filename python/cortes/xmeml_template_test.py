@@ -80,6 +80,19 @@ class TemplateErrorsTest(unittest.TestCase):
         with self.assertRaisesRegex(TemplateError, "comecar junto"):
             parse_template(root)
 
+    def test_rejects_webcam_that_does_not_start_with_the_first_clip(self):
+        # Sem isso o XML sairia sem webcam, sem aviso nenhum.
+        root = fixture_root()
+        main_tracks(root)[1].find("clipitem").find("start").text = "1"
+        with self.assertRaisesRegex(TemplateError, "V2 precisa comecar junto"):
+            parse_template(root)
+
+    def test_rejects_source_audio_that_does_not_start_with_the_first_clip(self):
+        root = fixture_root()
+        main_tracks(root)[4].find("clipitem").find("start").text = "2"  # A2 = mic
+        with self.assertRaisesRegex(TemplateError, "A2 precisa comecar junto"):
+            parse_template(root)
+
     def test_rejects_v2_pointing_to_another_file(self):
         root = fixture_root()
         main_tracks(root)[1].find("clipitem").find("file").set("id", "file-99")

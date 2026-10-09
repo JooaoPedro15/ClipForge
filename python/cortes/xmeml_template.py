@@ -115,8 +115,12 @@ def parse_template(root: ET.Element) -> Template:
         clip = next((c for c in track.findall("clipitem") if _int(c, "start") == first_start), None)
         if clip is not None:
             prototypes.append(Prototype(kind, index, _as_reference(clip), _ref_id(clip, "file") == source_file_id))
-    if not any(p.kind == "video" and p.track == 3 for p in prototypes):
-        raise TemplateError("O loop em V3 precisa comecar junto com o primeiro clipe de V1.")
+            continue
+        # Trilha obrigatoria (V1-V3) ou de audio do bruto sem clipe no inicio do molde sumiria do XML sem aviso.
+        name = f"{kind[0].upper()}{index}"
+        uses_source = any(_ref_id(c, "file") == source_file_id for c in track.findall("clipitem"))
+        if name in REQUIRED_VIDEO_TRACKS or (kind == "audio" and uses_source):
+            raise TemplateError(f"A trilha {name} precisa comecar junto com o primeiro clipe de V1, senao ela some do XML.")
 
     v1_items = sorted(video["V1"].findall("clipitem"), key=lambda c: _int(c, "start"))
     gaps = [_int(b, "start") - _int(a, "end") for a, b in itertools.pairwise(v1_items)]
