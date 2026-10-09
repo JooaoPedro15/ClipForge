@@ -100,6 +100,16 @@ class XmlFromAnalysisTest(unittest.TestCase):
             self.assertEqual(events[-1]["event"], "done")
             self.assertEqual(store.load(path).options["target_sec"], 150.0)
 
+class TempDirEventTest(unittest.TestCase):
+    def test_temp_folder_goes_to_the_app_in_a_status_event(self):
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            cortes_service.report_temp_dir(Path("C:\\cs_tmp\\cortes-abc"))
+        event = json.loads(stdout.getvalue())
+        self.assertEqual((event["event"], event["stage"]), ("status", "extracting"))
+        self.assertEqual(event["tempDir"], str(Path("C:\\cs_tmp\\cortes-abc")))
+
+
 class AnalyzeArgsTest(unittest.TestCase):
     def test_tracks_are_one_based_on_the_cli(self):
         args = cortes_service.parse_args(["analyze", "E:\\b.mp4", "--film-track", "2", "--mic-track", "1", "--start", "2:24.44"])

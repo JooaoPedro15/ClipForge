@@ -141,7 +141,13 @@ def resegment(
     return analysis
 
 
-def analyze(source_path: str, options: AnalyzeOptions, progress: ProgressFn, warn: WarnFn) -> store.Analysis:
+def analyze(
+    source_path: str,
+    options: AnalyzeOptions,
+    progress: ProgressFn,
+    warn: WarnFn,
+    on_temp_dir: Callable[[Path], None] | None = None,
+) -> store.Analysis:
     media = probe_source(source_path)
     needed = max(options.film_track, options.mic_track) + 1
     if media.audio_streams < needed:
@@ -166,6 +172,8 @@ def analyze(source_path: str, options: AnalyzeOptions, progress: ProgressFn, war
     span = end - start
     temp_dir = Path(tempfile.mkdtemp(prefix="cortes-", dir=ffmpeg_utils.resolve_short_temp_dir(Path(source_path))))
     try:
+        if on_temp_dir:
+            on_temp_dir(temp_dir)
         paths = extract.ExtractPaths(temp_dir / "filme.wav", temp_dir / "mic.wav", temp_dir / "planos.txt")
         began = time.perf_counter()
         progress("extracting", "Lendo o bruto (audio e cortes de plano)...", 2)

@@ -30,6 +30,11 @@ def report_warning(message: str) -> None:
     emit("warning", "processing", "warning", message)
 
 
+def report_temp_dir(path: Path) -> None:
+    # O Electron apaga essa pasta se o job for cancelado: o taskkill mata o Python antes do finally.
+    emit("status", "processing", "extracting", "Preparando a leitura do bruto...", progress=1, tempDir=str(path))
+
+
 def cmd_xml(args: argparse.Namespace) -> int:
     template = load_template(args.template)
     if args.analysis:
@@ -66,7 +71,7 @@ def analyze_options(args: argparse.Namespace) -> AnalyzeOptions:
 
 
 def cmd_analyze(args: argparse.Namespace) -> int:
-    analysis = analyze(args.source, analyze_options(args), report_progress, report_warning)
+    analysis = analyze(args.source, analyze_options(args), report_progress, report_warning, report_temp_dir)
     emit(
         "done",
         "completed",

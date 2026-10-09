@@ -1,5 +1,8 @@
 import itertools
+import os
+import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from llm_service import LLMUnavailableError
@@ -27,6 +30,20 @@ class AnalyzeValidationTest(unittest.TestCase):
         probe.return_value = SourceMedia("E:\\b.mp4", 600.0, 60.0, 3840, 1080, 4)
         with self.assertRaisesRegex(ValueError, "Trecho vazio"):
             pipeline.analyze("E:\\b.mp4", AnalyzeOptions(start=700.0), ignore, ignore)
+
+
+class TempDirTest(unittest.TestCase):
+    @mock.patch("cortes.pipeline.extract.run_extract", side_effect=RuntimeError("ffmpeg caiu"))
+    @mock.patch("cortes.pipeline.probe_source")
+    def test_reports_the_temp_folder_before_reading_and_still_cleans_it(self, probe, _extract):
+        probe.return_value = SourceMedia("E:\\b.mp4", 600.0, 60.0, 3840, 1080, 4)
+        seen: list[Path] = []
+        with tempfile.TemporaryDirectory() as folder, mock.patch.dict(os.environ, {"CLIPFORGE_TEMP": folder}):
+            with self.assertRaisesRegex(RuntimeError, "ffmpeg"):
+                pipeline.analyze("E:\\b.mp4", AnalyzeOptions(), ignore, ignore, seen.append)
+            self.assertEqual([path.parent for path in seen], [Path(folder)])
+            self.assertTrue(seen[0].name.startswith("cortes-"))
+            self.assertFalse(seen[0].exists())
 
 
 class ClipsFromTest(unittest.TestCase):
