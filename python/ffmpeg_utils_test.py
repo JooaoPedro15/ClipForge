@@ -156,6 +156,17 @@ class RunFfmpegWithProgressCwdTest(unittest.TestCase):
             ffmpeg_utils.run_ffmpeg_with_progress(["ffmpeg", "-i", "x"], 10, lambda pct: None, cwd="T:\\tmp")
         self.assertEqual(popen.call_args.kwargs["cwd"], "T:\\tmp")
 
+    def test_reads_ffmpeg_output_as_utf8(self):
+        # O ffmpeg escreve caminhos em UTF-8; em cp1252 (padrao do Windows) "Á"/"Í" derrubam a leitura do stderr.
+        process = mock.Mock()
+        process.stdout = iter(["progress=end\n"])
+        process.stderr = iter([])
+        process.wait.return_value = 0
+        with mock.patch.object(ffmpeg_utils.subprocess, "Popen", return_value=process) as popen:
+            ffmpeg_utils.run_ffmpeg_with_progress(["ffmpeg", "-i", "x"], 10, lambda pct: None)
+        self.assertEqual(popen.call_args.kwargs["encoding"], "utf-8")
+        self.assertEqual(popen.call_args.kwargs["errors"], "replace")
+
 
 if __name__ == "__main__":
     unittest.main()
