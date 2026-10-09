@@ -4,6 +4,7 @@ Subcomandos:
   analyze   le o bruto, acha as cenas e grava <bruto>.cortes.json
   xml       grava o XML do Premiere a partir da analise (--analysis) ou de trechos (--source + --ranges)
   evaluate  compara os cortes com uma sequencia montada a mao (gabarito)
+  resegment refaz os clipes com outra duracao, sem reler o bruto
 """
 
 import argparse
@@ -11,7 +12,7 @@ import sys
 from pathlib import Path
 
 import subtitle_service
-from cortes import evaluation, store
+from cortes import evaluation, pipeline, store
 from cortes.media import SourceMedia, probe_source
 from cortes.pipeline import AnalyzeOptions, analyze
 from cortes.segmenter import Durations
@@ -87,6 +88,27 @@ def cmd_evaluate(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_resegment(args: argparse.Namespace) -> int:
+    path = Path(args.analysis)
+    analysis = store.load(path)
+    client = None
+    if args.judge != "none":
+        client = pipeline.make_client(args.judge)
+        if not client.ensure_server_running():
+            report_warning("O Ollama nao respondeu; clipes novos ficam sem titulo.")
+            client = None
+    pipeline.resegment(
+        analysis,
+        Durations(args.min, args.target, args.max),
+        client,
+        lambda done, total: report_progress("titling", f"Titulos: clipe {done} de {total}...", 100 * done // total),
+        report_warning,
+    )
+    store.save(analysis, path)
+    emit("done", "completed", "done", f"{len(analysis.clips)} clipes.", outputPath=str(path), clips=len(analysis.clips))
+    return 0
+
+
 def add_duration_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--min", type=float, default=Durations.min_sec, help="Duracao minima do clipe (s)")
     parser.add_argument("--target", type=float, default=Durations.target_sec, help="Duracao alvo do clipe (s)")
@@ -126,6 +148,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     evaluate.add_argument("--to", dest="to_time", help="Avaliar ate (padrao: fim da analise)")
     evaluate.add_argument("--tolerance", type=float, default=10.0, help="Acerto se cair a ate N segundos")
     evaluate.set_defaults(handler=cmd_evaluate)
+
+    resegment = commands.add_parser("resegment", help="Refaz os clipes com outra duracao, sem reler o bruto")
+    resegment.add_argument("analysis", help="<bruto>.cortes.json")
+    add_duration_args(resegment)
+    resegment.add_argument("--judge", default="none", help="Modelo do LLM local pros titulos novos ou 'none'")
+    resegment.set_defaults(handler=cmd_resegment)
 
     return parser.parse_args(argv)
 

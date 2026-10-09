@@ -137,7 +137,7 @@ Pela entrada **Versao em chines** a queima "So chines" comeca sozinha quando a t
 
 Requisito: `ffmpeg`/`ffprobe` precisam estar instalados e acessiveis no PATH (ou em `C:\ffmpeg\bin`) — nao ha download automatico como o modelo Whisper/NLLB.
 
-### Cortes para TikTok (linha de comando, em construcao)
+### Cortes para TikTok (linha de comando)
 
 Gera um **XML do Premiere** (Final Cut Pro XML) com os clipes do react numa sequencia so, um depois do outro, com um espaco entre eles e um marcador em cada um. O layout vem de um **molde**: uma sequencia sua ja montada, exportada em *Arquivo > Exportar > Final Cut Pro XML*. Do primeiro clipe do molde o modulo copia filme (V1), webcam (V2, inclusive o Lumetri), loop do link (V3, sequencia aninhada) e as faixas de audio com o volume, e repete pra cada clipe novo trocando so os tempos e o caminho do bruto. No projeto do react, *Arquivo > Importar* o XML: a sequencia aponta pro bruto inteiro, entao da pra esticar clipe, mover tela e mexer no volume normalmente.
 
@@ -163,6 +163,14 @@ npm run cortes -- evaluate --reference sequencia.xml --analysis "E:\Bruto\react.
 ```
 
 Conta como acerto o corte do app que cai a ate `--tolerance` segundos (padrao 10) de um corte seu e mostra precisao, revocacao e F1.
+
+Com o LLM ligado, cada clipe ganha um **titulo** curto (vira o nome do marcador, `03 - titulo`) e uma **nota** de 0 a 10: 70% gancho (o LLM le a transcricao do clipe) + 30% reacao (quanto voce fala no mic, comparado com o resto do react). `xml --top 5` usa essa nota. Pra trocar a duracao dos clipes sem reler o bruto nem chamar o juiz de novo:
+
+```bash
+npm run cortes -- resegment "E:\Bruto\react.cortes.json" --min 60 --target 120 --max 200 --judge qwen2.5:14b-instruct
+```
+
+Clipe com a mesma fronteira de antes mantem titulo e nota; so os que mudaram passam pelo LLM.
 
 O XML sai como `<bruto>.cortes.xml` (ou em `--out`). O `npm run cortes` roda `python/cortes_service.py` com o mesmo Python e as mesmas DLLs CUDA do app. O codigo fica em `python/cortes/` e nao depende do Electron.
 

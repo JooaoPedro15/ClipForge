@@ -92,6 +92,14 @@ class XmlFromAnalysisTest(unittest.TestCase):
             self.assertEqual(code, 0)
             self.assertIn("Gabarito: 1 fronteiras", stdout.getvalue())
 
+    def test_resegment_rewrites_the_analysis_with_new_durations(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = self.write_analysis(Path(folder))
+            code, events = run_cli(["resegment", str(path), "--min", "70", "--target", "150", "--max", "240"])
+            self.assertEqual(code, 0)
+            self.assertEqual(events[-1]["event"], "done")
+            self.assertEqual(store.load(path).options["target_sec"], 150.0)
+
 class AnalyzeArgsTest(unittest.TestCase):
     def test_tracks_are_one_based_on_the_cli(self):
         args = cortes_service.parse_args(["analyze", "E:\\b.mp4", "--film-track", "2", "--mic-track", "1", "--start", "2:24.44"])
