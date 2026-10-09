@@ -21,7 +21,8 @@
     "lint": "eslint . && node scripts/run-ruff.mjs",
     "lint:ts": "eslint .",
     "lint:py": "node scripts/run-ruff.mjs",
-    "screenshots": "electron scripts/capture-screenshots.mjs"
+    "screenshots": "electron scripts/capture-screenshots.mjs",
+    "video": "electron scripts/record-demo-video.mjs"
   },
   "keywords": [],
   "author": "",

@@ -60,6 +60,14 @@ npm run screenshots
 
 O script (`scripts/capture-screenshots.mjs`) sobe o Vite, abre o app com `?demo` numa janela escondida do Electron e salva PNG em 2x em `docs/screenshots/`. Pra ver a demo no navegador: `npm run dev` e abra `http://localhost:5173/?demo` (`?demo=clip-splitter` abre na Pre-edicao). O modo demo so existe em dev; o build de producao nao inclui nada dele.
 
+Pra um video curto (LinkedIn, portfolio):
+
+```bash
+npm run video
+```
+
+Grava ~30s em 1920x1080 (MP4 H.264) com um roteiro de cliques: formato Shorts, maiusculas, sem pontuacao, menos palavras por legenda, depois a intensidade da pre-edicao. A janela e offscreen (nao aparece na tela) e cada quadro vai direto pro ffmpeg, que precisa estar instalado. Sai em `docs/media/clipforge-demo.mp4`, fora do git como todo `.mp4` do projeto.
+
 ### Traducao de legendas (SubtitleForge)
 
 **Fluxo recomendado:** transcreva o video e clique em **"So chines"** (ou outro modo) no painel **Queimar no video** do item pronto na fila — a queima traduz sozinha o que faltar. As chaves **"Gerar .en.srt junto"** / **"Gerar .zh.srt junto"** (secao **Traducao** do Inspetor) sao opcionais: servem so pra ter o `arquivo.en.srt` / `arquivo.zh.srt` pronto logo na transcricao (ex.: pra revisar ou corrigir a mao antes de queimar).
@@ -205,6 +213,7 @@ Esse comando inicia o Vite, compila o processo principal do Electron em modo wat
 | `npm run test:py` | Executa os testes Python (`python/*_test.py`) com o Python do app. `npm run test:py -- srt` roda so `srt*_test.py`. |
 | `npm run test:all` | Vitest + testes Python. |
 | `npm run screenshots` | Gera as imagens do README em `docs/screenshots/` (modo demonstracao). |
+| `npm run video` | Grava o video de demonstracao em `docs/media/clipforge-demo.mp4` (precisa do ffmpeg). |
 
 ## Estrutura
 
