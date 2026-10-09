@@ -79,6 +79,20 @@ class ChannelGlossaryPersistenceTest(unittest.TestCase):
             reloaded = json.loads(path.read_text(encoding="utf-8"))
             self.assertEqual(reloaded["characters"][0]["source_name"], "Edgar")
 
+    def test_entry_without_zh_is_not_locked(self):
+        # Travada vazia, a grafia vazia sobrescreveria a do modelo em todo video futuro.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "glossario_canal.json"
+
+            video_glossary = {
+                "characters": [{"source_name": "Edgar", "zh": "", "gender": "male"}],
+                "terms": [{"source": "rejeitado", "zh": " ", "note": ""}],
+            }
+            merged = glossary_service.merge_into_channel_glossary(video_glossary, path)
+
+            self.assertEqual(merged.get("characters", []), [])
+            self.assertEqual(merged.get("terms", []), [])
+
 
 class BuildVideoGlossaryTest(unittest.TestCase):
     def test_reuses_canonical_zh_from_channel_glossary(self):

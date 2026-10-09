@@ -83,6 +83,10 @@ def merge_into_channel_glossary(video_glossary: dict[str, Any], path: str = DEFA
     for chave, id_ in (("characters", "source_name"), ("terms", "source")):
         existentes = {e[id_] for e in canal.get(chave, [])}
         for entrada in video_glossary.get(chave, []):
+            # Sem grafia em chines nao ha o que travar: entrada vazia apagaria
+            # a grafia do modelo em todo video seguinte.
+            if not str(entrada.get("zh", "")).strip():
+                continue
             if entrada[id_] not in existentes:
                 canal.setdefault(chave, []).append(entrada)
                 existentes.add(entrada[id_])
