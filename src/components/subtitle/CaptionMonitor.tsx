@@ -43,7 +43,7 @@ export function CaptionMonitor({ options, format }: CaptionMonitorProps) {
 
   return (
     <figure className="overflow-hidden rounded-lg border border-line bg-monitor">
-      <div className="flex h-[280px] items-center justify-center p-4">
+      <div className="flex h-[300px] items-center justify-center p-4">
         <div
           className={cn('relative border border-white/10', isShorts ? 'aspect-[9/16] h-full' : 'aspect-video w-full')}
           data-testid="caption-frame"
@@ -54,8 +54,10 @@ export function CaptionMonitor({ options, format }: CaptionMonitorProps) {
           <p
             aria-live="off"
             className={cn(
-              'absolute inset-x-[6%] text-center leading-tight font-bold text-white [font-family:Arial,sans-serif] [paint-order:stroke_fill] [-webkit-text-stroke:3px_#000]',
-              isShorts ? 'bottom-[20%] text-[13px]' : 'bottom-[5%] text-[11px]',
+              'absolute text-center leading-tight font-bold text-white [font-family:Arial,sans-serif] [paint-order:stroke_fill] [-webkit-text-stroke:3px_#000]',
+              // Mesma posicao da queima (hardsub_service.py): 20% do rodape no Shorts, 5% no longo.
+              // No Shorts a fonte fica perto da proporcao real pra quebrar linha onde o video quebra.
+              isShorts ? 'inset-x-[3%] bottom-[20%] text-[10.5px]' : 'inset-x-[4%] bottom-[5%] text-[11px]',
             )}
           >
             {cards[index]?.map((line, lineIndex) => (
