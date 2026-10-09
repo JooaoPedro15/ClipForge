@@ -11,7 +11,7 @@ import type { ToolId } from '@/types/subtitle'
 export const pageMeta: Record<ToolId, { title: string; description: string }> = {
   'subtitle-forge': {
     title: 'Legendas',
-    description: 'Solte um vídeo, ajuste no Inspetor e o .srt sai ao lado do arquivo original.',
+    description: 'Legendar gera o .srt pra editar. Versão em chinês pega o vídeo pronto e devolve ele legendado em chinês.',
   },
   'clip-splitter': {
     title: 'Pré-edição',

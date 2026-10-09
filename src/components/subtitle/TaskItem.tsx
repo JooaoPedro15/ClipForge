@@ -1,8 +1,9 @@
-import { FolderSearch, RotateCcw, Square, TriangleAlert } from 'lucide-react'
+import { Film, FolderSearch, Languages, RotateCcw, Square, TriangleAlert } from 'lucide-react'
 
 import { BurnPanel } from '@/components/subtitle/BurnPanel'
 import { Button } from '@/components/ui/Button'
 import { TaskStatusIcon, ThinProgress } from '@/components/ui/TaskStatusIcon'
+import { autoBurnPhase } from '@/lib/taskPhases'
 import { formatDuration, formatLanguage } from '@/lib/utils'
 import type { HardsubMode, SubtitleTask } from '@/types/subtitle'
 
@@ -10,7 +11,7 @@ interface TaskItemProps {
   task: SubtitleTask
   onCancel: (taskId: string) => void
   onOpenOutput: (outputPath: string | null) => void
-  onRetry: (filePath: string) => void
+  onRetry: (filePath: string, autoBurn: HardsubMode | null) => void
   onBurn: (taskId: string, mode: HardsubMode) => void
 }
 
@@ -45,14 +46,20 @@ function rightMeta(task: SubtitleTask): string {
 }
 
 export function TaskItem({ task, onCancel, onOpenOutput, onRetry, onBurn }: TaskItemProps) {
-  // Agrupa os estados que ainda permitem acompanhar ou cancelar o processamento.
-  const isActive = task.status === 'queued' || task.status === 'preparing' || task.status === 'processing'
-  const isRunning = task.status === 'preparing' || task.status === 'processing'
+  // Video da entrada "Versao em chines": transcricao e queima contadas como uma tarefa so.
+  const phase = autoBurnPhase(task)
+  const status = phase?.status ?? task.status
+  const progress = phase ? phase.progress : task.progress
+  // Cancelar so existe pra transcricao (a queima nao tem cancelamento no runner).
+  const canCancel = task.status === 'queued' || task.status === 'preparing' || task.status === 'processing'
+  const isRunning = status === 'preparing' || status === 'processing'
+  const burn = phase?.burn
+  const autoMode = task.autoBurn
 
   return (
     <li className="flex gap-3 px-4 py-3.5">
       <div className="pt-0.5">
-        <TaskStatusIcon progress={task.progress} status={task.status} />
+        <TaskStatusIcon progress={progress} status={status} />
       </div>
 
       <div className="min-w-0 flex-1">
@@ -60,13 +67,34 @@ export function TaskItem({ task, onCancel, onOpenOutput, onRetry, onBurn }: Task
           <p className="truncate text-sm font-medium text-text-primary" title={task.filePath}>
             {task.fileName}
           </p>
-          <span className="ml-auto shrink-0 font-mono text-xs text-text-muted tabular-nums">{rightMeta(task)}</span>
+          {task.autoBurn ? (
+            <span className="inline-flex shrink-0 items-center gap-1 text-xs text-text-muted">
+              <Languages className="h-3 w-3" />
+              Versão em chinês
+            </span>
+          ) : null}
+          <span className="ml-auto shrink-0 font-mono text-xs text-text-muted tabular-nums">
+            {phase ? (isRunning && progress !== null ? `${progress}%` : '') : rightMeta(task)}
+          </span>
         </div>
-        <p className="mt-0.5 text-xs text-text-secondary">{describe(task)}</p>
+        <p className="mt-0.5 text-xs text-text-secondary">
+          {phase?.step ? (
+            <span className="mr-1.5 font-medium text-text-primary">
+              {phase.step.index}/2 {phase.step.label}
+            </span>
+          ) : null}
+          {phase ? phase.message : describe(task)}
+        </p>
         {isRunning ? (
           <div className="mt-2">
-            <ThinProgress value={task.progress} />
+            <ThinProgress value={progress} />
           </div>
+        ) : null}
+        {burn?.status === 'error' ? (
+          <p className="mt-1.5 flex items-start gap-1.5 whitespace-pre-line text-xs text-status-warn">
+            <TriangleAlert className="mt-px h-3.5 w-3.5 shrink-0" />
+            {burn.error}
+          </p>
         ) : null}
 
         {task.error ? (
@@ -93,7 +121,12 @@ export function TaskItem({ task, onCancel, onOpenOutput, onRetry, onBurn }: Task
 
         {/* -ml compensa o padding dos botoes discretos pro icone alinhar com o texto acima. */}
         <div className="mt-2 -ml-2.5 flex flex-wrap gap-1">
-          {isActive ? (
+          {burn?.status === 'completed' && burn.outputPath ? (
+            <Button leadingIcon={<Film className="h-3.5 w-3.5" />} onClick={() => onOpenOutput(burn.outputPath)} size="sm" variant="quiet">
+              Mostrar vídeo em chinês
+            </Button>
+          ) : null}
+          {canCancel ? (
             <Button leadingIcon={<Square className="h-3 w-3" />} onClick={() => onCancel(task.id)} size="sm" variant="quiet">
               Cancelar
             </Button>
@@ -109,13 +142,19 @@ export function TaskItem({ task, onCancel, onOpenOutput, onRetry, onBurn }: Task
             </Button>
           ))}
           {task.status === 'error' || task.status === 'cancelled' ? (
-            <Button leadingIcon={<RotateCcw className="h-3.5 w-3.5" />} onClick={() => onRetry(task.filePath)} size="sm" variant="quiet">
+            <Button leadingIcon={<RotateCcw className="h-3.5 w-3.5" />} onClick={() => onRetry(task.filePath, task.autoBurn)} size="sm" variant="quiet">
               Tentar de novo
+            </Button>
+          ) : null}
+          {autoMode && (burn?.status === 'error' || burn?.status === 'cancelled') ? (
+            <Button leadingIcon={<RotateCcw className="h-3.5 w-3.5" />} onClick={() => onBurn(task.id, autoMode)} size="sm" variant="quiet">
+              Tentar a queima de novo
             </Button>
           ) : null}
         </div>
 
-        {task.status === 'completed' ? <BurnPanel onBurn={onBurn} onOpenOutput={onOpenOutput} task={task} /> : null}
+        {/* Queima manual so pros videos de "Legendar"; a versao em chines ja queima sozinha. */}
+        {task.status === 'completed' && !task.autoBurn ? <BurnPanel onBurn={onBurn} onOpenOutput={onOpenOutput} task={task} /> : null}
       </div>
     </li>
   )

@@ -1,17 +1,25 @@
-import { FolderOpen, Upload } from 'lucide-react'
-import { useState } from 'react'
+import { FolderOpen } from 'lucide-react'
+import { useState, type ReactNode } from 'react'
 
 import { Button } from '@/components/ui/Button'
 import { cn } from '@/lib/utils'
 
+type ActionResult = { ok: boolean; message: string | null }
+
 interface DropZoneProps {
-  onPickFiles: () => Promise<{ ok: boolean; message: string | null }>
-  onDropPaths: (paths: string[]) => Promise<{ ok: boolean; message: string | null }>
+  title: string
+  hint: string
+  icon: ReactNode
+  buttonLabel: string
+  onPickFiles: () => Promise<ActionResult>
+  onDropPaths: (paths: string[]) => Promise<ActionResult>
 }
 
 type DragFile = File & { path?: string }
 
-export function DropZone({ onPickFiles, onDropPaths }: DropZoneProps) {
+// Uma entrada da fila: cada uma tem a sua intencao (legendar ou versao em chines),
+// entao o que acontece com o arquivo depende de onde ele foi solto, nao de uma opcao escondida.
+export function DropZone({ title, hint, icon, buttonLabel, onPickFiles, onDropPaths }: DropZoneProps) {
   // Controla o destaque visual da area de drop e mensagens de erro locais.
   const [isOver, setIsOver] = useState(false)
   const [dropError, setDropError] = useState<string | null>(null)
@@ -31,15 +39,15 @@ export function DropZone({ onPickFiles, onDropPaths }: DropZoneProps) {
       const result = await onDropPaths(paths)
       setDropError(result.message)
     } else if (files.length > 0) {
-      setDropError('Não deu pra ler o caminho do arquivo arrastado. Use "Escolher arquivos".')
+      setDropError(`Não deu pra ler o caminho do arquivo arrastado. Use "${buttonLabel}".`)
     }
   }
 
   return (
-    <div className="space-y-2">
+    <div className="flex flex-col gap-2">
       <div
         className={cn(
-          'flex items-center gap-4 rounded-[10px] border border-dashed px-5 py-4 transition-colors duration-150',
+          'flex flex-1 flex-col gap-3 rounded-[10px] border border-dashed p-4 transition-colors duration-150',
           isOver ? 'border-accent bg-accent-soft' : 'border-line-strong bg-panel',
         )}
         onDragEnter={(event) => {
@@ -58,20 +66,24 @@ export function DropZone({ onPickFiles, onDropPaths }: DropZoneProps) {
           void handleDrop(event.dataTransfer.files)
         }}
       >
-        <Upload className={cn('h-5 w-5 shrink-0', isOver ? 'text-accent' : 'text-text-muted')} />
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-text-primary">{isOver ? 'Pode soltar' : 'Solte vídeos ou áudios aqui'}</p>
-          <p className="text-xs text-text-muted">mp4, mov, mkv, mp3, wav, m4a. Entram na fila e rodam um por vez.</p>
+        <div className="flex items-start gap-3">
+          <span className={cn('mt-0.5 shrink-0', isOver ? 'text-accent' : 'text-text-muted')}>{icon}</span>
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-text-primary">{isOver ? 'Pode soltar' : title}</p>
+            <p className="mt-0.5 text-xs leading-snug text-text-muted">{hint}</p>
+          </div>
         </div>
         <Button
+          className="mt-auto self-start"
           leadingIcon={<FolderOpen className="h-4 w-4" />}
           onClick={() => {
             setDropError(null)
             void onPickFiles().then((result) => setDropError(result.message))
           }}
           size="sm"
+          variant="ghost"
         >
-          Escolher arquivos
+          {buttonLabel}
         </Button>
       </div>
 

@@ -14,12 +14,25 @@ import type {
   SubtitleTaskOptions,
 } from '@/types/subtitle'
 
+const VIDEO_EXTENSIONS = ['mp4', 'mov', 'mkv', 'avi', 'webm', 'm4v']
+
 const mediaFilters = [
   {
     name: 'Midia',
-    extensions: ['mp4', 'mov', 'mkv', 'avi', 'webm', 'mp3', 'wav', 'm4a', 'aac', 'flac'],
+    extensions: [...VIDEO_EXTENSIONS, 'mp3', 'wav', 'm4a', 'aac', 'flac'],
   },
 ]
+
+// A versao em chinês queima a legenda na imagem: audio sozinho nao serve.
+const videoFilters = [{ name: 'Video', extensions: VIDEO_EXTENSIONS }]
+
+function isVideoPath(filePath: string): boolean {
+  return VIDEO_EXTENSIONS.includes(filePath.split('.').pop()?.toLowerCase() ?? '')
+}
+
+// Pedido extra de um envio (entrada "Versao em chines"). Vale so pros arquivos daquele
+// envio e nunca entra nas configuracoes lembradas.
+export type QueueRequest = Pick<SubtitleTaskOptions, 'autoBurn'>
 
 export interface QueueFilesResult {
   ok: boolean
@@ -42,7 +55,10 @@ export function useSubtitleForge() {
 
   const handleDone = useEffectEvent((data: SubtitleDoneEvent) => {
     useAppStore.getState().completeSubtitleTask(data)
-    notifyIfAway(subtitleNotice(data))
+    // Com queima automatica a legenda e so a metade: o aviso vem no fim da queima.
+    if (!data.autoBurn) {
+      notifyIfAway(subtitleNotice(data))
+    }
   })
 
   const handleError = useEffectEvent((data: SubtitleErrorEvent) => {
@@ -93,12 +109,15 @@ export function useSubtitleForge() {
   }
 
   // Enfileira um ou mais arquivos e cria o estado inicial das tasks no renderer.
-  async function queuePaths(paths: string[]): Promise<QueueFilesResult> {
-    const sanitizedPaths = Array.from(new Set(paths.filter(Boolean)))
+  async function queuePaths(paths: string[], request: QueueRequest = {}): Promise<QueueFilesResult> {
+    const uniquePaths = Array.from(new Set(paths.filter(Boolean)))
+    const sanitizedPaths = request.autoBurn ? uniquePaths.filter(isVideoPath) : uniquePaths
     if (sanitizedPaths.length === 0) {
       return {
         ok: false,
-        message: 'Nenhum arquivo valido foi encontrado.',
+        message: request.autoBurn
+          ? 'A versão em chinês precisa de um vídeo (mp4, mov, mkv...): áudio não tem imagem pra queimar a legenda.'
+          : 'Nenhum arquivo valido foi encontrado.',
       }
     }
 
@@ -110,7 +129,7 @@ export function useSubtitleForge() {
       }
     }
 
-    const settings = getSettingsSnapshot()
+    const settings = { ...getSettingsSnapshot(), autoBurn: request.autoBurn ?? null }
 
     try {
       for (const filePath of sanitizedPaths) {
@@ -128,6 +147,7 @@ export function useSubtitleForge() {
             stage: 'queued',
             message: 'Tarefa adicionada a fila.',
             progress: null,
+            autoBurn: settings.autoBurn,
           })
         })
       }
@@ -168,7 +188,7 @@ export function useSubtitleForge() {
   return {
     queuePaths,
     queueFileSelection,
-    pickFiles: async (): Promise<QueueFilesResult> => {
+    pickFiles: async (request: QueueRequest = {}): Promise<QueueFilesResult> => {
       // Abre o seletor nativo do Electron e envia os arquivos escolhidos para a fila.
       if (!clipForgeApi?.dialog) {
         console.error('[clipforge] dialog API indisponivel para abrir arquivos')
@@ -178,7 +198,7 @@ export function useSubtitleForge() {
         }
       }
 
-      const filePaths = await clipForgeApi.dialog.openFiles(mediaFilters)
+      const filePaths = await clipForgeApi.dialog.openFiles(request.autoBurn ? videoFilters : mediaFilters)
       if (filePaths.length === 0) {
         return {
           ok: false,
@@ -186,7 +206,7 @@ export function useSubtitleForge() {
         }
       }
 
-      return queuePaths(filePaths)
+      return queuePaths(filePaths, request)
     },
     cancelTask: async (taskId: string) => {
       await clipForgeApi?.subtitle?.cancel(taskId)
@@ -199,9 +219,9 @@ export function useSubtitleForge() {
 
       await clipForgeApi?.shell?.showItemInFolder(outputPath)
     },
-    retryTask: async (filePath: string) => {
-      // Reprocessa o mesmo arquivo reaproveitando as configuracoes atuais da store.
-      await queuePaths([filePath])
+    retryTask: async (filePath: string, autoBurn: HardsubMode | null = null) => {
+      // Reprocessa o mesmo arquivo com as configuracoes atuais e o mesmo pedido de queima.
+      await queuePaths([filePath], { autoBurn })
     },
     burnSubtitles: async (taskId: string, mode: HardsubMode) => {
       const format = useAppStore.getState().subtitleSettings.format
