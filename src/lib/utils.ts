@@ -61,3 +61,21 @@ export function getFileName(filePath: string): string {
   const parts = normalized.split('/')
   return parts.at(-1) ?? filePath
 }
+
+const LANGUAGE_LABELS: Record<string, string> = {
+  pt: 'português',
+  en: 'inglês',
+  es: 'espanhol',
+  fr: 'francês',
+  de: 'alemão',
+  it: 'italiano',
+  ja: 'japonês',
+  ko: 'coreano',
+  ru: 'russo',
+  zh: 'chinês',
+}
+
+// Nome do idioma em portugues a partir do codigo do Whisper (cai no codigo se nao conhecer).
+export function formatLanguage(code: string): string {
+  return LANGUAGE_LABELS[code] ?? code
+}
