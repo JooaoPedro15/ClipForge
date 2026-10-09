@@ -28,38 +28,6 @@ export function formatDuration(seconds: number | null): string {
   return `${minutes}m ${remainingSeconds}s`
 }
 
-// Exibe horario amigavel de inicio/fim das tarefas.
-export function formatTimestamp(timestamp: number | null): string {
-  if (!timestamp) {
-    return '--'
-  }
-
-  return new Intl.DateTimeFormat('pt-BR', {
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(timestamp)
-}
-
-// Traduz o status tecnico da tarefa para um rotulo legivel na UI.
-export function formatTaskStatus(status: string): string {
-  switch (status) {
-    case 'queued':
-      return 'Na fila'
-    case 'preparing':
-      return 'Preparando'
-    case 'processing':
-      return 'Processando'
-    case 'completed':
-      return 'Concluída'
-    case 'cancelled':
-      return 'Cancelada'
-    case 'error':
-      return 'Erro'
-    default:
-      return status
-  }
-}
-
 // Extrai apenas o nome do arquivo a partir de um caminho absoluto.
 export function getFileName(filePath: string): string {
   const normalized = filePath.replaceAll('\\', '/')
