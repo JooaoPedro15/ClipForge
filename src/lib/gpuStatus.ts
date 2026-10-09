@@ -19,3 +19,13 @@ export function getGpuStatus(subtitleTasks: GpuTaskLike[], preEditTasks: GpuTask
     queued: all.filter((task) => task.status === 'queued').length,
   }
 }
+
+// Cada queima tambem ocupa a GPU, mesmo com a legenda da tarefa ja pronta.
+export function subtitleGpuEntries<T extends GpuTaskLike & { hardsubJobs: Partial<Record<string, { status: string }>> }>(
+  tasks: T[],
+): GpuTaskLike[] {
+  return tasks.flatMap((task) => [
+    task,
+    ...Object.values(task.hardsubJobs).flatMap((job) => (job ? [{ fileName: task.fileName, status: job.status }] : [])),
+  ])
+}

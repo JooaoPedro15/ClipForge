@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 
-import { getGpuStatus } from '@/lib/gpuStatus'
+import { getGpuStatus, subtitleGpuEntries } from '@/lib/gpuStatus'
 
 const base = { fileName: 'a.mp4', status: 'queued' as const }
 
@@ -20,5 +20,18 @@ describe('getGpuStatus', () => {
       busyWith: 'ep02.mp4',
       queued: 0,
     })
+  })
+})
+
+describe('subtitleGpuEntries', () => {
+  test('queima rodando ocupa a gpu mesmo com a legenda pronta', () => {
+    const entries = subtitleGpuEntries([
+      {
+        fileName: 'ep01.mp4',
+        status: 'completed' as const,
+        hardsubJobs: { zh: { status: 'processing' as const, stage: 'burning', message: '', progress: 40, outputPath: null, error: null } },
+      },
+    ])
+    expect(getGpuStatus(entries, [])).toEqual({ busyWith: 'ep01.mp4', queued: 0 })
   })
 })

@@ -2,7 +2,7 @@ import { Rail } from '@/components/layout/Rail'
 import { Titlebar } from '@/components/layout/Titlebar'
 import { useClipSplitter } from '@/hooks/useClipSplitter'
 import { useSubtitleForge } from '@/hooks/useSubtitleForge'
-import { getGpuStatus } from '@/lib/gpuStatus'
+import { getGpuStatus, subtitleGpuEntries } from '@/lib/gpuStatus'
 import { ClipSplitterPage } from '@/pages/ClipSplitter'
 import { SubtitleForgePage } from '@/pages/SubtitleForge'
 import { useAppStore } from '@/store/appStore'
@@ -29,7 +29,7 @@ export default function App() {
 
   // As duas ferramentas dividem a mesma fila de GPU, entao o status e global.
   const gpu = getGpuStatus(
-    subtitleTasks,
+    subtitleGpuEntries(subtitleTasks),
     clipSplitterTasks.map((task) => ({ fileName: task.sourceName, status: task.status })),
   )
 
