@@ -4,27 +4,30 @@ interface ToggleProps {
   checked: boolean
   onChange: (checked: boolean) => void
   disabled?: boolean
+  id?: string
 }
 
-export function Toggle({ checked, onChange, disabled }: ToggleProps) {
+export function Toggle({ checked, onChange, disabled, id }: ToggleProps) {
   return (
     // Switch visual simples que delega o estado real para o componente pai.
+    // O id deixa um <label htmlFor> dar nome acessivel e area de clique maior.
     <button
-      type="button"
-      role="switch"
       aria-checked={checked}
-      disabled={disabled}
       className={cn(
-        'relative inline-flex h-[22px] w-[40px] shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200',
-        checked ? 'bg-white' : 'bg-white/10',
-        disabled && 'cursor-not-allowed opacity-50',
+        'app-no-drag relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border transition-colors duration-150',
+        checked ? 'border-text-primary bg-text-primary' : 'border-line-strong bg-raised',
+        disabled && 'cursor-not-allowed opacity-45',
       )}
+      disabled={disabled}
+      id={id}
       onClick={() => onChange(!checked)}
+      role="switch"
+      type="button"
     >
       <span
         className={cn(
-          'pointer-events-none inline-block h-[16px] w-[16px] rounded-full transition-transform duration-200',
-          checked ? 'translate-x-[21px] bg-black' : 'translate-x-[3px] bg-white/50',
+          'pointer-events-none inline-block h-3.5 w-3.5 rounded-full transition-transform duration-150',
+          checked ? 'translate-x-[17px] bg-black' : 'translate-x-[2px] bg-text-muted',
         )}
       />
     </button>

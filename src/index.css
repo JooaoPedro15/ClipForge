@@ -1,21 +1,28 @@
 @import "tailwindcss";
 
-/* Tokens globais usados pelo tema escuro do app. */
+/* Tokens do tema "ilha de edicao": paineis grafite como num editor de video,
+   preto puro so no monitor e amarelo de legenda pra o que esta acontecendo agora. */
 @theme {
-  --color-app: #050505;
-  --color-surface: #0a0a0a;
-  --color-dark: #000000;
-  --color-accent: #ffffff;
-  --color-accent-dim: rgba(255, 255, 255, 0.08);
-  --color-border: rgba(255, 255, 255, 0.08);
-  --color-border-light: rgba(255, 255, 255, 0.14);
+  --color-app: #141414;
+  --color-panel: #1c1c1c;
+  --color-raised: #262626;
+  --color-line: #2e2e2e;
+  --color-line-strong: #404040;
+  --color-monitor: #000000;
+  --color-accent: #ffd60a;
+  --color-accent-soft: rgba(255, 214, 10, 0.12);
   --color-status-green: #4ade80;
-  --color-status-yellow: #facc15;
   --color-status-blue: #60a5fa;
   --color-status-red: #f87171;
-  --color-text-primary: #ffffff;
-  --color-text-secondary: #737373;
-  --color-text-muted: #525252;
+  --color-status-warn: #fb923c;
+  --color-text-primary: #ededed;
+  --color-text-secondary: #a1a1a1;
+  --color-text-muted: #6b6b6b;
+
+  /* Apelidos antigos: saem quando nenhum componente usar mais. */
+  --color-surface: #1c1c1c;
+  --color-dark: #141414;
+  --color-status-yellow: #fb923c;
 
   --font-display: "Space Grotesk", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
@@ -35,13 +42,13 @@
 html,
 body,
 #root {
-  min-height: 100%;
+  height: 100%;
 }
 
 /* Fundo geral e cor padrao do texto. */
 body {
   margin: 0;
-  background: linear-gradient(180deg, #080808 0%, #000000 100%);
+  background: var(--color-app);
   color: var(--color-text-primary);
 }
 
@@ -53,9 +60,15 @@ textarea {
   font: inherit;
 }
 
+/* Foco visivel so pra quem navega no teclado. */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
 /* Personaliza destaque de texto selecionado. */
 ::selection {
-  background: rgba(255, 255, 255, 0.20);
+  background: rgba(255, 214, 10, 0.3);
 }
 
 /* Ajustes de scrollbar para combinar com o visual do app. */
@@ -65,14 +78,24 @@ textarea {
 }
 
 ::-webkit-scrollbar-thumb {
-  border: 2px solid transparent;
+  border: 3px solid transparent;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.14);
   background-clip: padding-box;
 }
 
 ::-webkit-scrollbar-track {
   background: transparent;
+}
+
+/* Quem pediu menos movimento no sistema nao ve animacao. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 /* Regioes arrastaveis do Electron. */

@@ -1,4 +1,4 @@
-import { ChevronDown } from 'lucide-react'
+import { Check, ChevronDown } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
 import { cn } from '@/lib/utils'
@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils'
 interface SelectOption {
   value: string
   label: string
+  hint?: string
 }
 
 interface CustomSelectProps {
@@ -13,9 +14,10 @@ interface CustomSelectProps {
   onChange: (value: string) => void
   options: SelectOption[]
   className?: string
+  id?: string
 }
 
-export function CustomSelect({ value, onChange, options, className }: CustomSelectProps) {
+export function CustomSelect({ value, onChange, options, className, id }: CustomSelectProps) {
   // Controla a abertura do dropdown e referencia o container para clique externo.
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -24,52 +26,74 @@ export function CustomSelect({ value, onChange, options, className }: CustomSele
   const selected = options.find((o) => o.value === value)
 
   useEffect(() => {
-    // Fecha o menu quando o usuario clica fora do componente.
+    if (!open) {
+      return
+    }
+
+    // Fecha o menu no clique fora ou no Esc, como um select nativo.
     function handleClickOutside(event: MouseEvent) {
       if (ref.current && !ref.current.contains(event.target as Node)) {
         setOpen(false)
       }
     }
+    function handleKey(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setOpen(false)
+      }
+    }
 
     document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
+    document.addEventListener('keydown', handleKey)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+      document.removeEventListener('keydown', handleKey)
+    }
+  }, [open])
 
   return (
     <div ref={ref} className={cn('relative', className)}>
-      {/* Botao principal que abre/fecha a lista de opcoes. */}
       <button
-        type="button"
-        className="flex w-full items-center justify-between rounded-xl border border-white/10 bg-black/16 px-4 py-3 text-left text-white outline-none transition focus:border-white/30"
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        className="app-no-drag flex h-9 w-full items-center justify-between gap-2 rounded-md border border-line bg-raised px-3 text-left text-sm text-text-primary transition-colors hover:border-line-strong"
+        id={id}
         onClick={() => setOpen(!open)}
+        type="button"
       >
-        <span>{selected?.label ?? value}</span>
-        <ChevronDown
-          className={cn('h-4 w-4 text-white/50 transition-transform duration-200', open && 'rotate-180')}
-        />
+        <span className="truncate">{selected?.label ?? value}</span>
+        <ChevronDown className={cn('h-4 w-4 shrink-0 text-text-muted transition-transform', open && 'rotate-180')} />
       </button>
 
       {open && (
-        // Lista flutuante com as opcoes disponiveis para este campo.
-        <div className="absolute z-50 mt-1 w-full overflow-hidden rounded-xl border border-white/10 bg-[#0a0a0a] py-1 shadow-[0_8px_24px_rgba(0,0,0,0.6)]">
-          {options.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              className={cn(
-                'flex w-full items-center px-4 py-2.5 text-left text-sm transition',
-                option.value === value
-                  ? 'bg-white/10 text-white'
-                  : 'text-white/60 hover:bg-white/5 hover:text-white',
-              )}
-              onClick={() => {
-                onChange(option.value)
-                setOpen(false)
-              }}
-            >
-              {option.label}
-            </button>
-          ))}
+        <div
+          className="absolute z-50 mt-1 w-full overflow-hidden rounded-lg border border-line-strong bg-raised py-1 shadow-[0_12px_32px_rgba(0,0,0,0.5)]"
+          role="listbox"
+        >
+          {options.map((option) => {
+            const isSelected = option.value === value
+            return (
+              <button
+                aria-selected={isSelected}
+                className={cn(
+                  'flex w-full items-start gap-2 px-3 py-2 text-left text-sm transition-colors',
+                  isSelected ? 'text-text-primary' : 'text-text-secondary hover:bg-white/5 hover:text-text-primary',
+                )}
+                key={option.value}
+                onClick={() => {
+                  onChange(option.value)
+                  setOpen(false)
+                }}
+                role="option"
+                type="button"
+              >
+                <Check className={cn('mt-0.5 h-3.5 w-3.5 shrink-0', isSelected ? 'opacity-100' : 'opacity-0')} />
+                <span>
+                  <span className="block">{option.label}</span>
+                  {option.hint ? <span className="block text-xs text-text-muted">{option.hint}</span> : null}
+                </span>
+              </button>
+            )
+          })}
         </div>
       )}
     </div>

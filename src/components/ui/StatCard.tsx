@@ -15,8 +15,8 @@ export function StatCard({ label, value, hint, icon }: StatCardProps) {
       {/* Estrutura fixa para metricas curtas exibidas no topo das paginas. */}
       <div className="flex h-full flex-col gap-5">
         <div className="flex items-center justify-between text-text-secondary">
-          <span className="text-xs uppercase tracking-[0.24em]">{label}</span>
-          <span className="rounded-xl border border-white/8 bg-black/20 p-2 text-text-primary">{icon}</span>
+          <span className="text-sm">{label}</span>
+          <span className="text-text-muted">{icon}</span>
         </div>
 
         <div className="space-y-1">

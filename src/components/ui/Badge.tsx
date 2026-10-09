@@ -10,25 +10,25 @@ interface BadgeProps {
   className?: string
 }
 
-// Cada tom aponta para um conjunto de classes reutilizado pelo app inteiro.
-const toneClasses: Record<BadgeTone, string> = {
-  green: 'bg-status-green/12 text-status-green ring-status-green/25',
-  yellow: 'bg-status-yellow/12 text-status-yellow ring-status-yellow/25',
-  blue: 'bg-status-blue/12 text-status-blue ring-status-blue/25',
-  red: 'bg-status-red/12 text-status-red ring-status-red/25',
-  neutral: 'bg-white/6 text-text-secondary ring-white/10',
+// A bolinha carrega a cor do estado; o texto fica legivel em qualquer tom.
+// 'yellow' e o amarelo de legenda: algo rodando agora.
+const dotClasses: Record<BadgeTone, string> = {
+  green: 'bg-status-green',
+  yellow: 'bg-accent',
+  blue: 'bg-status-blue',
+  red: 'bg-status-red',
+  neutral: 'bg-text-muted',
 }
 
 export function Badge({ children, tone = 'neutral', className }: BadgeProps) {
   return (
-    // Badge compacto para status, modos e labels auxiliares.
     <span
       className={cn(
-        'inline-flex items-center rounded-md px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ring-1',
-        toneClasses[tone],
+        'inline-flex shrink-0 items-center gap-1.5 rounded-full border border-line bg-raised px-2 py-0.5 text-xs font-medium text-text-secondary',
         className,
       )}
     >
+      <span aria-hidden="true" className={cn('h-1.5 w-1.5 rounded-full', dotClasses[tone])} />
       {children}
     </span>
   )
