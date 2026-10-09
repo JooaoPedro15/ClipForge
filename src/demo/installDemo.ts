@@ -106,8 +106,26 @@ function seedSubtitleQueue() {
     durationSec: 41.3,
     translatedOutputs: { zh: 'D:\\Gravacoes\\shorts\\corte-susto-do-chefe.zh.srt' },
   })
+
+  // Video solto em "Versao em chines": legenda pronta e a queima ja andando sozinha.
+  store.completeSubtitleTask({
+    ...common,
+    taskId: 'demo-chinese',
+    filePath: 'D:\\Gravacoes\\shorts\\corte-final-boss.mp4',
+    fileName: 'corte-final-boss.mp4',
+    status: 'completed',
+    stage: 'done',
+    message: 'Legenda gerada.',
+    progress: 100,
+    outputPath: 'D:\\Gravacoes\\shorts\\corte-final-boss.srt',
+    detectedLanguage: 'pt',
+    startedAt: now - minutes(4),
+    completedAt: now - minutes(3),
+    durationSec: 36.8,
+    autoBurn: 'zh',
+  })
   store.upsertHardsubJob({
-    taskId: 'demo-done',
+    taskId: 'demo-chinese',
     jobId: 'demo-burn',
     mode: 'zh',
     format: 'shorts',
@@ -117,30 +135,24 @@ function seedSubtitleQueue() {
     progress: 62,
   })
 
-  store.upsertSubtitleProgress({
-    ...common,
-    taskId: 'demo-queued',
-    filePath: 'D:\\Gravacoes\\minecraft-hardcore-dia-100.mp4',
-    fileName: 'minecraft-hardcore-dia-100.mp4',
-    status: 'queued',
-    stage: 'queued',
-    message: 'Aguardando a GPU.',
-    progress: null,
-    queuePosition: 1,
-  })
-
-  store.upsertSubtitleProgress({
-    ...common,
-    taskId: 'demo-running',
-    filePath: 'D:\\Gravacoes\\resident-evil-requiem-ep03.mp4',
-    fileName: 'resident-evil-requiem-ep03.mp4',
-    status: 'processing',
-    stage: 'segments',
-    message: '125 segmentos processados.',
-    progress: 64,
-    processedSegments: 125,
-    startedAt: now - minutes(2),
-  })
+  // A fila de GPU roda um por vez: com a queima em chines rodando, as transcricoes esperam.
+  const waiting: Array<[string, string, number]> = [
+    ['demo-queued-2', 'minecraft-hardcore-dia-100.mp4', 2],
+    ['demo-queued-1', 'resident-evil-requiem-ep03.mp4', 1],
+  ]
+  for (const [taskId, fileName, queuePosition] of waiting) {
+    store.upsertSubtitleProgress({
+      ...common,
+      taskId,
+      filePath: `D:\\Gravacoes\\${fileName}`,
+      fileName,
+      status: 'queued',
+      stage: 'queued',
+      message: 'Aguardando a GPU.',
+      progress: null,
+      queuePosition,
+    })
+  }
 }
 
 function seedPreEditQueue() {
@@ -180,46 +192,28 @@ function seedPreEditQueue() {
     ],
   })
   store.upsertClipSplitterProgress({
-    taskId: 'demo-preedit-running',
+    taskId: 'demo-preedit-queued',
     sourcePath: 'D:\\Gravacoes\\lives\\live-quinta-bruto.mkv',
     sourceName: 'live-quinta-bruto.mkv',
     mode: 'silence',
-    status: 'processing',
-    stage: 'transcribing',
-    message: 'Transcrevendo audio com Whisper...',
-    progress: 34,
-    sourceDurationSec: 8_940,
-    startedAt: now - minutes(4),
+    status: 'queued',
+    stage: 'queued',
+    message: 'Aguardando a GPU.',
+    progress: null,
+    // Mesma fila de GPU das legendas: espera a queima e as duas transcricoes.
+    queuePosition: 3,
   })
 }
 
-// ?animate: o progresso anda sozinho (pro video de demonstracao parecer vivo).
+// ?animate: a queima em chines (o unico job rodando na GPU) anda sozinha, pro video parecer vivo.
 function animateQueue() {
   window.setInterval(() => {
     const store = useAppStore.getState()
-    const running = store.subtitleTasks.find((task) => task.id === 'demo-running')
-    if (running && (running.progress ?? 0) < 99) {
-      const progress = (running.progress ?? 0) + 1
-      const segments = running.processedSegments + 2
-      store.upsertSubtitleProgress({
-        taskId: running.id,
-        filePath: running.filePath,
-        fileName: running.fileName,
-        model: running.model,
-        language: running.language,
-        device: running.device,
-        status: running.status,
-        stage: running.stage,
-        message: `${segments} segmentos processados.`,
-        progress,
-        processedSegments: segments,
-      })
-    }
-    const burn = store.subtitleTasks.find((task) => task.id === 'demo-done')?.hardsubJobs.zh
+    const burn = store.subtitleTasks.find((task) => task.id === 'demo-chinese')?.hardsubJobs.zh
     if (burn && (burn.progress ?? 0) < 99) {
       const progress = (burn.progress ?? 0) + 1
       store.upsertHardsubJob({
-        taskId: 'demo-done',
+        taskId: 'demo-chinese',
         jobId: 'demo-burn',
         mode: 'zh',
         format: 'shorts',
@@ -227,19 +221,6 @@ function animateQueue() {
         stage: 'burning',
         message: `Queimando legenda... ${progress}%`,
         progress,
-      })
-    }
-    const preEdit = store.clipSplitterTasks.find((task) => task.id === 'demo-preedit-running')
-    if (preEdit && (preEdit.progress ?? 0) < 99) {
-      store.upsertClipSplitterProgress({
-        taskId: preEdit.id,
-        sourcePath: preEdit.sourcePath,
-        sourceName: preEdit.sourceName,
-        mode: preEdit.mode,
-        status: preEdit.status,
-        stage: preEdit.stage,
-        message: preEdit.message,
-        progress: (preEdit.progress ?? 0) + 1,
       })
     }
   }, 400)
