@@ -9,6 +9,8 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).parent))
 import cortes_service
+from cortes import store
+from cortes.candidates import Candidate
 from cortes.media import SourceMedia
 
 FIXTURE = Path(__file__).parent / "cortes" / "fixtures" / "molde_exemplo.xml"
@@ -48,3 +50,42 @@ class XmlCommandTest(unittest.TestCase):
             code, events = run_cli(["xml", "--template", str(bad), "--source", SOURCE.path, "--ranges", "0-10"])
         self.assertEqual(code, 1)
         self.assertIn("xmeml", events[-1]["error"])
+
+
+class XmlFromAnalysisTest(unittest.TestCase):
+    def write_analysis(self, folder: Path) -> Path:
+        analysis = store.Analysis(
+            source={"path": SOURCE.path, "duration_sec": 7298.0, "fps": 60.0, "width": 3840, "height": 1080, "audio_streams": 4},
+            options={"start": 0.0, "end": 450.0},
+            transcript={"film": [], "mic": []},
+            mic_speech=[],
+            shot_cuts=[],
+            candidates=[Candidate("C1", 150.0, 10.0)],
+            clips=[
+                store.Clip(1, 0.0, 150.0, "A", 8, 7.1),
+                store.Clip(2, 150.0, 300.0, "B", 4, 2.8),
+                store.Clip(3, 300.0, 450.0, "C", 9, 9.5),
+            ],
+        )
+        return store.save(analysis, folder / "react.cortes.json")
+
+    def test_writes_selected_clips_next_to_the_analysis(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = self.write_analysis(Path(folder))
+            code, events = run_cli(["xml", "--template", str(FIXTURE), "--analysis", str(path), "--top", "2"])
+            self.assertEqual(code, 0)
+            self.assertEqual(events[-1]["clips"], 2)
+            self.assertEqual(Path(events[-1]["outputPath"]), Path(folder) / "react.cortes.xml")
+
+    def test_neither_analysis_nor_ranges_is_an_error(self):
+        code, events = run_cli(["xml", "--template", str(FIXTURE)])
+        self.assertEqual(code, 1)
+        self.assertIn("--analysis", events[-1]["error"])
+
+
+class AnalyzeArgsTest(unittest.TestCase):
+    def test_tracks_are_one_based_on_the_cli(self):
+        args = cortes_service.parse_args(["analyze", "E:\\b.mp4", "--film-track", "2", "--mic-track", "1", "--start", "2:24.44"])
+        options = cortes_service.analyze_options(args)
+        self.assertEqual((options.film_track, options.mic_track, options.start, options.end), (1, 0, 144.44, None))
+        self.assertIsNone(options.judge_model)

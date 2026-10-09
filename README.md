@@ -145,6 +145,15 @@ Gera um **XML do Premiere** (Final Cut Pro XML) com os clipes do react numa sequ
 npm run cortes -- xml --template molde.xml --source "E:\Bruto\react.mp4" --ranges "2:24.44-3:39.72,3:39.72-5:28.56"
 ```
 
+Pra o app achar as cenas sozinho, primeiro analise o bruto (o trecho e opcional):
+
+```bash
+npm run cortes -- analyze "E:\Bruto\react.mp4" --start 2:24.44 --end 1:58:00
+npm run cortes -- xml --template molde.xml --analysis "E:\Bruto\react.cortes.json"
+```
+
+O `analyze` le o bruto uma vez so (metade esquerda = filme, faixa 1 = filme, faixa 2 = mic; mude com `--film-track`/`--mic-track`), transcreve as duas faixas com o Whisper, marca como ponto de corte possivel os momentos em que ninguem fala (de preferencia num corte de plano) e escolhe as fronteiras por programacao dinamica com cada clipe entre `--min` e `--max` (padrao 70 e 240s, alvo 150s). Tudo vai pro `react.cortes.json` ao lado do bruto. No `xml`, `--clips 1,3,5` ou `--top 5` escolhem quais clipes entram.
+
 O XML sai como `<bruto>.cortes.xml` (ou em `--out`). O `npm run cortes` roda `python/cortes_service.py` com o mesmo Python e as mesmas DLLs CUDA do app. O codigo fica em `python/cortes/` e nao depende do Electron.
 
 ## Stack
