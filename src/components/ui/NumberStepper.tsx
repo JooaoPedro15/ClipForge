@@ -24,7 +24,8 @@ export function NumberStepper({ value, onChange, label, min = -Infinity, max = I
   // Enquanto digita, o texto fica num rascunho; so vira numero ao sair do campo ou no Enter.
   const [draft, setDraft] = useState<string | null>(null)
   const clamp = (next: number) => Math.min(max, Math.max(min, roundToStep(next, step)))
-  const shown = draft ?? (value === 0 && zeroLabel ? zeroLabel : String(value))
+  // Mostra com virgula, como o resto do app; o parse aceita virgula ou ponto.
+  const shown = draft ?? (value === 0 && zeroLabel ? zeroLabel : String(value).replace('.', ','))
 
   function commit() {
     if (draft !== null) {
@@ -51,7 +52,7 @@ export function NumberStepper({ value, onChange, label, min = -Infinity, max = I
         inputMode="decimal"
         onBlur={commit}
         onChange={(event) => setDraft(event.target.value)}
-        onFocus={() => setDraft(value === 0 && zeroLabel ? '' : String(value))}
+        onFocus={() => setDraft(value === 0 && zeroLabel ? '' : String(value).replace('.', ','))}
         onKeyDown={(event) => {
           if (event.key === 'Enter') {
             commit()
