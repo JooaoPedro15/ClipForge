@@ -2,6 +2,7 @@
 
 import gc
 import itertools
+import os
 import shutil
 import tempfile
 import time
@@ -10,9 +11,10 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 import ffmpeg_utils
+import llm_service
 import subtitle_service
 
-from cortes import candidates, extract, segmenter, store, transcribe
+from cortes import candidates, extract, judge, segmenter, store, transcribe
 from cortes.media import probe_source
 
 ProgressFn = Callable[[str, str, int], None]  # (etapa, mensagem, progresso 0-100)
@@ -34,6 +36,43 @@ class AnalyzeOptions:
 
 def clips_from(bounds: list[float]) -> list[store.Clip]:
     return [store.Clip(n=n, start=a, end=b) for n, (a, b) in enumerate(itertools.pairwise(bounds), 1)]
+
+
+def make_client(model: str) -> llm_service.OllamaClient:
+    return llm_service.OllamaClient(model=model, base_url=os.environ.get("CLIPFORGE_OLLAMA_URL", llm_service.DEFAULT_BASE_URL))
+
+
+def run_judge(
+    model: str,
+    film_segments: list[dict],
+    mic_segments: list[dict],
+    cands: list[candidates.Candidate],
+    start: float,
+    end: float,
+    progress: ProgressFn,
+    note: WarnFn,
+) -> llm_service.OllamaClient | None:
+    """Notas do juiz nos candidatos. Devolve o cliente pronto (os titulos reaproveitam) ou None se o LLM
+    nao estiver disponivel; nesse caso fica so a nota de regra e um aviso explica."""
+    client = make_client(model)
+    if not client.ensure_server_running():
+        note("O Ollama nao respondeu; usei so as regras.")
+        return None
+    try:
+        for message in judge.judge_candidates(
+            client,
+            film_segments,
+            mic_segments,
+            cands,
+            start,
+            end,
+            lambda done, total: progress("judging", f"Juiz: parte {done} de {total}...", 62 + 18 * done // total),
+        ):
+            note(message)
+    except llm_service.LLMUnavailableError as error:
+        note(f"Juiz indisponivel ({error}); usei so as regras.")
+        return None
+    return client
 
 
 def analyze(source_path: str, options: AnalyzeOptions, progress: ProgressFn, warn: WarnFn) -> store.Analysis:
@@ -104,6 +143,10 @@ def analyze(source_path: str, options: AnalyzeOptions, progress: ProgressFn, war
 
     cands = candidates.build_candidates(film_words, mic_words, shot_cuts, film_silences, start, end)
     progress("choosing", f"{len(cands)} pontos de corte possiveis.", 62)
+    if options.judge_model:
+        began = time.perf_counter()
+        run_judge(options.judge_model, film_segments, mic_segments, cands, start, end, progress, note)
+        lap("judge", began)
     bounds = segmenter.choose_boundaries([(c.t, c.score) for c in cands], start, end, options.durations)
     analysis = store.Analysis(
         source=asdict(media),
