@@ -16,3 +16,4 @@ ignore = [
 [lint.per-file-ignores]
 # Testes: listas fixas como atributo de classe e "a b c".split() deixam o caso legivel.
 "python/*_test.py" = ["RUF012", "SIM905"]
+"python/cortes/*_test.py" = ["RUF012", "SIM905"]

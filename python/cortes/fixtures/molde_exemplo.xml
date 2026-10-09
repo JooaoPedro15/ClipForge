@@ -1,0 +1,364 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE xmeml>
+<!-- Molde reduzido no formato que o Premiere exporta (Final Cut Pro XML), caminhos ficticios.
+     2 clipes. V1 filme e V2 webcam recortam o mesmo bruto (file-1); V3 e o loop do link
+     (sequencia aninhada sequence-2 com LOWTHIRD.mp4); A1 filme, A2 mic (volume 0,53), A3 audio do loop. -->
+<xmeml version="4">
+	<sequence id="sequence-1">
+		<uuid>00000000-0000-0000-0000-000000000001</uuid>
+		<duration>4200</duration>
+		<rate><timebase>30</timebase><ntsc>TRUE</ntsc></rate>
+		<name>Molde de exemplo</name>
+		<media>
+			<video>
+				<format>
+					<samplecharacteristics><width>1080</width><height>1920</height></samplecharacteristics>
+				</format>
+				<track>
+					<clipitem id="clipitem-1">
+						<masterclipid>masterclip-1</masterclipid>
+						<name>bruto antigo.mp4</name>
+						<duration>216000</duration>
+						<rate><timebase>30</timebase><ntsc>TRUE</ntsc></rate>
+						<start>0</start>
+						<end>1800</end>
+						<in>3000</in>
+						<out>4800</out>
+						<pproTicksIn>25427001600000</pproTicksIn>
+						<pproTicksOut>40683202560000</pproTicksOut>
+						<file id="file-1">
+							<name>bruto antigo.mp4</name>
+							<pathurl>file://localhost/X%3a/Bruto/bruto%20antigo.mp4</pathurl>
+							<rate><timebase>60</timebase><ntsc>FALSE</ntsc></rate>
+							<duration>432000</duration>
+							<timecode>
+								<rate><timebase>60</timebase><ntsc>FALSE</ntsc></rate>
+								<string>00:00:00:00</string>
+								<frame>0</frame>
+							</timecode>
+							<media>
+								<video>
+									<samplecharacteristics>
+										<rate><timebase>60</timebase><ntsc>FALSE</ntsc></rate>
+										<width>3840</width>
+										<height>1080</height>
+									</samplecharacteristics>
+								</video>
+								<audio><channelcount>2</channelcount></audio>
+								<audio><channelcount>2</channelcount></audio>
+							</media>
+						</file>
+						<filter>
+							<effect>
+								<name>Basic Motion</name>
+								<effectid>basic</effectid>
+								<parameter><parameterid>scale</parameterid><value>75.4837</value></parameter>
+								<parameter><parameterid>center</parameterid><value><horiz>0.181741</horiz><vert>-0.346225</vert></value></parameter>
+							</effect>
+						</filter>
+						<link><linkclipref>clipitem-1</linkclipref><mediatype>video</mediatype><trackindex>1</trackindex><clipindex>1</clipindex></link>
+						<link><linkclipref>clipitem-7</linkclipref><mediatype>audio</mediatype><trackindex>1</trackindex><clipindex>1</clipindex><groupindex>1</groupindex></link>
+						<link><linkclipref>clipitem-9</linkclipref><mediatype>audio</mediatype><trackindex>2</trackindex><clipindex>1</clipindex><groupindex>1</groupindex></link>
+					</clipitem>
+					<clipitem id="clipitem-2">
+						<masterclipid>masterclip-1</masterclipid>
+						<name>bruto antigo.mp4</name>
+						<duration>216000</duration>
+						<rate><timebase>30</timebase><ntsc>TRUE</ntsc></rate>
+						<start>2400</start>
+						<end>4200</end>
+						<in>4800</in>
+						<out>6600</out>
+						<pproTicksIn>40683202560000</pproTicksIn>
+						<pproTicksOut>55939403520000</pproTicksOut>
+						<file id="file-1"/>
+						<filter>
+							<effect>
+								<name>Basic Motion</name>
+								<effectid>basic</effectid>
+								<parameter><parameterid>scale</parameterid><value>75.4837</value></parameter>
+								<parameter><parameterid>center</parameterid><value><horiz>0.181741</horiz><vert>-0.346225</vert></value></parameter>
+							</effect>
+						</filter>
+						<link><linkclipref>clipitem-2</linkclipref><mediatype>video</mediatype><trackindex>1</trackindex><clipindex>2</clipindex></link>
+						<link><linkclipref>clipitem-8</linkclipref><mediatype>audio</mediatype><trackindex>1</trackindex><clipindex>2</clipindex><groupindex>1</groupindex></link>
+						<link><linkclipref>clipitem-10</linkclipref><mediatype>audio</mediatype><trackindex>2</trackindex><clipindex>2</clipindex><groupindex>1</groupindex></link>
+					</clipitem>
+					<enabled>TRUE</enabled>
+					<locked>FALSE</locked>
+				</track>
+				<track>
+					<clipitem id="clipitem-3">
+						<masterclipid>masterclip-1</masterclipid>
+						<name>bruto antigo.mp4</name>
+						<duration>216000</duration>
+						<rate><timebase>30</timebase><ntsc>TRUE</ntsc></rate>
+						<start>0</start>
+						<end>1800</end>
+						<in>3000</in>
+						<out>4800</out>
+						<pproTicksIn>25427001600000</pproTicksIn>
+						<pproTicksOut>40683202560000</pproTicksOut>
+						<file id="file-1"/>
+						<filter>
+							<effect>
+								<name>Basic Motion</name>
+								<effectid>basic</effectid>
+								<parameter><parameterid>scale</parameterid><value>69.9987</value></parameter>
+								<parameter><parameterid>center</parameterid><value><horiz>-0.146177</horiz><vert>0.360234</vert></value></parameter>
+							</effect>
+						</filter>
+						<filter>
+							<effect>
+								<name>Correcao WebCam Noite</name>
+								<effectid>Lumetri</effectid>
+								<effecttype>filter</effecttype>
+								<mediatype>video</mediatype>
+								<parameter><parameterid>1</parameterid><value>AAAA</value></parameter>
+							</effect>
+						</filter>
+					</clipitem>
+					<clipitem id="clipitem-4">
+						<masterclipid>masterclip-1</masterclipid>
+						<name>bruto antigo.mp4</name>
+						<duration>216000</duration>
+						<rate><timebase>30</timebase><ntsc>TRUE</ntsc></rate>
+						<start>2400</start>
+						<end>4200</end>
+						<in>4800</in>
+						<out>6600</out>
+						<pproTicksIn>40683202560000</pproTicksIn>
+						<pproTicksOut>55939403520000</pproTicksOut>
+						<file id="file-1"/>
+						<filter>
+							<effect>
+								<name>Basic Motion</name>
+								<effectid>basic</effectid>
+								<parameter><parameterid>scale</parameterid><value>69.9987</value></parameter>
+								<parameter><parameterid>center</parameterid><value><horiz>-0.146177</horiz><vert>0.360234</vert></value></parameter>
+							</effect>
+						</filter>
+						<filter>
+							<effect>
+								<name>Correcao WebCam Noite</name>
+								<effectid>Lumetri</effectid>
+								<effecttype>filter</effecttype>
+								<mediatype>video</mediatype>
+								<parameter><parameterid>1</parameterid><value>AAAA</value></parameter>
+							</effect>
+						</filter>
+					</clipitem>
+					<enabled>TRUE</enabled>
+					<locked>FALSE</locked>
+				</track>
+				<track>
+					<clipitem id="clipitem-5">
+						<masterclipid>masterclip-2</masterclipid>
+						<name>loop3</name>
+						<duration>25506</duration>
+						<rate><timebase>30</timebase><ntsc>TRUE</ntsc></rate>
+						<start>0</start>
+						<end>1800</end>
+						<in>0</in>
+						<out>1800</out>
+						<pproTicksIn>0</pproTicksIn>
+						<pproTicksOut>15256200960000</pproTicksOut>
+						<sequence id="sequence-2">
+							<duration>0</duration>
+							<rate><timebase>30</timebase><ntsc>TRUE</ntsc></rate>
+							<name>loop3</name>
+							<media>
+								<video>
+									<track>
+										<clipitem id="clipitem-100">
+											<name>LOWTHIRD.mp4</name>
+											<duration>160</duration>
+											<rate><timebase>30</timebase><ntsc>TRUE</ntsc></rate>
+											<start>0</start>
+											<end>160</end>
+											<in>0</in>
+											<out>160</out>
+											<file id="file-2">
+												<name>LOWTHIRD.mp4</name>
+												<pathurl>file://localhost/X%3a/Cinefy/LOWTHIRD.mp4</pathurl>
+												<duration>160</duration>
+											</file>
+										</clipitem>
+									</track>
+								</video>
+							</media>
+						</sequence>
+						<filter>
+							<effect>
+								<name>Basic Motion</name>
+								<effectid>basic</effectid>
+								<parameter><parameterid>scale</parameterid><value>100</value></parameter>
+								<parameter><parameterid>center</parameterid><value><horiz>-0.5</horiz><vert>-0.5</vert></value></parameter>
+							</effect>
+						</filter>
+						<link><linkclipref>clipitem-5</linkclipref><mediatype>video</mediatype><trackindex>3</trackindex><clipindex>1</clipindex></link>
+						<link><linkclipref>clipitem-11</linkclipref><mediatype>audio</mediatype><trackindex>3</trackindex><clipindex>1</clipindex><groupindex>1</groupindex></link>
+					</clipitem>
+					<clipitem id="clipitem-6">
+						<masterclipid>masterclip-2</masterclipid>
+						<name>loop3</name>
+						<duration>25506</duration>
+						<rate><timebase>30</timebase><ntsc>TRUE</ntsc></rate>
+						<start>2400</start>
+						<end>4200</end>
+						<in>0</in>
+						<out>1800</out>
+						<pproTicksIn>0</pproTicksIn>
+						<pproTicksOut>15256200960000</pproTicksOut>
+						<sequence id="sequence-2"/>
+						<filter>
+							<effect>
+								<name>Basic Motion</name>
+								<effectid>basic</effectid>
+								<parameter><parameterid>scale</parameterid><value>100</value></parameter>
+								<parameter><parameterid>center</parameterid><value><horiz>-0.5</horiz><vert>-0.5</vert></value></parameter>
+							</effect>
+						</filter>
+						<link><linkclipref>clipitem-6</linkclipref><mediatype>video</mediatype><trackindex>3</trackindex><clipindex>2</clipindex></link>
+						<link><linkclipref>clipitem-12</linkclipref><mediatype>audio</mediatype><trackindex>3</trackindex><clipindex>2</clipindex><groupindex>1</groupindex></link>
+					</clipitem>
+					<enabled>TRUE</enabled>
+					<locked>FALSE</locked>
+				</track>
+			</video>
+			<audio>
+				<track>
+					<clipitem id="clipitem-7" premiereChannelType="stereo">
+						<masterclipid>masterclip-1</masterclipid>
+						<name>bruto antigo.mp4</name>
+						<duration>216000</duration>
+						<rate><timebase>30</timebase><ntsc>TRUE</ntsc></rate>
+						<start>0</start>
+						<end>1800</end>
+						<in>3000</in>
+						<out>4800</out>
+						<pproTicksIn>25427001600000</pproTicksIn>
+						<pproTicksOut>40683202560000</pproTicksOut>
+						<file id="file-1"/>
+						<sourcetrack><mediatype>audio</mediatype><trackindex>1</trackindex></sourcetrack>
+						<link><linkclipref>clipitem-1</linkclipref><mediatype>video</mediatype><trackindex>1</trackindex><clipindex>1</clipindex></link>
+						<link><linkclipref>clipitem-7</linkclipref><mediatype>audio</mediatype><trackindex>1</trackindex><clipindex>1</clipindex><groupindex>1</groupindex></link>
+						<link><linkclipref>clipitem-9</linkclipref><mediatype>audio</mediatype><trackindex>2</trackindex><clipindex>1</clipindex><groupindex>1</groupindex></link>
+					</clipitem>
+					<clipitem id="clipitem-8" premiereChannelType="stereo">
+						<masterclipid>masterclip-1</masterclipid>
+						<name>bruto antigo.mp4</name>
+						<duration>216000</duration>
+						<rate><timebase>30</timebase><ntsc>TRUE</ntsc></rate>
+						<start>2400</start>
+						<end>4200</end>
+						<in>4800</in>
+						<out>6600</out>
+						<pproTicksIn>40683202560000</pproTicksIn>
+						<pproTicksOut>55939403520000</pproTicksOut>
+						<file id="file-1"/>
+						<sourcetrack><mediatype>audio</mediatype><trackindex>1</trackindex></sourcetrack>
+						<link><linkclipref>clipitem-2</linkclipref><mediatype>video</mediatype><trackindex>1</trackindex><clipindex>2</clipindex></link>
+						<link><linkclipref>clipitem-8</linkclipref><mediatype>audio</mediatype><trackindex>1</trackindex><clipindex>2</clipindex><groupindex>1</groupindex></link>
+						<link><linkclipref>clipitem-10</linkclipref><mediatype>audio</mediatype><trackindex>2</trackindex><clipindex>2</clipindex><groupindex>1</groupindex></link>
+					</clipitem>
+					<enabled>TRUE</enabled>
+					<locked>FALSE</locked>
+				</track>
+				<track>
+					<clipitem id="clipitem-9" premiereChannelType="stereo">
+						<masterclipid>masterclip-1</masterclipid>
+						<name>bruto antigo.mp4</name>
+						<duration>216000</duration>
+						<rate><timebase>30</timebase><ntsc>TRUE</ntsc></rate>
+						<start>0</start>
+						<end>1800</end>
+						<in>3000</in>
+						<out>4800</out>
+						<pproTicksIn>25427001600000</pproTicksIn>
+						<pproTicksOut>40683202560000</pproTicksOut>
+						<file id="file-1"/>
+						<sourcetrack><mediatype>audio</mediatype><trackindex>2</trackindex></sourcetrack>
+						<filter>
+							<effect>
+								<name>Audio Levels</name>
+								<effectid>audiolevels</effectid>
+								<parameter><parameterid>level</parameterid><value>0.528023</value></parameter>
+							</effect>
+						</filter>
+						<link><linkclipref>clipitem-1</linkclipref><mediatype>video</mediatype><trackindex>1</trackindex><clipindex>1</clipindex></link>
+						<link><linkclipref>clipitem-7</linkclipref><mediatype>audio</mediatype><trackindex>1</trackindex><clipindex>1</clipindex><groupindex>1</groupindex></link>
+						<link><linkclipref>clipitem-9</linkclipref><mediatype>audio</mediatype><trackindex>2</trackindex><clipindex>1</clipindex><groupindex>1</groupindex></link>
+					</clipitem>
+					<clipitem id="clipitem-10" premiereChannelType="stereo">
+						<masterclipid>masterclip-1</masterclipid>
+						<name>bruto antigo.mp4</name>
+						<duration>216000</duration>
+						<rate><timebase>30</timebase><ntsc>TRUE</ntsc></rate>
+						<start>2400</start>
+						<end>4200</end>
+						<in>4800</in>
+						<out>6600</out>
+						<pproTicksIn>40683202560000</pproTicksIn>
+						<pproTicksOut>55939403520000</pproTicksOut>
+						<file id="file-1"/>
+						<sourcetrack><mediatype>audio</mediatype><trackindex>2</trackindex></sourcetrack>
+						<filter>
+							<effect>
+								<name>Audio Levels</name>
+								<effectid>audiolevels</effectid>
+								<parameter><parameterid>level</parameterid><value>0.528023</value></parameter>
+							</effect>
+						</filter>
+						<link><linkclipref>clipitem-2</linkclipref><mediatype>video</mediatype><trackindex>1</trackindex><clipindex>2</clipindex></link>
+						<link><linkclipref>clipitem-8</linkclipref><mediatype>audio</mediatype><trackindex>1</trackindex><clipindex>2</clipindex><groupindex>1</groupindex></link>
+						<link><linkclipref>clipitem-10</linkclipref><mediatype>audio</mediatype><trackindex>2</trackindex><clipindex>2</clipindex><groupindex>1</groupindex></link>
+					</clipitem>
+					<enabled>TRUE</enabled>
+					<locked>FALSE</locked>
+				</track>
+				<track>
+					<clipitem id="clipitem-11" premiereChannelType="stereo">
+						<masterclipid>masterclip-2</masterclipid>
+						<name>loop3</name>
+						<duration>25506</duration>
+						<rate><timebase>30</timebase><ntsc>TRUE</ntsc></rate>
+						<start>0</start>
+						<end>1800</end>
+						<in>0</in>
+						<out>1800</out>
+						<pproTicksIn>0</pproTicksIn>
+						<pproTicksOut>15256200960000</pproTicksOut>
+						<sequence id="sequence-2"/>
+						<sourcetrack><mediatype>audio</mediatype><trackindex>0</trackindex></sourcetrack>
+						<link><linkclipref>clipitem-5</linkclipref><mediatype>video</mediatype><trackindex>3</trackindex><clipindex>1</clipindex></link>
+						<link><linkclipref>clipitem-11</linkclipref><mediatype>audio</mediatype><trackindex>3</trackindex><clipindex>1</clipindex><groupindex>1</groupindex></link>
+					</clipitem>
+					<clipitem id="clipitem-12" premiereChannelType="stereo">
+						<masterclipid>masterclip-2</masterclipid>
+						<name>loop3</name>
+						<duration>25506</duration>
+						<rate><timebase>30</timebase><ntsc>TRUE</ntsc></rate>
+						<start>2400</start>
+						<end>4200</end>
+						<in>0</in>
+						<out>1800</out>
+						<pproTicksIn>0</pproTicksIn>
+						<pproTicksOut>15256200960000</pproTicksOut>
+						<sequence id="sequence-2"/>
+						<sourcetrack><mediatype>audio</mediatype><trackindex>0</trackindex></sourcetrack>
+						<link><linkclipref>clipitem-6</linkclipref><mediatype>video</mediatype><trackindex>3</trackindex><clipindex>2</clipindex></link>
+						<link><linkclipref>clipitem-12</linkclipref><mediatype>audio</mediatype><trackindex>3</trackindex><clipindex>2</clipindex><groupindex>1</groupindex></link>
+					</clipitem>
+					<enabled>TRUE</enabled>
+					<locked>FALSE</locked>
+				</track>
+			</audio>
+		</media>
+		<timecode>
+			<rate><timebase>30</timebase><ntsc>TRUE</ntsc></rate>
+			<string>00;00;00;00</string>
+			<frame>0</frame>
+		</timecode>
+	</sequence>
+</xmeml>
