@@ -154,7 +154,7 @@ npm run cortes -- xml --template molde.xml --analysis "E:\Bruto\react.cortes.jso
 
 O `analyze` le o bruto uma vez so (metade esquerda = filme, faixa 1 = filme, faixa 2 = mic; mude com `--film-track`/`--mic-track`), transcreve as duas faixas com o Whisper, marca como ponto de corte possivel os momentos em que ninguem fala (de preferencia num corte de plano) e escolhe as fronteiras por programacao dinamica com cada clipe entre `--min` e `--max` (padrao 70 e 240s, alvo 150s). Tudo vai pro `react.cortes.json` ao lado do bruto. No `xml`, `--clips 1,3,5` ou `--top 5` escolhem quais clipes entram.
 
-Com `--judge qwen2.5:14b-instruct` (ou `qwen2.5:7b-instruct`, ~2x mais rapido e menos preciso), um **juiz** no LLM local le a transcricao em janelas de 10 min com os pontos possiveis marcados (`[C12]`) e da nota de 0 a 10 pra "aqui termina uma cena?". A nota final de cada ponto e 40% regra + 60% juiz; a programacao dinamica continua garantindo as duracoes, entao o modelo nunca cria clipe curto ou longo demais. Sem o Ollama (ou sem o modelo baixado), a analise segue so com as regras e registra um aviso.
+Com `--judge qwen2.5:14b-instruct` (ou `qwen2.5:7b-instruct`, ~2x mais rapido e menos preciso), um **juiz** experimental no LLM local le a transcricao em janelas de 10 min com os pontos possiveis marcados (`[C12]`) e da nota de 0 a 10 pra "aqui termina uma cena?". A nota final de cada ponto e 40% regra + 60% juiz; a programacao dinamica continua garantindo as duracoes, entao o modelo nunca cria clipe curto ou longo demais. Sem o Ollama (ou sem o modelo baixado), a analise segue so com as regras e registra um aviso.
 
 Pra medir os cortes contra uma sequencia que voce montou a mao no mesmo bruto (gabarito):
 
@@ -164,10 +164,10 @@ npm run cortes -- evaluate --reference sequencia.xml --analysis "E:\Bruto\react.
 
 Conta como acerto o corte do app que cai a ate `--tolerance` segundos (padrao 10) de um corte seu e mostra precisao, revocacao e F1.
 
-Com o LLM ligado, cada clipe ganha um **titulo** curto (vira o nome do marcador, `03 - titulo`) e uma **nota** de 0 a 10: 70% gancho (o LLM le a transcricao do clipe) + 30% reacao (quanto voce fala no mic, comparado com o resto do react). `xml --top 5` usa essa nota. Pra trocar a duracao dos clipes sem reler o bruto nem chamar o juiz de novo:
+No primeiro teste o juiz levou ~8 min por janela e deu nota parecida pra quase tudo, entao o app roda **so com as regras**. Os titulos sao separados: com `--titles qwen2.5:7b-instruct`, cada clipe ganha um **titulo** curto (vira o nome do marcador, `03 - titulo`) e uma **nota** de 0 a 10: 70% gancho (o LLM le a transcricao do clipe) + 30% reacao (quanto voce fala no mic, comparado com o resto do react). Sem `--titles`, os clipes saem como `Clipe 01`, `Clipe 02`... e a nota fica so pela reacao. `xml --top 5` usa essa nota. Pra trocar a duracao dos clipes sem reler o bruto nem chamar o juiz de novo:
 
 ```bash
-npm run cortes -- resegment "E:\Bruto\react.cortes.json" --min 60 --target 120 --max 200 --judge qwen2.5:14b-instruct
+npm run cortes -- resegment "E:\Bruto\react.cortes.json" --min 60 --target 120 --max 200 --titles qwen2.5:7b-instruct
 ```
 
 Clipe com a mesma fronteira de antes mantem titulo e nota; so os que mudaram passam pelo LLM.

@@ -57,6 +57,7 @@ def analyze_options(args: argparse.Namespace) -> AnalyzeOptions:
         film_track=args.film_track - 1,
         mic_track=args.mic_track - 1,
         judge_model=None if args.judge == "none" else args.judge,
+        title_model=None if args.titles == "none" else args.titles,
         durations=Durations(args.min, args.target, args.max),
         whisper_model=args.whisper_model,
         device="cpu" if args.cpu else "cuda",
@@ -91,12 +92,7 @@ def cmd_evaluate(args: argparse.Namespace) -> int:
 def cmd_resegment(args: argparse.Namespace) -> int:
     path = Path(args.analysis)
     analysis = store.load(path)
-    client = None
-    if args.judge != "none":
-        client = pipeline.make_client(args.judge)
-        if not client.ensure_server_running():
-            report_warning("O Ollama nao respondeu; clipes novos ficam sem titulo.")
-            client = None
+    client = pipeline.title_client(args.titles, report_warning) if args.titles != "none" else None
     pipeline.resegment(
         analysis,
         Durations(args.min, args.target, args.max),
@@ -125,7 +121,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     analyze_parser.add_argument("--end", help="Terminar em (ex.: 1:58:00)")
     analyze_parser.add_argument("--film-track", type=int, default=1, help="Faixa de audio do filme (1 = primeira)")
     analyze_parser.add_argument("--mic-track", type=int, default=2, help="Faixa de audio do mic")
-    analyze_parser.add_argument("--judge", default="none", help="Modelo do LLM local (juiz e titulos) ou 'none'")
+    analyze_parser.add_argument("--judge", default="none", help="Modelo do LLM local do juiz ou 'none'")
+    analyze_parser.add_argument(
+        "--titles", default="none", help="Modelo do LLM local dos titulos (ex.: qwen2.5:7b-instruct) ou 'none'"
+    )
     add_duration_args(analyze_parser)
     analyze_parser.add_argument("--whisper-model", default=subtitle_service.DEFAULT_MODEL)
     analyze_parser.add_argument("--cpu", action="store_true")
@@ -152,7 +151,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     resegment = commands.add_parser("resegment", help="Refaz os clipes com outra duracao, sem reler o bruto")
     resegment.add_argument("analysis", help="<bruto>.cortes.json")
     add_duration_args(resegment)
-    resegment.add_argument("--judge", default="none", help="Modelo do LLM local pros titulos novos ou 'none'")
+    resegment.add_argument("--titles", default="none", help="Modelo do LLM local pros titulos novos ou 'none'")
     resegment.set_defaults(handler=cmd_resegment)
 
     return parser.parse_args(argv)

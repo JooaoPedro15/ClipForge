@@ -77,6 +77,20 @@ class RunJudgeTest(unittest.TestCase):
         self.assertEqual(self.cands[0].judge, 9.0)
 
 
+class TitleClientTest(unittest.TestCase):
+    @mock.patch("cortes.pipeline.make_client")
+    def test_ollama_down_means_numbered_titles_with_a_warning(self, make_client):
+        make_client.return_value = FakeOllama(up=False)
+        notes = []
+        self.assertIsNone(pipeline.title_client("qwen2.5:7b-instruct", notes.append))
+        self.assertIn("Ollama", notes[0])
+
+    @mock.patch("cortes.pipeline.make_client")
+    def test_returns_the_client_when_ollama_is_up(self, make_client):
+        make_client.return_value = FakeOllama()
+        self.assertIs(pipeline.title_client("qwen2.5:7b-instruct", ignore), make_client.return_value)
+
+
 class FakeTitles:
     def __init__(self):
         self.calls = 0

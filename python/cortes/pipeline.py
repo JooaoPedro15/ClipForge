@@ -30,6 +30,7 @@ class AnalyzeOptions:
     film_track: int = 0  # indice do ffmpeg 0:a:N (faixa 1 na CLI = 0)
     mic_track: int = 1
     judge_model: str | None = None  # None = so regras
+    title_model: str | None = None  # None = titulos "Clipe NN" e nota so pela reacao
     durations: segmenter.Durations = field(default_factory=segmenter.Durations)
     whisper_model: str = subtitle_service.DEFAULT_MODEL
     device: str = "cuda"
@@ -73,6 +74,15 @@ def run_judge(
             note(message)
     except llm_service.LLMUnavailableError as error:
         note(f"Juiz indisponivel ({error}); usei so as regras.")
+        return None
+    return client
+
+
+def title_client(model: str, note: WarnFn) -> llm_service.OllamaClient | None:
+    """Cliente do LLM dos titulos, ou None (com aviso) se o Ollama nao subir."""
+    client = make_client(model)
+    if not client.ensure_server_running():
+        note("O Ollama nao respondeu; os clipes ficaram sem titulo.")
         return None
     return client
 
@@ -199,10 +209,9 @@ def analyze(source_path: str, options: AnalyzeOptions, progress: ProgressFn, war
 
     cands = candidates.build_candidates(film_words, mic_words, shot_cuts, film_silences, start, end)
     progress("choosing", f"{len(cands)} pontos de corte possiveis.", 62)
-    client = None
     if options.judge_model:
         began = time.perf_counter()
-        client = run_judge(options.judge_model, film_segments, mic_segments, cands, start, end, progress, note)
+        run_judge(options.judge_model, film_segments, mic_segments, cands, start, end, progress, note)
         lap("judge", began)
     bounds = segmenter.choose_boundaries([(c.t, c.score) for c in cands], start, end, options.durations)
     analysis = store.Analysis(
@@ -213,6 +222,7 @@ def analyze(source_path: str, options: AnalyzeOptions, progress: ProgressFn, war
             "film_track": options.film_track,
             "mic_track": options.mic_track,
             "judge_model": options.judge_model,
+            "title_model": options.title_model,
             "whisper_model": options.whisper_model,
             **asdict(options.durations),
         },
@@ -224,6 +234,7 @@ def analyze(source_path: str, options: AnalyzeOptions, progress: ProgressFn, war
         warnings=warnings,
         timings=timings,
     )
+    client = title_client(options.title_model, note) if options.title_model else None
     began = time.perf_counter()
     title_clips(
         analysis,

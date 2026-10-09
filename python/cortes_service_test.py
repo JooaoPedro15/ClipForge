@@ -106,3 +106,14 @@ class AnalyzeArgsTest(unittest.TestCase):
         options = cortes_service.analyze_options(args)
         self.assertEqual((options.film_track, options.mic_track, options.start, options.end), (1, 0, 144.44, None))
         self.assertIsNone(options.judge_model)
+
+    def test_titles_are_independent_from_the_judge(self):
+        args = cortes_service.parse_args(["analyze", "E:\\b.mp4", "--titles", "qwen2.5:7b-instruct"])
+        options = cortes_service.analyze_options(args)
+        self.assertEqual((options.judge_model, options.title_model), (None, "qwen2.5:7b-instruct"))
+        default = cortes_service.analyze_options(cortes_service.parse_args(["analyze", "E:\\b.mp4"]))
+        self.assertIsNone(default.title_model)
+
+    def test_resegment_takes_the_titles_model(self):
+        args = cortes_service.parse_args(["resegment", "E:\\b.cortes.json", "--titles", "none"])
+        self.assertEqual(args.titles, "none")
