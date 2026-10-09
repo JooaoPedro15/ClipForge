@@ -154,6 +154,14 @@ npm run cortes -- xml --template molde.xml --analysis "E:\Bruto\react.cortes.jso
 
 O `analyze` le o bruto uma vez so (metade esquerda = filme, faixa 1 = filme, faixa 2 = mic; mude com `--film-track`/`--mic-track`), transcreve as duas faixas com o Whisper, marca como ponto de corte possivel os momentos em que ninguem fala (de preferencia num corte de plano) e escolhe as fronteiras por programacao dinamica com cada clipe entre `--min` e `--max` (padrao 70 e 240s, alvo 150s). Tudo vai pro `react.cortes.json` ao lado do bruto. No `xml`, `--clips 1,3,5` ou `--top 5` escolhem quais clipes entram.
 
+Pra medir os cortes contra uma sequencia que voce montou a mao no mesmo bruto (gabarito):
+
+```bash
+npm run cortes -- evaluate --reference sequencia.xml --analysis "E:\Bruto\react.cortes.json" --from 2:24.44 --to 12:54
+```
+
+Conta como acerto o corte do app que cai a ate `--tolerance` segundos (padrao 10) de um corte seu e mostra precisao, revocacao e F1.
+
 O XML sai como `<bruto>.cortes.xml` (ou em `--out`). O `npm run cortes` roda `python/cortes_service.py` com o mesmo Python e as mesmas DLLs CUDA do app. O codigo fica em `python/cortes/` e nao depende do Electron.
 
 ## Stack

@@ -83,6 +83,15 @@ class XmlFromAnalysisTest(unittest.TestCase):
         self.assertIn("--analysis", events[-1]["error"])
 
 
+    def test_evaluate_prints_the_report(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = self.write_analysis(Path(folder))
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                code = cortes_service.main(["evaluate", "--reference", str(FIXTURE), "--analysis", str(path)])
+            self.assertEqual(code, 0)
+            self.assertIn("Gabarito: 1 fronteiras", stdout.getvalue())
+
 class AnalyzeArgsTest(unittest.TestCase):
     def test_tracks_are_one_based_on_the_cli(self):
         args = cortes_service.parse_args(["analyze", "E:\\b.mp4", "--film-track", "2", "--mic-track", "1", "--start", "2:24.44"])

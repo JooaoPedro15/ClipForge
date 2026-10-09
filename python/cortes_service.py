@@ -3,6 +3,7 @@
 Subcomandos:
   analyze   le o bruto, acha as cenas e grava <bruto>.cortes.json
   xml       grava o XML do Premiere a partir da analise (--analysis) ou de trechos (--source + --ranges)
+  evaluate  compara os cortes com uma sequencia montada a mao (gabarito)
 """
 
 import argparse
@@ -10,7 +11,7 @@ import sys
 from pathlib import Path
 
 import subtitle_service
-from cortes import store
+from cortes import evaluation, store
 from cortes.media import SourceMedia, probe_source
 from cortes.pipeline import AnalyzeOptions, analyze
 from cortes.segmenter import Durations
@@ -76,6 +77,16 @@ def cmd_analyze(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_evaluate(args: argparse.Namespace) -> int:
+    analysis = store.load(args.analysis)
+    start = parse_clock(args.from_time) if args.from_time else analysis.options["start"]
+    end = parse_clock(args.to_time) if args.to_time else analysis.options["end"]
+    reference = evaluation.reference_boundaries(args.reference, start, end)
+    predicted = evaluation.predicted_boundaries([clip.start for clip in analysis.clips], start, end)
+    print(evaluation.format_report(evaluation.compare(predicted, reference, args.tolerance)), flush=True)
+    return 0
+
+
 def add_duration_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--min", type=float, default=Durations.min_sec, help="Duracao minima do clipe (s)")
     parser.add_argument("--target", type=float, default=Durations.target_sec, help="Duracao alvo do clipe (s)")
@@ -107,6 +118,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     xml.add_argument("--ranges", help="Trechos no bruto, ex.: 2:24.44-3:39.72,3:39.72-5:28.56")
     xml.add_argument("--out", help="Onde gravar (padrao: ao lado da analise ou do bruto)")
     xml.set_defaults(handler=cmd_xml)
+
+    evaluate = commands.add_parser("evaluate", help="Compara os cortes com uma sequencia montada a mao")
+    evaluate.add_argument("--reference", required=True, help="XML exportado da sequencia montada pelo usuario")
+    evaluate.add_argument("--analysis", required=True, help="<bruto>.cortes.json")
+    evaluate.add_argument("--from", dest="from_time", help="Avaliar a partir de (padrao: inicio da analise)")
+    evaluate.add_argument("--to", dest="to_time", help="Avaliar ate (padrao: fim da analise)")
+    evaluate.add_argument("--tolerance", type=float, default=10.0, help="Acerto se cair a ate N segundos")
+    evaluate.set_defaults(handler=cmd_evaluate)
 
     return parser.parse_args(argv)
 
