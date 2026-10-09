@@ -193,6 +193,58 @@ function seedPreEditQueue() {
   })
 }
 
+// ?animate: o progresso anda sozinho (pro video de demonstracao parecer vivo).
+function animateQueue() {
+  window.setInterval(() => {
+    const store = useAppStore.getState()
+    const running = store.subtitleTasks.find((task) => task.id === 'demo-running')
+    if (running && (running.progress ?? 0) < 99) {
+      const progress = (running.progress ?? 0) + 1
+      const segments = running.processedSegments + 2
+      store.upsertSubtitleProgress({
+        taskId: running.id,
+        filePath: running.filePath,
+        fileName: running.fileName,
+        model: running.model,
+        language: running.language,
+        device: running.device,
+        status: running.status,
+        stage: running.stage,
+        message: `${segments} segmentos processados.`,
+        progress,
+        processedSegments: segments,
+      })
+    }
+    const burn = store.subtitleTasks.find((task) => task.id === 'demo-done')?.hardsubJobs.zh
+    if (burn && (burn.progress ?? 0) < 99) {
+      const progress = (burn.progress ?? 0) + 1
+      store.upsertHardsubJob({
+        taskId: 'demo-done',
+        jobId: 'demo-burn',
+        mode: 'zh',
+        format: 'shorts',
+        status: 'processing',
+        stage: 'burning',
+        message: `Queimando legenda... ${progress}%`,
+        progress,
+      })
+    }
+    const preEdit = store.clipSplitterTasks.find((task) => task.id === 'demo-preedit-running')
+    if (preEdit && (preEdit.progress ?? 0) < 99) {
+      store.upsertClipSplitterProgress({
+        taskId: preEdit.id,
+        sourcePath: preEdit.sourcePath,
+        sourceName: preEdit.sourceName,
+        mode: preEdit.mode,
+        status: preEdit.status,
+        stage: preEdit.stage,
+        message: preEdit.message,
+        progress: (preEdit.progress ?? 0) + 1,
+      })
+    }
+  }, 400)
+}
+
 export function installDemo(params: URLSearchParams) {
   if (!window.clipforge) {
     installFakeBridge()
@@ -207,5 +259,8 @@ export function installDemo(params: URLSearchParams) {
   }
   if (params.get('format') === 'shorts') {
     useAppStore.getState().patchSubtitleSettings({ format: 'shorts', maxWords: 3, uppercase: true })
+  }
+  if (params.has('animate')) {
+    animateQueue()
   }
 }
