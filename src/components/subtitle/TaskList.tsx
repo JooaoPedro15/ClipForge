@@ -1,4 +1,5 @@
 import { TaskItem } from '@/components/subtitle/TaskItem'
+import { summarizeQueue } from '@/lib/utils'
 import type { HardsubMode, SubtitleTask } from '@/types/subtitle'
 
 interface TaskListProps {
@@ -9,26 +10,12 @@ interface TaskListProps {
   onBurn: (taskId: string, mode: HardsubMode) => void
 }
 
-// Contagem curta por estado pro cabecalho da fila.
-function summarize(tasks: SubtitleTask[]): string {
-  const running = tasks.filter((task) => task.status === 'processing' || task.status === 'preparing').length
-  const waiting = tasks.filter((task) => task.status === 'queued').length
-  const done = tasks.filter((task) => task.status === 'completed').length
-  return [
-    running ? `${running} rodando` : null,
-    waiting ? `${waiting} esperando` : null,
-    done ? `${done} ${done === 1 ? 'pronta' : 'prontas'}` : null,
-  ]
-    .filter(Boolean)
-    .join(', ')
-}
-
 export function TaskList({ tasks, onCancel, onOpenOutput, onRetry, onBurn }: TaskListProps) {
   return (
     <section aria-label="Fila de legendas" className="overflow-hidden rounded-[10px] border border-line bg-panel">
       <header className="flex items-baseline justify-between gap-3 border-b border-line px-4 py-2.5">
         <h2 className="text-[13px] font-semibold text-text-primary">Fila</h2>
-        <span className="text-xs text-text-muted">{summarize(tasks)}</span>
+        <span className="text-xs text-text-muted">{summarizeQueue(tasks)}</span>
       </header>
 
       {tasks.length === 0 ? (

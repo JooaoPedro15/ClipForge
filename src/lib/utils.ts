@@ -18,6 +18,11 @@ export function formatDuration(seconds: number | null): string {
     return `${seconds.toFixed(1)}s`
   }
 
+  // Live e gameplay longo passam de 1h: "3h 12m" le melhor que "192m 0s".
+  if (seconds >= 3600) {
+    return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`
+  }
+
   const minutes = Math.floor(seconds / 60)
   const remainingSeconds = Math.round(seconds % 60)
   return `${minutes}m ${remainingSeconds}s`
@@ -78,4 +83,19 @@ const LANGUAGE_LABELS: Record<string, string> = {
 // Nome do idioma em portugues a partir do codigo do Whisper (cai no codigo se nao conhecer).
 export function formatLanguage(code: string): string {
   return LANGUAGE_LABELS[code] ?? code
+}
+
+// Resumo da fila pro cabecalho ("1 rodando, 2 esperando, 1 pronta"), igual nas duas ferramentas.
+export function summarizeQueue(tasks: Array<{ status: string }>): string {
+  const count = (...statuses: string[]) => tasks.filter((task) => statuses.includes(task.status)).length
+  const running = count('processing', 'preparing')
+  const waiting = count('queued')
+  const done = count('completed')
+  return [
+    running ? `${running} rodando` : null,
+    waiting ? `${waiting} esperando` : null,
+    done ? `${done} ${done === 1 ? 'pronta' : 'prontas'}` : null,
+  ]
+    .filter(Boolean)
+    .join(', ')
 }
