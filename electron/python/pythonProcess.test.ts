@@ -102,10 +102,21 @@ describe('runPython', () => {
   })
 
   it('kill pede pro processo encerrar', () => {
-    const run = runPython({ root, scriptArgs: ['s.py'], logTag: 'teste', onStdoutLine: () => {} }, fakeSpawn)
+    const run = runPython({ root, scriptArgs: ['s.py'], logTag: 'teste', onStdoutLine: () => {} }, fakeSpawn, null)
 
     run.kill()
 
     expect(onlyChild().killed).toBe(true)
+  })
+
+  it('kill derruba a arvore inteira quando sabe o pid (ffmpeg aberto pelo python nao fica orfao)', () => {
+    const killTree = vi.fn()
+    const run = runPython({ root, scriptArgs: ['s.py'], logTag: 'teste', onStdoutLine: () => {} }, fakeSpawn, killTree)
+    onlyChild().pid = 4321
+
+    run.kill()
+
+    expect(killTree).toHaveBeenCalledWith(4321)
+    expect(onlyChild().killed).toBe(false)
   })
 })

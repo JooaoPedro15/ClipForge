@@ -55,7 +55,29 @@ export function createLineSplitter(onLine: (line: string) => void) {
   }
 }
 
-export function runPython(options: RunPythonOptions, spawnFn: SpawnFn = spawn): PythonRun {
+export type KillTreeFn = (pid: number) => void
+
+// No Windows, child.kill() encerra so o python.exe: o ffmpeg que ele abriu (queima,
+// Pre-Editor) fica orfao, rodando ate o fim. taskkill /T derruba a arvore inteira.
+function killWindowsTree(pid: number) {
+  const killer = spawn('taskkill', ['/pid', String(pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true })
+  // Sem taskkill: encerra ao menos o python (pode ja ter saido, dai o try).
+  killer.once('error', () => {
+    try {
+      process.kill(pid)
+    } catch {
+      // processo ja terminou
+    }
+  })
+}
+
+const defaultKillTree: KillTreeFn | null = process.platform === 'win32' ? killWindowsTree : null
+
+export function runPython(
+  options: RunPythonOptions,
+  spawnFn: SpawnFn = spawn,
+  killTree: KillTreeFn | null = defaultKillTree,
+): PythonRun {
   const python = resolvePythonCommand(options.root)
   const nvidiaBinPaths = resolveNvidiaBinPaths(options.root)
   // stdout/stderr em pipe pra alimentar a UI em tempo real.
@@ -108,6 +130,10 @@ export function runPython(options: RunPythonOptions, spawnFn: SpawnFn = spawn): 
 
   return {
     kill: () => {
+      if (killTree && child.pid !== undefined) {
+        killTree(child.pid)
+        return
+      }
       child.kill()
     },
     done,

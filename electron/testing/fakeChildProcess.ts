@@ -12,6 +12,7 @@ export interface FakeChild extends EventEmitter {
   options: { cwd?: string; env?: Record<string, string | undefined> }
   stdout: FakeStream
   stderr: FakeStream
+  pid?: number
   killed: boolean
   kill: () => boolean
   emitStdout: (text: string) => void
