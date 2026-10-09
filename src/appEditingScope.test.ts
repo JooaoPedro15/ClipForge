@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest'
 
 import { pageMeta } from '@/App'
-import { tools } from '@/components/layout/Sidebar'
+import { tools } from '@/components/layout/Rail'
 
 describe('ClipForge editing scope', () => {
   test('exposes only editing tools in the shell navigation and route metadata', () => {

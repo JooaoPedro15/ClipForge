@@ -1,5 +1,6 @@
 import { HardDriveDownload, Layers3, SlidersHorizontal } from 'lucide-react'
 
+import { Workspace } from '@/components/layout/Workspace'
 import { DropZone } from '@/components/subtitle/DropZone'
 import { StatsBar } from '@/components/subtitle/StatsBar'
 import { StylePanel } from '@/components/subtitle/StylePanel'
@@ -13,6 +14,8 @@ import { useAppStore } from '@/store/appStore'
 import type { HardsubMode } from '@/types/subtitle'
 
 interface SubtitleForgePageProps {
+  title: string
+  description: string
   onPickFiles: () => Promise<{ ok: boolean; message: string | null }>
   onDropPaths: (paths: string[]) => Promise<{ ok: boolean; message: string | null }>
   onCancelTask: (taskId: string) => void
@@ -22,6 +25,8 @@ interface SubtitleForgePageProps {
 }
 
 export function SubtitleForgePage({
+  title,
+  description,
   onPickFiles,
   onDropPaths,
   onCancelTask,
@@ -35,26 +40,8 @@ export function SubtitleForgePage({
   const patchSettings = useAppStore((state) => state.patchSubtitleSettings)
   const setOutputPath = useAppStore((state) => state.setSubtitleOutputPath)
 
-  return (
-    <div className="space-y-6">
-      {/* Resumo rapido do estado atual da fila de transcricao. */}
-      <StatsBar tasks={tasks} />
-
-      <div className="grid gap-6 2xl:grid-cols-[1.3fr_0.9fr]">
-        <div className="space-y-6">
-          {/* Entrada principal para drag and drop ou selecao manual de arquivos. */}
-          <DropZone onDropPaths={onDropPaths} onPickFiles={onPickFiles} />
-          {/* Lista detalhada das tarefas ja enviadas para o backend Python. */}
-          <TaskList
-            onBurn={onBurn}
-            onCancel={onCancelTask}
-            onOpenOutput={onOpenOutput}
-            onRetry={onRetryTask}
-            tasks={tasks}
-          />
-        </div>
-
-        <div className="space-y-6">
+  const inspector = (
+        <div className="space-y-4 p-4">
           <Card className="space-y-5">
             <div className="flex items-center justify-between gap-4">
               <div>
@@ -294,7 +281,22 @@ export function SubtitleForgePage({
             </div>
           </Card>
         </div>
-      </div>
-    </div>
+  )
+
+  return (
+    <Workspace description={description} inspector={inspector} title={title}>
+      {/* Resumo rapido do estado atual da fila de transcricao. */}
+      <StatsBar tasks={tasks} />
+      {/* Entrada principal para drag and drop ou selecao manual de arquivos. */}
+      <DropZone onDropPaths={onDropPaths} onPickFiles={onPickFiles} />
+      {/* Lista detalhada das tarefas ja enviadas para o backend Python. */}
+      <TaskList
+        onBurn={onBurn}
+        onCancel={onCancelTask}
+        onOpenOutput={onOpenOutput}
+        onRetry={onRetryTask}
+        tasks={tasks}
+      />
+    </Workspace>
   )
 }

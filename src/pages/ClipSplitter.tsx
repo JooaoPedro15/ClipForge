@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react'
 
 // ── Componente que renderiza a lista de tarefas (jobs) do Pre-Editor
 import { ClipSplitterTaskList } from '@/components/clipSplitter/TaskList'
+import { Workspace } from '@/components/layout/Workspace'
 // ── Componentes de UI reutilizáveis do design system do app
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
@@ -19,6 +20,8 @@ import { useAppStore } from '@/store/appStore'
 
 // ── Tipagem das props que o componente pai precisa fornecer (callbacks de ações)
 interface ClipSplitterPageProps {
+  title: string
+  description: string
   /** Abre o file picker nativo para o usuário escolher a pasta de saída */
   onPickOutputDir: () => Promise<{ ok: boolean; message: string | null }>
   /** Abre o file picker nativo para o usuário escolher o vídeo fonte */
@@ -38,6 +41,8 @@ interface ClipSplitterPageProps {
  * Permite selecionar um bruto longo e gerar uma pre-edicao unica com pausas mais limpas.
  */
 export function ClipSplitterPage({
+  title,
+  description,
   onPickOutputDir,
   onPickSourceFile,
   onStartSplit,
@@ -88,96 +93,8 @@ export function ClipSplitterPage({
     setActionMessage(result.message)
   }
 
-  // ── Início do JSX — layout principal da página ─────────────────────────────
-  return (
-    <div className="space-y-6">
-      {/* ── Linha de stat cards no topo: fonte, clips exportados, fila ──────── */}
-      <div className="grid gap-4 md:grid-cols-3">
-        {/* Card que mostra o status do vídeo fonte selecionado */}
-        <StatCard
-          hint={sourcePath ? sourceName : 'Escolha o bruto principal para ativar a exportacao.'}
-          icon={<Film className="h-4 w-4" />}
-          label="Fonte atual"
-          value={sourcePath ? 'Video carregado' : 'Aguardando'}
-        />
-        {/* Card que mostra quantos clips já foram exportados nesta sessão */}
-        <StatCard
-          hint="Soma dos videos limpos entregues pelos jobs concluidos nesta sessao."
-          icon={<Scissors className="h-4 w-4" />}
-          label="Videos limpos"
-          value={String(exportedClips)}
-        />
-        {/* Card que mostra se há jobs na fila ou se está livre */}
-        <StatCard
-          hint={activeTasks.length > 0 ? 'Existe job rodando ou aguardando na fila.' : 'Fila livre para nova pre-edicao.'}
-          icon={<FolderOutput className="h-4 w-4" />}
-          label="Fila"
-          value={activeTasks.length > 0 ? `${activeTasks.length} ativo(s)` : 'Livre'}
-        />
-      </div>
-
-      {/* ── Grid principal: coluna esquerda (entrada + tasks) | coluna direita (config) */}
-      <div className="grid gap-6 xl:grid-cols-[1.3fr_0.95fr]">
-        {/* ════════ COLUNA ESQUERDA ════════ */}
-        <div className="space-y-6">
-          {/* ── Card de entrada: seleção de vídeo e ações principais ────────── */}
-          <Card className="space-y-5">
-            {/* Cabeçalho do card com título, descrição e badge do modo ativo */}
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <h3 className="text-2xl font-semibold text-text-primary">Vídeo base para pré-edição</h3>
-                <p className="mt-2 max-w-2xl text-sm leading-7 text-text-secondary">
-                  Escolha um video longo, ajuste a reducao de pausas e gere uma versao unica mais rapida de revisar.
-                </p>
-              </div>
-              {/* Badge colorido indica o modo atual: IA (verde), Silêncio (azul) ou Fixo (amarelo) */}
-              <Badge tone={settings.mode === 'silence' ? 'blue' : 'yellow'}>
-                {settings.mode === 'silence' ? 'Pre-edicao' : 'Fixo'}
-              </Badge>
-            </div>
-
-            {/* ── Box com o nome e caminho completo do arquivo selecionado ──── */}
-            <div className="rounded-2xl border border-white/8 bg-black/16 p-5">
-              <p className="text-sm font-medium text-text-secondary">Arquivo selecionado</p>
-              <p className="mt-3 text-lg font-medium text-text-primary">{sourceName}</p>
-              <p className="mt-2 break-all font-mono text-xs text-text-muted">{sourcePath ?? 'Nenhum caminho carregado.'}</p>
-            </div>
-
-            {/* ── Botões de ação: selecionar vídeo, escolher pasta, exportar, abrir saída */}
-            <div className="flex flex-wrap gap-3">
-              {/* Abre o file picker para selecionar o vídeo fonte */}
-              <Button onClick={() => void runAction(onPickSourceFile)}>Selecionar video</Button>
-              {/* Abre o file picker para escolher a pasta de saida da pre-edicao */}
-              <Button onClick={() => void runAction(onPickOutputDir)} variant="ghost">
-                Escolher pasta de saida
-              </Button>
-              {/* Inicia o processo de exportacao da pre-edicao */}
-              <Button onClick={() => void runAction(onStartSplit)} variant="ghost">
-                Gerar pre-edicao
-              </Button>
-              {/* Só aparece se já existe uma pasta de saída — abre no explorador do SO */}
-              {latestOutputDir ? (
-                <Button leadingIcon={<FolderSearch className="h-4 w-4" />} onClick={() => onOpenOutput(latestOutputDir)} variant="ghost">
-                  Abrir saida
-                </Button>
-              ) : null}
-            </div>
-
-            {/* ── Mensagem de feedback (erro/sucesso) exibida após uma ação ── */}
-            {actionMessage ? <p className="text-sm text-amber-300">{actionMessage}</p> : null}
-          </Card>
-
-          {/* ── Lista de tarefas (jobs) — mostra progresso, status, ações de cada task */}
-          <ClipSplitterTaskList
-            onCancel={onCancelTask}
-            onOpenOutput={onOpenOutput}
-            onRetry={onRetryTask}
-            tasks={tasks}
-          />
-        </div>
-
-        {/* ════════ COLUNA DIREITA ════════ */}
-        <div className="space-y-6">
+  const inspector = (
+        <div className="space-y-4 p-4">
           {/* ── Card de configuração de corte ──────────────────────────────── */}
           <Card className="space-y-5">
             <div>
@@ -318,7 +235,90 @@ export function ClipSplitterPage({
             </div>
           </Card>
         </div>
+  )
+
+  // ── Início do JSX — layout principal da página ─────────────────────────────
+  return (
+    <Workspace description={description} inspector={inspector} title={title}>
+      {/* ── Linha de stat cards no topo: fonte, clips exportados, fila ──────── */}
+      <div className="grid gap-4 md:grid-cols-3">
+        {/* Card que mostra o status do vídeo fonte selecionado */}
+        <StatCard
+          hint={sourcePath ? sourceName : 'Escolha o bruto principal para ativar a exportacao.'}
+          icon={<Film className="h-4 w-4" />}
+          label="Fonte atual"
+          value={sourcePath ? 'Video carregado' : 'Aguardando'}
+        />
+        {/* Card que mostra quantos clips já foram exportados nesta sessão */}
+        <StatCard
+          hint="Soma dos videos limpos entregues pelos jobs concluidos nesta sessao."
+          icon={<Scissors className="h-4 w-4" />}
+          label="Videos limpos"
+          value={String(exportedClips)}
+        />
+        {/* Card que mostra se há jobs na fila ou se está livre */}
+        <StatCard
+          hint={activeTasks.length > 0 ? 'Existe job rodando ou aguardando na fila.' : 'Fila livre para nova pre-edicao.'}
+          icon={<FolderOutput className="h-4 w-4" />}
+          label="Fila"
+          value={activeTasks.length > 0 ? `${activeTasks.length} ativo(s)` : 'Livre'}
+        />
       </div>
-    </div>
+
+          {/* ── Card de entrada: seleção de vídeo e ações principais ────────── */}
+          <Card className="space-y-5">
+            {/* Cabeçalho do card com título, descrição e badge do modo ativo */}
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <h3 className="text-2xl font-semibold text-text-primary">Vídeo base para pré-edição</h3>
+                <p className="mt-2 max-w-2xl text-sm leading-7 text-text-secondary">
+                  Escolha um video longo, ajuste a reducao de pausas e gere uma versao unica mais rapida de revisar.
+                </p>
+              </div>
+              {/* Badge colorido indica o modo atual: IA (verde), Silêncio (azul) ou Fixo (amarelo) */}
+              <Badge tone={settings.mode === 'silence' ? 'blue' : 'yellow'}>
+                {settings.mode === 'silence' ? 'Pre-edicao' : 'Fixo'}
+              </Badge>
+            </div>
+
+            {/* ── Box com o nome e caminho completo do arquivo selecionado ──── */}
+            <div className="rounded-2xl border border-white/8 bg-black/16 p-5">
+              <p className="text-sm font-medium text-text-secondary">Arquivo selecionado</p>
+              <p className="mt-3 text-lg font-medium text-text-primary">{sourceName}</p>
+              <p className="mt-2 break-all font-mono text-xs text-text-muted">{sourcePath ?? 'Nenhum caminho carregado.'}</p>
+            </div>
+
+            {/* ── Botões de ação: selecionar vídeo, escolher pasta, exportar, abrir saída */}
+            <div className="flex flex-wrap gap-3">
+              {/* Abre o file picker para selecionar o vídeo fonte */}
+              <Button onClick={() => void runAction(onPickSourceFile)}>Selecionar video</Button>
+              {/* Abre o file picker para escolher a pasta de saida da pre-edicao */}
+              <Button onClick={() => void runAction(onPickOutputDir)} variant="ghost">
+                Escolher pasta de saida
+              </Button>
+              {/* Inicia o processo de exportacao da pre-edicao */}
+              <Button onClick={() => void runAction(onStartSplit)} variant="ghost">
+                Gerar pre-edicao
+              </Button>
+              {/* Só aparece se já existe uma pasta de saída — abre no explorador do SO */}
+              {latestOutputDir ? (
+                <Button leadingIcon={<FolderSearch className="h-4 w-4" />} onClick={() => onOpenOutput(latestOutputDir)} variant="ghost">
+                  Abrir saida
+                </Button>
+              ) : null}
+            </div>
+
+            {/* ── Mensagem de feedback (erro/sucesso) exibida após uma ação ── */}
+            {actionMessage ? <p className="text-sm text-amber-300">{actionMessage}</p> : null}
+          </Card>
+
+          {/* ── Lista de tarefas (jobs) — mostra progresso, status, ações de cada task */}
+          <ClipSplitterTaskList
+            onCancel={onCancelTask}
+            onOpenOutput={onOpenOutput}
+            onRetry={onRetryTask}
+            tasks={tasks}
+          />
+    </Workspace>
   )
 }
