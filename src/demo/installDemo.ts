@@ -47,7 +47,13 @@ const demoLibrary: StyleLibrary = {
 function installFakeBridge() {
   const off = () => () => undefined
   window.clipforge = {
-    window: { minimize: async () => undefined, maximize: async () => undefined, close: async () => undefined },
+    window: {
+      minimize: async () => undefined,
+      maximize: async () => undefined,
+      close: async () => undefined,
+      focus: async () => undefined,
+      requestAttention: async () => undefined,
+    },
     dialog: { openFiles: async () => [], openDirectory: async () => null, getPathForFile: () => '' },
     shell: { showItemInFolder: async () => undefined, openPath: async () => '' },
     subtitle: {

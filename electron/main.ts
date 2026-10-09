@@ -15,6 +15,10 @@ const VITE_DEV_URL = 'http://localhost:5173'
 
 let mainWindow: BrowserWindow | null = null
 
+// O Windows so mostra aviso (toast) de app com AppUserModelID. Em dev o ID e o
+// executavel do Electron, como a documentacao de Notification recomenda.
+app.setAppUserModelId(isDev ? process.execPath : 'com.clipforge.app')
+
 function createWindow(): void {
   // Cria a janela principal do Electron com preload isolado e barra customizada.
   mainWindow = new BrowserWindow({
@@ -49,6 +53,9 @@ function createWindow(): void {
     console.log(prefix, message, sourceId ? `(${sourceId}:${line})` : '')
   })
 
+  // O piscar da barra de tarefas (tarefa pronta) para quando o usuario volta pra janela.
+  mainWindow.on('focus', () => mainWindow?.flashFrame(false))
+
   mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
     console.error('[renderer:did-fail-load]', errorCode, errorDescription, validatedURL)
   })
@@ -65,6 +72,17 @@ ipcMain.handle('window:maximize', () => {
   else mainWindow?.maximize()
 })
 ipcMain.handle('window:close', () => mainWindow?.close())
+// Tarefa pronta com a janela em segundo plano: pisca o icone na barra de tarefas.
+// Funciona mesmo com o "Nao incomodar" do Windows ligado, que bloqueia o toast.
+ipcMain.handle('window:requestAttention', () => {
+  if (mainWindow && !mainWindow.isFocused()) mainWindow.flashFrame(true)
+})
+// Clique no aviso de tarefa pronta: traz a janela de volta, mesmo minimizada.
+ipcMain.handle('window:focus', () => {
+  if (mainWindow?.isMinimized()) mainWindow.restore()
+  mainWindow?.show()
+  mainWindow?.focus()
+})
 
 // Dialog IPC handlers usados pelo renderer para selecionar arquivos e diretorios.
 ipcMain.handle('dialog:openFiles', async (_event, filters: { name: string; extensions: string[] }[]) => {

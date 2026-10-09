@@ -6,6 +6,8 @@ const api = {
     minimize: () => ipcRenderer.invoke('window:minimize'),
     maximize: () => ipcRenderer.invoke('window:maximize'),
     close: () => ipcRenderer.invoke('window:close'),
+    focus: () => ipcRenderer.invoke('window:focus'),
+    requestAttention: () => ipcRenderer.invoke('window:requestAttention'),
   },
   dialog: {
     // Encapsula os dialogs nativos e a recuperacao do path real de um File do browser.

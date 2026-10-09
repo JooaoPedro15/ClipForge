@@ -31,6 +31,10 @@ declare global {
         minimize: () => Promise<void>
         maximize: () => Promise<void>
         close: () => Promise<void>
+        // Traz a janela pra frente (clique no aviso de tarefa pronta).
+        focus: () => Promise<void>
+        // Pisca o icone na barra de tarefas ate a janela voltar ao foco.
+        requestAttention: () => Promise<void>
       }
       dialog: {
         // Dialogos nativos usados para selecionar arquivos e diretorios.
