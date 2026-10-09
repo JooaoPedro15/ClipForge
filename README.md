@@ -154,6 +154,8 @@ npm run cortes -- xml --template molde.xml --analysis "E:\Bruto\react.cortes.jso
 
 O `analyze` le o bruto uma vez so (metade esquerda = filme, faixa 1 = filme, faixa 2 = mic; mude com `--film-track`/`--mic-track`), transcreve as duas faixas com o Whisper, marca como ponto de corte possivel os momentos em que ninguem fala (de preferencia num corte de plano) e escolhe as fronteiras por programacao dinamica com cada clipe entre `--min` e `--max` (padrao 70 e 240s, alvo 150s). Tudo vai pro `react.cortes.json` ao lado do bruto. No `xml`, `--clips 1,3,5` ou `--top 5` escolhem quais clipes entram.
 
+Com `--judge qwen2.5:14b-instruct` (ou `qwen2.5:7b-instruct`, ~2x mais rapido e menos preciso), um **juiz** no LLM local le a transcricao em janelas de 10 min com os pontos possiveis marcados (`[C12]`) e da nota de 0 a 10 pra "aqui termina uma cena?". A nota final de cada ponto e 40% regra + 60% juiz; a programacao dinamica continua garantindo as duracoes, entao o modelo nunca cria clipe curto ou longo demais. Sem o Ollama (ou sem o modelo baixado), a analise segue so com as regras e registra um aviso.
+
 Pra medir os cortes contra uma sequencia que voce montou a mao no mesmo bruto (gabarito):
 
 ```bash
