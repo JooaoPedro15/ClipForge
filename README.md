@@ -91,7 +91,7 @@ As fronteiras de frase sao decididas pelo **Python**, nao pelo modelo (`llm_tran
 
 Chamadas usam `temperature: 0` e saida JSON forcada. Resposta rejeitada (id errado, vazia, letra latina, longa demais, mesmo conectivo de abertura da linha anterior) volta pro modelo com o motivo e um pouco de temperatura (0 / 0,4 / 0,7) — com 0 ele repetiria a mesma resposta. Linha que passa de 20 caracteres e dividida em quantas legendas forem precisas, sempre na pontuacao chinesa, com o tempo repartido em fronteira de card. Pontuacao latina (`,` `.`) vira a de largura inteira (`，` `。`) e aspas/parenteses caem.
 
-**Glossario persistente do canal** em `D:\Projetos\subtitle-forge\glossario_canal.json` (ver `DEFAULT_CHANNEL_GLOSSARY_PATH` em `python/glossary_service.py`): nome do canal, bordoes, personagens e jogos recorrentes. Entra no estagio 1 como **travado** — grafia que ja existe nunca e reescrita — e no fim do video as entradas novas sao fundidas nele. E um JSON simples, pode ser editado a mao pra corrigir uma grafia.
+**Glossario persistente do canal** em `D:\Projetos\subtitle-forge\glossario_canal.json` (ver `DEFAULT_CHANNEL_GLOSSARY_PATH` em `python/glossary_service.py`): nome do canal, bordoes, personagens e jogos recorrentes. Entra no estagio 1 como **travado** — grafia que ja existe nunca e reescrita — e no fim do video as entradas novas sao fundidas nele (so as que vieram com grafia em chines; uma vazia travaria o nome sem traducao pra sempre). E um JSON simples, pode ser editado a mao pra corrigir uma grafia.
 
 O campo **"Tipo de video"** tambem e repassado pela queima (hardsub), pra legenda gerada na hora da queima sair no mesmo registro da gerada na transcricao.
 
