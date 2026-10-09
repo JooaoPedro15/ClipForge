@@ -113,6 +113,7 @@ function upsertSubtitleTask(
     translatedOutputs: { ...currentTask?.translatedOutputs, ...event.translatedOutputs },
     translationErrors: { ...currentTask?.translationErrors, ...event.translationErrors },
     hardsubJobs: currentTask?.hardsubJobs ?? {},
+    autoBurn: event.autoBurn ?? currentTask?.autoBurn ?? null,
   }
 
   if (currentIndex === -1) {

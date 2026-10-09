@@ -8,7 +8,7 @@ import { gpuQueue, type JobResult } from '../python/gpuQueue.js'
 import { resolveScriptPath } from '../python/pythonEnv.js'
 import { runPython, type PythonRun } from '../python/pythonProcess.js'
 import { decideOutcome, describeExitCode, parseRunnerLine } from '../python/runnerEvents.js'
-import { getSubtitleTaskSnapshot, resolveSubtitleForgeRoot } from './subtitle.js'
+import { getSubtitleTaskSnapshot, onSubtitleCompleted, resolveSubtitleForgeRoot } from './subtitle.js'
 
 // Tipos crus do runner e o registro do job sao so do processo principal; o contrato com a tela vem de src/types.
 interface HardsubOptions {
@@ -233,32 +233,45 @@ function emitQueued(job: HardsubJobRecord, position: number, isNext: boolean) {
   emit(job.sender, 'subtitle:burn-progress', toPayload(job, { status: 'queued', stage: 'queued', message: job.lastMessage, progress: null }))
 }
 
+// Poe uma queima na fila de GPU. Vem do clique nos botoes de queima ou, sozinha, do fim
+// de uma transcricao pedida pela entrada "Versao em chines".
+function enqueueBurn(sender: WebContents, taskId: string, mode: HardsubMode, format: HardsubFormat): string {
+  const jobId = crypto.randomUUID()
+
+  const job: HardsubJobRecord = {
+    id: jobId,
+    taskId,
+    sender,
+    mode,
+    format,
+    status: 'queued',
+    outputPath: null,
+    lastMessage: 'Job de queima adicionado a fila.',
+    lastError: null,
+    process: null,
+    terminalEvent: null,
+  }
+
+  jobs.set(jobId, job)
+  emit(job.sender, 'subtitle:burn-progress', toPayload(job, { status: 'queued', stage: 'queued', message: job.lastMessage, progress: null }))
+  gpuQueue.enqueue({
+    id: jobId,
+    onQueued: (position, isNext) => emitQueued(job, position, isNext),
+    run: () => runJob(job),
+  })
+
+  return jobId
+}
+
 export function registerHardsubHandlers() {
-  ipcMain.handle('subtitle:burn', async (event, taskId: string, mode: HardsubMode, format: HardsubFormat) => {
-    const jobId = crypto.randomUUID()
+  ipcMain.handle('subtitle:burn', async (event, taskId: string, mode: HardsubMode, format: HardsubFormat) =>
+    enqueueBurn(event.sender, taskId, mode, format),
+  )
 
-    const job: HardsubJobRecord = {
-      id: jobId,
-      taskId,
-      sender: event.sender,
-      mode,
-      format,
-      status: 'queued',
-      outputPath: null,
-      lastMessage: 'Job de queima adicionado a fila.',
-      lastError: null,
-      process: null,
-      terminalEvent: null,
+  // Transcricao pedida ja com queima: emenda a queima sem esperar clique.
+  onSubtitleCompleted((task) => {
+    if (task.options.autoBurn) {
+      enqueueBurn(task.sender, task.id, task.options.autoBurn, task.options.format)
     }
-
-    jobs.set(jobId, job)
-    emit(job.sender, 'subtitle:burn-progress', toPayload(job, { status: 'queued', stage: 'queued', message: job.lastMessage, progress: null }))
-    gpuQueue.enqueue({
-      id: jobId,
-      onQueued: (position, isNext) => emitQueued(job, position, isNext),
-      run: () => runJob(job),
-    })
-
-    return jobId
   })
 }

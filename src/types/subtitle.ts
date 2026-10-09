@@ -59,6 +59,9 @@ export interface SubtitleTaskOptions {
   // Segmenta com o estilo aprendido (so tem efeito quando o perfil do formato tem 3+ videos).
   useStyle: boolean
   outputPath?: string | null
+  // Entrada "Versao em chines": quando a transcricao termina, o processo principal ja
+  // enfileira a queima neste modo. Vai por video, nunca fica nas configuracoes lembradas.
+  autoBurn?: HardsubMode | null
 }
 
 export interface SubtitleTaskEventBase {
@@ -83,6 +86,7 @@ export interface SubtitleTaskEventBase {
   detectedLanguage?: string
   translatedOutputs?: Record<string, string>
   translationErrors?: Record<string, string>
+  autoBurn?: HardsubMode | null
 }
 
 // Evento intermediario de progresso emitido durante o processamento.
@@ -127,4 +131,6 @@ export interface SubtitleTask {
   translatedOutputs: Record<string, string>
   translationErrors: Record<string, string>
   hardsubJobs: Partial<Record<HardsubMode, HardsubJobState>>
+  // Modo da queima automatica pedida ao soltar o video (null = so legendar).
+  autoBurn: HardsubMode | null
 }

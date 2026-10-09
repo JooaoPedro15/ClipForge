@@ -3,7 +3,13 @@ import path from 'node:path'
 
 import { ipcMain, type WebContents } from 'electron'
 
-import type { SubtitleErrorEvent, SubtitleTaskEventBase, SubtitleTaskOptions, SubtitleTaskStatus } from '../../src/types/subtitle.js'
+import type {
+  HardsubMode,
+  SubtitleErrorEvent,
+  SubtitleTaskEventBase,
+  SubtitleTaskOptions,
+  SubtitleTaskStatus,
+} from '../../src/types/subtitle.js'
 import { gpuQueue, type JobResult } from '../python/gpuQueue.js'
 import { resolveProjectRoot, resolveScriptPath } from '../python/pythonEnv.js'
 import { runPython, type PythonRun } from '../python/pythonProcess.js'
@@ -121,6 +127,19 @@ const defaultOptions: SubtitleTaskOptions = {
   format: 'long',
   useStyle: false,
   outputPath: null,
+  autoBurn: null,
+}
+
+// So os modos que geram video entram na queima automatica ("traduzir de novo" nao queima).
+const AUTO_BURN_MODES: HardsubMode[] = ['zh', 'zh-en', 'zh-original']
+
+// Quem precisa saber que uma transcricao terminou bem: a queima automatica (subtitleBurn.ts).
+// Fica como ouvinte pra este modulo nao importar o da queima, que ja importa este.
+type CompletedListener = (task: { id: string; sender: WebContents; options: SubtitleTaskOptions }) => void
+const completedListeners: CompletedListener[] = []
+
+export function onSubtitleCompleted(listener: CompletedListener) {
+  completedListeners.push(listener)
 }
 
 // Normaliza os parametros recebidos do renderer antes de iniciar o runner Python.
@@ -138,6 +157,7 @@ function normalizeOptions(options: Partial<SubtitleTaskOptions> | undefined): Su
     videoType: (options?.videoType ?? defaultOptions.videoType).trim(),
     useStyle: Boolean(options?.useStyle),
     outputPath: options?.outputPath?.trim() || null,
+    autoBurn: AUTO_BURN_MODES.find((mode) => mode === options?.autoBurn) ?? null,
   }
 }
 
@@ -173,6 +193,7 @@ function toPayload(task: SubtitleTaskRecord, overrides: Partial<SubtitleTaskEven
     detectedLanguage: task.detectedLanguage ?? undefined,
     translatedOutputs: task.translatedOutputs,
     translationErrors: task.translationErrors,
+    autoBurn: task.options.autoBurn ?? null,
     ...overrides,
   }
 }
@@ -451,6 +472,9 @@ function finishTask(task: SubtitleTaskRecord, code: number | null) {
   if (outcome.kind === 'done') {
     task.status = 'completed'
     emitDone(task, outcome.durationSec ?? fallbackDurationSec)
+    for (const listener of completedListeners) {
+      listener(task)
+    }
     return
   }
 
