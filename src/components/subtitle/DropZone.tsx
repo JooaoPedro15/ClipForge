@@ -1,4 +1,4 @@
-import { FolderOpen, UploadCloud } from 'lucide-react'
+import { FolderOpen, Upload } from 'lucide-react'
 import { useState } from 'react'
 
 import { Button } from '@/components/ui/Button'
@@ -18,6 +18,7 @@ export function DropZone({ onPickFiles, onDropPaths }: DropZoneProps) {
 
   // Resolve os caminhos reais dos arquivos arrastados antes de mandar para a fila.
   async function handleDrop(files: FileList | null) {
+    setIsOver(false)
     if (!files) {
       return
     }
@@ -30,68 +31,51 @@ export function DropZone({ onPickFiles, onDropPaths }: DropZoneProps) {
       const result = await onDropPaths(paths)
       setDropError(result.message)
     } else if (files.length > 0) {
-      setDropError('Arrastar arquivo nao conseguiu expor o caminho nesta execucao. Use "Selecionar arquivos".')
+      setDropError('Não deu pra ler o caminho do arquivo arrastado. Use "Escolher arquivos".')
     }
-
-    setIsOver(false)
   }
 
   return (
-    <div
-      className={cn(
-        'relative overflow-hidden rounded-2xl border border-dashed p-8 transition duration-200',
-        isOver ? 'border-white/30 bg-white/5' : 'border-white/10 bg-white/[0.03]',
-      )}
-      onDragEnter={(event) => {
-        event.preventDefault()
-        setIsOver(true)
-      }}
-      onDragLeave={(event) => {
-        event.preventDefault()
-        setIsOver(false)
-      }}
-      onDragOver={(event) => {
-        event.preventDefault()
-        setIsOver(true)
-      }}
-      onDrop={(event) => {
-        event.preventDefault()
-        void handleDrop(event.dataTransfer.files)
-      }}
-    >
-      {/* Conteudo principal com CTA manual e feedback do arraste. */}
-      <div className="relative flex flex-col items-start gap-5">
-        <div className="flex h-16 w-16 items-center justify-center rounded-xl bg-white/10 text-white shadow-none">
-          <UploadCloud className="h-8 w-8" />
+    <div className="space-y-2">
+      <div
+        className={cn(
+          'flex items-center gap-4 rounded-[10px] border border-dashed px-5 py-4 transition-colors duration-150',
+          isOver ? 'border-accent bg-accent-soft' : 'border-line-strong bg-panel',
+        )}
+        onDragEnter={(event) => {
+          event.preventDefault()
+          setIsOver(true)
+        }}
+        onDragLeave={(event) => {
+          // So apaga o destaque quando o cursor sai da area, nao ao passar por um filho.
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+            setIsOver(false)
+          }
+        }}
+        onDragOver={(event) => event.preventDefault()}
+        onDrop={(event) => {
+          event.preventDefault()
+          void handleDrop(event.dataTransfer.files)
+        }}
+      >
+        <Upload className={cn('h-5 w-5 shrink-0', isOver ? 'text-accent' : 'text-text-muted')} />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium text-text-primary">{isOver ? 'Pode soltar' : 'Solte vídeos ou áudios aqui'}</p>
+          <p className="text-xs text-text-muted">mp4, mov, mkv, mp3, wav, m4a. Entram na fila e rodam um por vez.</p>
         </div>
-
-        <div className="space-y-2">
-          <h3 className="text-2xl font-semibold text-text-primary">Jogue seus vídeos aqui</h3>
-          <p className="max-w-2xl text-sm leading-6 text-text-secondary">
-            Arraste arquivos de vídeo ou áudio para a fila do SubtitleForge. O app processa um por vez para
-            preservar VRAM e manter o output consistente.
-          </p>
-        </div>
-
-        <div className="flex flex-wrap gap-3">
-          <Button
-            leadingIcon={<FolderOpen className="h-4 w-4" />}
-            onClick={() => {
-              setDropError(null)
-              void onPickFiles().then((result) => {
-                setDropError(result.message)
-              })
-            }}
-          >
-            Selecionar arquivos
-          </Button>
-          <Button className="pointer-events-none text-text-secondary" tabIndex={-1} variant="ghost">
-            MP4, MOV, MKV, MP3, WAV, M4A
-          </Button>
-        </div>
-
-        {dropError ? <p className="text-sm text-amber-300">{dropError}</p> : null}
+        <Button
+          leadingIcon={<FolderOpen className="h-4 w-4" />}
+          onClick={() => {
+            setDropError(null)
+            void onPickFiles().then((result) => setDropError(result.message))
+          }}
+          size="sm"
+        >
+          Escolher arquivos
+        </Button>
       </div>
+
+      {dropError ? <p className="text-sm text-status-warn">{dropError}</p> : null}
     </div>
   )
 }

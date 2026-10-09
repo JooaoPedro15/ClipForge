@@ -1,6 +1,5 @@
 import { Workspace } from '@/components/layout/Workspace'
 import { DropZone } from '@/components/subtitle/DropZone'
-import { StatsBar } from '@/components/subtitle/StatsBar'
 import { SubtitleInspector } from '@/components/subtitle/SubtitleInspector'
 import { TaskList } from '@/components/subtitle/TaskList'
 import { useAppStore } from '@/store/appStore'
@@ -32,8 +31,6 @@ export function SubtitleForgePage({
 
   return (
     <Workspace description={description} inspector={<SubtitleInspector />} title={title}>
-      {/* Resumo rapido do estado atual da fila de transcricao. */}
-      <StatsBar tasks={tasks} />
       {/* Entrada principal para drag and drop ou selecao manual de arquivos. */}
       <DropZone onDropPaths={onDropPaths} onPickFiles={onPickFiles} />
       {/* Lista detalhada das tarefas ja enviadas para o backend Python. */}
