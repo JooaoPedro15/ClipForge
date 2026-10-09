@@ -1,4 +1,7 @@
 import { create } from 'zustand'
+import { createJSONStorage, persist } from 'zustand/middleware'
+
+import { createPreferenceStorage, pickPreferences, PREFERENCES_KEY, restorePreferences } from '@/store/preferences'
 
 import type {
   ClipSplitterDoneEvent,
@@ -158,7 +161,11 @@ function upsertClipSplitterTask(
 }
 
 // Store Zustand com estado compartilhado, configuracoes e mutacoes do app inteiro.
-export const useAppStore = create<AppState>((set) => ({
+// O persist lembra a ferramenta aberta e as opcoes do Inspetor (ver preferences.ts);
+// filas e caminhos de saida comecam do zero a cada abertura.
+export const useAppStore = create<AppState>()(
+  persist(
+    (set) => ({
   activeTool: 'subtitle-forge',
   subtitleSettings: defaultSubtitleSettings,
   subtitleTasks: [],
@@ -243,4 +250,17 @@ export const useAppStore = create<AppState>((set) => ({
     set((state) => ({
       clipSplitterTasks: upsertClipSplitterTask(state.clipSplitterTasks, event),
     })),
-}))
+    }),
+    {
+      name: PREFERENCES_KEY,
+      version: 1,
+      storage: createJSONStorage(createPreferenceStorage),
+      partialize: (state) => pickPreferences(state),
+      // Junta o salvo com o padrao de forma defensiva e reaplica a regra do silencio minimo.
+      merge: (saved, current) => {
+        const restored = restorePreferences(saved, current)
+        return { ...restored, clipSplitterSettings: normalizeClipSplitterSettings(restored.clipSplitterSettings) }
+      },
+    },
+  ),
+)

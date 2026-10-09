@@ -45,6 +45,7 @@ A interface segue o desenho de um editor de video: barra de titulo com o estado 
 - **Monitor de previa (Legendas):** mostra uma frase de exemplo como ela vai sair, no formato escolhido (9:16 ou 16:9), na posicao da queima e com as opcoes de texto aplicadas: maiusculas/minusculas, acentos, pontuacao, palavras por legenda e caracteres por linha. A formatacao espelha o `render_srt` do Python (`src/lib/captionPreview.ts`, com testes). Troca de legenda como no video e tem pausa.
 - **Diagrama de pausas (Pre-edicao):** o mesmo trecho de exemplo antes e depois, com os limites reais de cada tipo de pausa (`PREEDIT_MODE_SETTINGS`) pra intensidade escolhida: Leve, Equilibrada ou Forte (`src/lib/pausePreview.ts`).
 - **Fila:** uma linha por arquivo, com anel de progresso, o que esta rodando e o que saiu. Legenda pronta ja mostra os botoes de queima; pre-edicao pronta mostra quanto o bruto encolheu.
+- **Lembra as escolhas:** a ferramenta aberta e as opcoes do Inspetor voltam como estavam na proxima abertura (`localStorage`, chave `clipforge:preferencias`). Caminhos de saida nao sao lembrados, porque valem pra um video so. Opcao nova numa versao futura nasce com o valor padrao e dado corrompido e ignorado (`src/store/preferences.ts`).
 
 <br clear="right" />
 
