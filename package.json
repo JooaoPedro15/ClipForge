@@ -18,6 +18,7 @@
     "test:watch": "vitest",
     "test:py": "node scripts/run-python-tests.mjs",
     "test:all": "vitest run && node scripts/run-python-tests.mjs",
+    "cortes": "node scripts/run-cortes.mjs",
     "lint": "eslint . && node scripts/run-ruff.mjs",
     "lint:ts": "eslint .",
     "lint:py": "node scripts/run-ruff.mjs",

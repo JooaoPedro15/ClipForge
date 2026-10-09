@@ -31,6 +31,7 @@ O escopo atual e simples: preparar material bruto com rapidez, gerar legendas e 
 | --- | --- | --- |
 | **Legendas** (SubtitleForge) | Estavel | Transcreve audio/video com Whisper e gera arquivos `.srt`. |
 | **Pre-edicao** (Pre-Editor) | Em evolucao | Pre-edita videos brutos, comprime pausas e gera uma versao longa mais rapida de revisar. |
+| **Cortes** | Em construcao (linha de comando) | Corta o react gravado em clipes 9:16 e gera o XML pro Premiere no layout de um molde seu. |
 
 ## Interface
 
@@ -136,6 +137,16 @@ Pela entrada **Versao em chines** a queima "So chines" comeca sozinha quando a t
 
 Requisito: `ffmpeg`/`ffprobe` precisam estar instalados e acessiveis no PATH (ou em `C:\ffmpeg\bin`) — nao ha download automatico como o modelo Whisper/NLLB.
 
+### Cortes para TikTok (linha de comando, em construcao)
+
+Gera um **XML do Premiere** (Final Cut Pro XML) com os clipes do react numa sequencia so, um depois do outro, com um espaco entre eles e um marcador em cada um. O layout vem de um **molde**: uma sequencia sua ja montada, exportada em *Arquivo > Exportar > Final Cut Pro XML*. Do primeiro clipe do molde o modulo copia filme (V1), webcam (V2, inclusive o Lumetri), loop do link (V3, sequencia aninhada) e as faixas de audio com o volume, e repete pra cada clipe novo trocando so os tempos e o caminho do bruto. No projeto do react, *Arquivo > Importar* o XML: a sequencia aponta pro bruto inteiro, entao da pra esticar clipe, mover tela e mexer no volume normalmente.
+
+```bash
+npm run cortes -- xml --template molde.xml --source "E:\Bruto\react.mp4" --ranges "2:24.44-3:39.72,3:39.72-5:28.56"
+```
+
+O XML sai como `<bruto>.cortes.xml` (ou em `--out`). O `npm run cortes` roda `python/cortes_service.py` com o mesmo Python e as mesmas DLLs CUDA do app. O codigo fica em `python/cortes/` e nao depende do Electron.
+
 ## Stack
 
 - **Desktop:** Electron
@@ -213,6 +224,7 @@ Esse comando inicia o Vite, compila o processo principal do Electron em modo wat
 | `npm run test:watch` | Executa os testes em modo watch. |
 | `npm run test:py` | Executa os testes Python (`python/*_test.py`) com o Python do app. `npm run test:py -- srt` roda so `srt*_test.py`. |
 | `npm run test:all` | Vitest + testes Python. |
+| `npm run cortes -- <subcomando>` | Roda o modulo de cortes pela linha de comando (ver "Cortes para TikTok"). |
 | `npm run screenshots` | Gera as imagens do README em `docs/screenshots/` (modo demonstracao). |
 | `npm run video` | Grava o video de demonstracao em `docs/media/clipforge-demo.mp4` (precisa do ffmpeg). |
 
@@ -229,6 +241,8 @@ clip-forge/
 │  ├─ text_utils.py      # Helpers de texto (limpeza, timestamps, quebra de linha)
 │  ├─ segmentation.py    # Palavras do Whisper -> legendas (cards)
 │  ├─ style_*.py         # Aprendizado do estilo (alinhamento, features, arvore, biblioteca, servico)
+│  ├─ cortes/            # Cortes: molde do Premiere, XML, analise do bruto (sem Electron)
+│  ├─ cortes_service.py  # CLI do modulo de cortes (npm run cortes)
 │  └─ requirements.txt   # Dependencias Python fixadas
 ├─ resources/            # Icones do aplicativo
 ├─ scripts/              # Scripts utilitarios (inclui a captura das telas do README)
