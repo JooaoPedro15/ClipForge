@@ -1,6 +1,7 @@
 import { HardDriveDownload, Layers3, SlidersHorizontal } from 'lucide-react'
 
 import { Workspace } from '@/components/layout/Workspace'
+import { CaptionMonitor } from '@/components/subtitle/CaptionMonitor'
 import { DropZone } from '@/components/subtitle/DropZone'
 import { StatsBar } from '@/components/subtitle/StatsBar'
 import { StylePanel } from '@/components/subtitle/StylePanel'
@@ -9,6 +10,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { CustomSelect } from '@/components/ui/CustomSelect'
+import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { Toggle } from '@/components/ui/Toggle'
 import { useAppStore } from '@/store/appStore'
 import type { HardsubMode } from '@/types/subtitle'
@@ -42,6 +44,19 @@ export function SubtitleForgePage({
 
   const inspector = (
         <div className="space-y-4 p-4">
+          {/* Monitor com a frase de exemplo; o formato fica colado nele porque muda o quadro. */}
+          <div className="space-y-2">
+            <CaptionMonitor format={settings.format} options={settings} />
+            <SegmentedControl
+              label="Formato"
+              onChange={(format) => patchSettings({ format, maxWords: format === 'shorts' ? 3 : 0 })}
+              options={[
+                { value: 'shorts', label: 'Shorts 9:16' },
+                { value: 'long', label: 'Vídeo longo 16:9' },
+              ]}
+              value={settings.format}
+            />
+          </div>
           <Card className="space-y-5">
             <div className="flex items-center justify-between gap-4">
               <div>
@@ -64,24 +79,6 @@ export function SubtitleForgePage({
                     { value: 'small', label: 'small' },
                     { value: 'medium', label: 'medium' },
                     { value: 'large-v3', label: 'large-v3' },
-                  ]}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <span className="text-sm font-medium text-text-secondary">Formato</span>
-                <CustomSelect
-                  value={settings.format}
-                  onChange={(value) => {
-                    const format = value as typeof settings.format
-                    patchSettings({
-                      format,
-                      maxWords: format === 'shorts' ? 3 : 0,
-                    })
-                  }}
-                  options={[
-                    { value: 'shorts', label: 'Shorts (vertical)' },
-                    { value: 'long', label: 'Vídeo longo (horizontal)' },
                   ]}
                 />
               </div>
