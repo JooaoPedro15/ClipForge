@@ -135,24 +135,18 @@ function seedSubtitleQueue() {
     progress: 62,
   })
 
-  // A fila de GPU roda um por vez: com a queima em chines rodando, as transcricoes esperam.
-  const waiting: Array<[string, string, number]> = [
-    ['demo-queued-2', 'minecraft-hardcore-dia-100.mp4', 2],
-    ['demo-queued-1', 'resident-evil-requiem-ep03.mp4', 1],
-  ]
-  for (const [taskId, fileName, queuePosition] of waiting) {
-    store.upsertSubtitleProgress({
-      ...common,
-      taskId,
-      filePath: `D:\\Gravacoes\\${fileName}`,
-      fileName,
-      status: 'queued',
-      stage: 'queued',
-      message: 'Aguardando a GPU.',
-      progress: null,
-      queuePosition,
-    })
-  }
+  // A fila de GPU roda um por vez: com a queima em chines rodando, a transcricao espera.
+  store.upsertSubtitleProgress({
+    ...common,
+    taskId: 'demo-queued',
+    filePath: 'D:\\Gravacoes\\resident-evil-requiem-ep03.mp4',
+    fileName: 'resident-evil-requiem-ep03.mp4',
+    status: 'queued',
+    stage: 'queued',
+    message: 'Aguardando a GPU.',
+    progress: null,
+    queuePosition: 1,
+  })
 }
 
 function seedPreEditQueue() {
@@ -200,8 +194,8 @@ function seedPreEditQueue() {
     stage: 'queued',
     message: 'Aguardando a GPU.',
     progress: null,
-    // Mesma fila de GPU das legendas: espera a queima e as duas transcricoes.
-    queuePosition: 3,
+    // Mesma fila de GPU das legendas: espera a queima e a transcricao.
+    queuePosition: 2,
   })
 }
 
