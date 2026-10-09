@@ -4,10 +4,11 @@ from unittest import mock
 
 from llm_service import LLMUnavailableError
 
-from cortes import pipeline
+from cortes import pipeline, store
 from cortes.candidates import Candidate
 from cortes.media import SourceMedia
 from cortes.pipeline import AnalyzeOptions
+from cortes.segmenter import Durations
 
 
 def ignore(*_args):
@@ -74,3 +75,41 @@ class RunJudgeTest(unittest.TestCase):
         make_client.return_value = FakeOllama(payload={"notas": {"C1": 9}})
         self.assertIs(self.run_judge(), make_client.return_value)
         self.assertEqual(self.cands[0].judge, 9.0)
+
+
+class FakeTitles:
+    def __init__(self):
+        self.calls = 0
+
+    def chat_json(self, system, user, temperature=0):
+        self.calls += 1
+        return {"titulo": "Novo", "gancho": 6}
+
+
+def analysis_with_old_clips() -> store.Analysis:
+    return store.Analysis(
+        source={"path": "E:\\b.mp4", "duration_sec": 600.0, "fps": 60.0, "width": 3840, "height": 1080, "audio_streams": 4},
+        options={"start": 0.0, "end": 450.0, "min_sec": 70.0, "target_sec": 200.0, "max_sec": 300.0},
+        transcript={"film": [{"start": 10.0, "end": 12.0, "text": "Oi"}], "mic": []},
+        mic_speech=[],
+        shot_cuts=[],
+        candidates=[Candidate("C1", 150.0, 10.0), Candidate("C2", 300.0, 10.0)],
+        clips=[store.Clip(1, 0.0, 150.0, "Comeco", 8, 5.6), store.Clip(2, 150.0, 450.0, "Velho", 5, 3.5)],
+    )
+
+
+class ResegmentTest(unittest.TestCase):
+    def test_keeps_titles_of_unchanged_clips_and_titles_new_ones(self):
+        client = FakeTitles()
+        analysis = pipeline.resegment(analysis_with_old_clips(), Durations(70.0, 150.0, 240.0), client)
+        self.assertEqual([(c.start, c.end) for c in analysis.clips], [(0.0, 150.0), (150.0, 300.0), (300.0, 450.0)])
+        self.assertEqual([c.title for c in analysis.clips], ["Comeco", "Novo", "Novo"])
+        self.assertEqual([c.hook for c in analysis.clips], [8, 6, 6])
+        self.assertEqual([c.score for c in analysis.clips], [5.6, 4.2, 4.2])
+        self.assertEqual(client.calls, 2)
+        self.assertEqual(analysis.options["target_sec"], 150.0)
+
+    def test_without_llm_new_clips_get_a_numbered_title(self):
+        analysis = pipeline.resegment(analysis_with_old_clips(), Durations(70.0, 150.0, 240.0), None)
+        self.assertEqual([c.title for c in analysis.clips], ["Comeco", "Clipe 02", "Clipe 03"])
+        self.assertEqual([c.hook for c in analysis.clips], [8, None, None])

@@ -9,13 +9,15 @@ import time
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import Any
 
 import ffmpeg_utils
 import llm_service
 import subtitle_service
 
-from cortes import candidates, extract, judge, segmenter, store, transcribe
+from cortes import candidates, extract, judge, segmenter, store, titles, transcribe
 from cortes.media import probe_source
+from cortes.transcript import transcript_lines
 
 ProgressFn = Callable[[str, str, int], None]  # (etapa, mensagem, progresso 0-100)
 WarnFn = Callable[[str], None]
@@ -73,6 +75,60 @@ def run_judge(
         note(f"Juiz indisponivel ({error}); usei so as regras.")
         return None
     return client
+
+
+def _key(clip: store.Clip) -> tuple[float, float]:
+    return (round(clip.start, 2), round(clip.end, 2))
+
+
+def title_clips(
+    analysis: store.Analysis,
+    client: Any,
+    keep: dict[tuple[float, float], store.Clip],
+    on_clip: Callable[[int, int], None] | None = None,
+    note: WarnFn | None = None,
+) -> None:
+    """Titulo e gancho de cada clipe (reaproveita os de `keep` com a mesma fronteira) e recalcula a nota."""
+    film, mic = analysis.transcript["film"], analysis.transcript["mic"]
+    for clip in analysis.clips:
+        previous = keep.get(_key(clip))
+        if previous is not None and previous.hook is not None:
+            clip.title, clip.hook = previous.title, previous.hook
+        else:
+            clip.title, clip.hook = f"Clipe {clip.n:02d}", None
+            if client is not None:
+                try:
+                    clip.title, clip.hook = titles.title_clip(client, transcript_lines(film, mic, clip.start, clip.end))
+                except titles.TitleResponseError as error:
+                    if note:
+                        note(f"Titulo do clipe {clip.n:02d} falhou ({error}).")
+                except llm_service.LLMUnavailableError as error:
+                    if note:
+                        note(f"O Ollama caiu nos titulos ({error}); o resto ficou sem titulo.")
+                    client = None
+        if on_clip:
+            on_clip(clip.n, len(analysis.clips))
+    reactions = [titles.reaction_fraction(analysis.mic_speech, clip.start, clip.end) for clip in analysis.clips]
+    scores = titles.clip_scores([clip.hook for clip in analysis.clips], reactions)
+    for clip, score in zip(analysis.clips, scores, strict=True):
+        clip.score = score
+
+
+def resegment(
+    analysis: store.Analysis,
+    durations: segmenter.Durations,
+    client: Any,
+    on_clip: Callable[[int, int], None] | None = None,
+    note: WarnFn | None = None,
+) -> store.Analysis:
+    """Refaz as fronteiras com outra faixa de duracao, sem reler o bruto nem chamar o juiz de novo."""
+    keep = {_key(clip): clip for clip in analysis.clips}
+    start, end = analysis.options["start"], analysis.options["end"]
+    bounds = segmenter.choose_boundaries([(c.t, c.score) for c in analysis.candidates], start, end, durations)
+    analysis.clips = clips_from(bounds)
+    analysis.options.update(asdict(durations))
+    title_clips(analysis, client, keep, on_clip, note)
+    return analysis
 
 
 def analyze(source_path: str, options: AnalyzeOptions, progress: ProgressFn, warn: WarnFn) -> store.Analysis:
@@ -143,9 +199,10 @@ def analyze(source_path: str, options: AnalyzeOptions, progress: ProgressFn, war
 
     cands = candidates.build_candidates(film_words, mic_words, shot_cuts, film_silences, start, end)
     progress("choosing", f"{len(cands)} pontos de corte possiveis.", 62)
+    client = None
     if options.judge_model:
         began = time.perf_counter()
-        run_judge(options.judge_model, film_segments, mic_segments, cands, start, end, progress, note)
+        client = run_judge(options.judge_model, film_segments, mic_segments, cands, start, end, progress, note)
         lap("judge", began)
     bounds = segmenter.choose_boundaries([(c.t, c.score) for c in cands], start, end, options.durations)
     analysis = store.Analysis(
@@ -167,6 +224,15 @@ def analyze(source_path: str, options: AnalyzeOptions, progress: ProgressFn, war
         warnings=warnings,
         timings=timings,
     )
+    began = time.perf_counter()
+    title_clips(
+        analysis,
+        client,
+        {},
+        lambda done, total: progress("titling", f"Titulos: clipe {done} de {total}...", 80 + 19 * done // total),
+        note,
+    )
+    lap("titles", began)
     store.save(analysis, store.analysis_path(source_path))
     progress("done", f"{len(analysis.clips)} clipes.", 100)
     return analysis
