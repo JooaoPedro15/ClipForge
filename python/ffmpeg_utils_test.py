@@ -146,5 +146,16 @@ class RunFfmpegWithProgressTest(unittest.TestCase):
             )
 
 
+class RunFfmpegWithProgressCwdTest(unittest.TestCase):
+    def test_passes_cwd_to_the_process(self):
+        process = mock.Mock()
+        process.stdout = iter(["progress=end\n"])
+        process.stderr = iter([])
+        process.wait.return_value = 0
+        with mock.patch.object(ffmpeg_utils.subprocess, "Popen", return_value=process) as popen:
+            ffmpeg_utils.run_ffmpeg_with_progress(["ffmpeg", "-i", "x"], 10, lambda pct: None, cwd="T:\\tmp")
+        self.assertEqual(popen.call_args.kwargs["cwd"], "T:\\tmp")
+
+
 if __name__ == "__main__":
     unittest.main()

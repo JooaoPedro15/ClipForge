@@ -164,6 +164,7 @@ def run_ffmpeg_with_progress(
     args: list[str],
     total_duration_sec: float,
     on_progress: Callable[[int], None],
+    cwd: str | None = None,
 ) -> None:
     full_args = [*args[:1], "-progress", "pipe:1", "-nostats", *args[1:]] if args else args
     process = subprocess.Popen(
@@ -172,6 +173,7 @@ def run_ffmpeg_with_progress(
         stderr=subprocess.PIPE,
         text=True,
         bufsize=1,
+        cwd=cwd,
     )
 
     stderr_lines: list[str] = []
