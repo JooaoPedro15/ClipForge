@@ -117,6 +117,21 @@ class AnalyzeArgsTest(unittest.TestCase):
         self.assertEqual((options.film_track, options.mic_track, options.start, options.end), (1, 0, 144.44, None))
         self.assertIsNone(options.judge_model)
 
+    def test_film_and_mic_on_the_same_track_is_an_error_before_reading(self):
+        # Mesma faixa nos dois: toda fala do filme contaria como "voce falando" e quase nao sairia ponto de corte.
+        with mock.patch.object(cortes_service, "analyze") as analyze:
+            code, events = run_cli(["analyze", "E:\\b.mp4", "--film-track", "1", "--mic-track", "1"])
+        self.assertEqual(code, 1)
+        self.assertIn("mesma faixa", events[-1]["error"])
+        analyze.assert_not_called()
+
+    def test_track_zero_is_an_error(self):
+        with mock.patch.object(cortes_service, "analyze") as analyze:
+            code, events = run_cli(["analyze", "E:\\b.mp4", "--film-track", "0"])
+        self.assertEqual(code, 1)
+        self.assertIn("comecam em 1", events[-1]["error"])
+        analyze.assert_not_called()
+
     def test_titles_are_independent_from_the_judge(self):
         args = cortes_service.parse_args(["analyze", "E:\\b.mp4", "--titles", "qwen2.5:7b-instruct"])
         options = cortes_service.analyze_options(args)

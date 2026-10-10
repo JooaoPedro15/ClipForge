@@ -56,6 +56,13 @@ def cmd_xml(args: argparse.Namespace) -> int:
 
 
 def analyze_options(args: argparse.Namespace) -> AnalyzeOptions:
+    if args.film_track < 1 or args.mic_track < 1:
+        raise ValueError("As faixas de audio comecam em 1 (faixa 1 = primeira do bruto).")
+    if args.film_track == args.mic_track:
+        raise ValueError(
+            f"Filme e mic estao na mesma faixa ({args.film_track}): toda fala do filme contaria como sua e quase nao "
+            "sairia ponto de corte. Use faixas diferentes."
+        )
     return AnalyzeOptions(
         start=parse_clock(args.start) if args.start else 0.0,
         end=parse_clock(args.end) if args.end else None,
