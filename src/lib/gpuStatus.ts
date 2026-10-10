@@ -1,4 +1,4 @@
-// Status da fila unica de GPU: transcricao, queima e Pre-Editor rodam um por vez,
+// Status da fila unica de GPU: transcricao, queima, Pre-Editor e Cortes rodam um por vez,
 // entao o estado e um so pro app inteiro, nao por ferramenta.
 interface GpuTaskLike {
   fileName: string
@@ -11,8 +11,9 @@ export interface GpuStatus {
   queued: number
 }
 
-export function getGpuStatus(subtitleTasks: GpuTaskLike[], preEditTasks: GpuTaskLike[]): GpuStatus {
-  const all = [...subtitleTasks, ...preEditTasks]
+// Um grupo por ferramenta (legendas, pre-edicao, cortes): todos dividem a mesma GPU.
+export function getGpuStatus(...groups: GpuTaskLike[][]): GpuStatus {
+  const all = groups.flat()
   const running = all.find((task) => task.status === 'processing' || task.status === 'preparing')
   return {
     busyWith: running?.fileName ?? null,

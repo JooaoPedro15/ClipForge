@@ -2,6 +2,7 @@
 // avisam: so o que o usuario precisa saber estando em outra janela.
 import { formatDuration } from '@/lib/utils'
 import type { ClipSplitterDoneEvent, ClipSplitterErrorEvent } from '@/types/clipSplitter'
+import type { CortesDoneEvent, CortesErrorEvent } from '@/types/cortes'
 import type { HardsubEvent, HardsubMode, SubtitleDoneEvent, SubtitleErrorEvent } from '@/types/subtitle'
 
 export interface Notice {
@@ -55,6 +56,20 @@ export function preEditNotice(event: ClipSplitterDoneEvent | ClipSplitterErrorEv
   }
   if (event.status === 'error') {
     return { title: 'A pré-edição parou com erro', body: `${event.sourceName}: ${firstLine(event.error)}` }
+  }
+  return null
+}
+
+export function cortesNotice(event: CortesDoneEvent | CortesErrorEvent): Notice | null {
+  if (event.status === 'completed') {
+    const count = event.analysis.clips.length
+    return {
+      title: event.kind === 'resegment' ? 'Clipes refeitos' : 'Cortes prontos',
+      body: `${event.sourceName}: ${count} ${count === 1 ? 'clipe' : 'clipes'}.`,
+    }
+  }
+  if (event.status === 'error') {
+    return { title: 'Os cortes pararam com erro', body: `${event.sourceName}: ${firstLine(event.error)}` }
   }
   return null
 }

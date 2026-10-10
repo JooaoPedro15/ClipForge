@@ -27,3 +27,14 @@ describe('preferencias lembradas', () => {
     expect(saved.state.subtitleSettings).not.toHaveProperty('outputPath')
   })
 })
+
+describe('cortes', () => {
+  test('o molde escolhido fica salvo junto com as opcoes do Inspetor', () => {
+    useAppStore.getState().patchCortesSettings({ templatePath: 'D:\\molde.xml', minSec: 60 })
+
+    const saved = useAppStore.persist.getOptions().storage?.getItem(PREFERENCES_KEY) as {
+      state: { cortesSettings: Record<string, unknown> }
+    }
+    expect(saved.state.cortesSettings).toMatchObject({ templatePath: 'D:\\molde.xml', minSec: 60, titlesWithAi: true })
+  })
+})

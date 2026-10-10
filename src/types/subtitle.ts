@@ -1,5 +1,5 @@
 // Identifica as ferramentas disponiveis no shell principal do app.
-export type ToolId = 'subtitle-forge' | 'clip-splitter'
+export type ToolId = 'subtitle-forge' | 'clip-splitter' | 'cortes'
 
 // Modelos Whisper expostos no seletor da interface.
 export type SubtitleModel = 'tiny' | 'base' | 'small' | 'medium' | 'large-v3'

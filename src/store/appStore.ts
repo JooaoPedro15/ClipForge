@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
 
+import { addLoadedCortesTask, patchCortesXml, startCortesTask, upsertCortesTask, type CortesEvent } from '@/store/cortesTasks'
 import { createPreferenceStorage, pickPreferences, PREFERENCES_KEY, restorePreferences } from '@/store/preferences'
 
 import type {
@@ -10,6 +11,7 @@ import type {
   ClipSplitterOptions,
   ClipSplitterTask,
 } from '@/types/clipSplitter'
+import type { CortesAnalyzeOptions, CortesProgressEvent, CortesSettings, CortesTask, CortesXmlState } from '@/types/cortes'
 import type {
   HardsubEvent,
   SubtitleDoneEvent,
@@ -50,6 +52,17 @@ const defaultClipSplitterSettings: ClipSplitterOptions = {
   outputDir: null,
 }
 
+// Inspetor dos Cortes: sem molde ate o usuario escolher; titulos pelo LLM local ligados.
+const defaultCortesSettings: CortesSettings = {
+  templatePath: '',
+  filmTrack: 1,
+  micTrack: 2,
+  minSec: 70,
+  targetSec: 150,
+  maxSec: 240,
+  titlesWithAi: true,
+}
+
 // Garante que o silencio minimo nunca fique abaixo do que o detector aceita.
 function normalizeClipSplitterSettings(settings: ClipSplitterOptions): ClipSplitterOptions {
   return {
@@ -79,6 +92,15 @@ interface AppState {
   upsertClipSplitterProgress: (event: ClipSplitterProgressEvent) => void
   completeClipSplitterTask: (event: ClipSplitterDoneEvent) => void
   failClipSplitterTask: (event: ClipSplitterErrorEvent) => void
+  cortesSettings: CortesSettings
+  cortesTasks: CortesTask[]
+  cortesSourcePath: string | null
+  patchCortesSettings: (patch: Partial<CortesSettings>) => void
+  setCortesSourcePath: (sourcePath: string | null) => void
+  upsertCortesEvent: (event: CortesEvent) => void
+  startCortesEvent: (event: CortesProgressEvent, request: CortesAnalyzeOptions) => void
+  addLoadedCortesTask: (task: CortesTask) => void
+  setCortesXml: (taskId: string, xml: CortesXmlState) => void
 }
 
 // Insere ou atualiza uma tarefa de legenda conforme os eventos vindos do backend.
@@ -251,6 +273,15 @@ export const useAppStore = create<AppState>()(
     set((state) => ({
       clipSplitterTasks: upsertClipSplitterTask(state.clipSplitterTasks, event),
     })),
+  cortesSettings: defaultCortesSettings,
+  cortesTasks: [],
+  cortesSourcePath: null,
+  patchCortesSettings: (patch) => set((state) => ({ cortesSettings: { ...state.cortesSettings, ...patch } })),
+  setCortesSourcePath: (sourcePath) => set({ cortesSourcePath: sourcePath }),
+  upsertCortesEvent: (event) => set((state) => ({ cortesTasks: upsertCortesTask(state.cortesTasks, event) })),
+  startCortesEvent: (event, request) => set((state) => ({ cortesTasks: startCortesTask(state.cortesTasks, event, request) })),
+  addLoadedCortesTask: (task) => set((state) => ({ cortesTasks: addLoadedCortesTask(state.cortesTasks, task) })),
+  setCortesXml: (taskId, xml) => set((state) => ({ cortesTasks: patchCortesXml(state.cortesTasks, taskId, xml) })),
     }),
     {
       name: PREFERENCES_KEY,

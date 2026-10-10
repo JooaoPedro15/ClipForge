@@ -17,6 +17,10 @@ export const pageMeta: Record<ToolId, { title: string; description: string }> = 
     title: 'Pré-edição',
     description: 'Encurta as pausas do vídeo bruto e entrega uma versão única, na ordem original, pronta pra revisar.',
   },
+  cortes: {
+    title: 'Cortes',
+    description: 'Corta o react gravado em clipes pro TikTok e gera o XML do Premiere no layout do seu molde.',
+  },
 }
 
 export default function App() {
@@ -24,13 +28,15 @@ export default function App() {
   const setActiveTool = useAppStore((state) => state.setActiveTool)
   const subtitleTasks = useAppStore((state) => state.subtitleTasks)
   const clipSplitterTasks = useAppStore((state) => state.clipSplitterTasks)
+  const cortesTasks = useAppStore((state) => state.cortesTasks)
   const clipSplitter = useClipSplitter()
   const subtitleForge = useSubtitleForge()
 
-  // As duas ferramentas dividem a mesma fila de GPU, entao o status e global.
+  // As ferramentas dividem a mesma fila de GPU, entao o status e global.
   const gpu = getGpuStatus(
     subtitleGpuEntries(subtitleTasks),
     clipSplitterTasks.map((task) => ({ fileName: task.sourceName, status: task.status })),
+    cortesTasks.map((task) => ({ fileName: task.sourceName, status: task.status })),
   )
 
   let content

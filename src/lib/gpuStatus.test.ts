@@ -15,6 +15,11 @@ describe('getGpuStatus', () => {
     expect(getGpuStatus(subtitle, preEdit)).toEqual({ busyWith: 'bruto.mkv', queued: 1 })
   })
 
+  test('cortes entram na mesma conta', () => {
+    const cortes = [{ fileName: 'react.mp4', status: 'processing' as const }]
+    expect(getGpuStatus([{ ...base }], [], cortes)).toEqual({ busyWith: 'react.mp4', queued: 1 })
+  })
+
   test('preparando tambem ocupa a gpu', () => {
     expect(getGpuStatus([{ fileName: 'ep02.mp4', status: 'preparing' as const }], [])).toEqual({
       busyWith: 'ep02.mp4',

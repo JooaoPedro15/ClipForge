@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'vitest'
 
-import { burnNotice, preEditNotice, subtitleNotice } from '@/lib/finishNotices'
+import { burnNotice, cortesNotice, preEditNotice, subtitleNotice } from '@/lib/finishNotices'
 import type { ClipSplitterDoneEvent } from '@/types/clipSplitter'
+import type { CortesAnalysisSummary, CortesDoneEvent, CortesErrorEvent } from '@/types/cortes'
 import type { HardsubEvent, SubtitleDoneEvent, SubtitleErrorEvent } from '@/types/subtitle'
 
 const subtitleBase = {
@@ -67,5 +68,34 @@ describe('preEditNotice', () => {
       clips: [{ clipId: 'c', index: 1, filePath: '', fileName: '', startSec: 0, endSec: 0, durationSec: 9_684, reason: '', transcriptSnippet: '' }],
     }
     expect(preEditNotice(event)).toEqual({ title: 'Pré-edição pronta', body: 'live.mkv: 3h 12m viraram 2h 41m.' })
+  })
+})
+
+describe('cortesNotice', () => {
+  const base = { taskId: 'c1', kind: 'analyze' as const, sourcePath: 'E:\\Bruto\\react.mp4', sourceName: 'react.mp4', stage: 'done', message: '' }
+  const analysis: CortesAnalysisSummary = {
+    analysisPath: 'E:\\Bruto\\react.cortes.json',
+    sourcePath: 'E:\\Bruto\\react.mp4',
+    durationSec: 7298,
+    start: 0,
+    end: 7298,
+    durations: { minSec: 70, targetSec: 150, maxSec: 240 },
+    clips: Array.from({ length: 12 }, (_, index) => ({ n: index + 1, start: 0, end: 1, title: '', hook: null, score: null })),
+    warnings: [],
+  }
+  const done: CortesDoneEvent = { ...base, status: 'completed', progress: 100, completedAt: 1, durationSec: 5400, analysis }
+
+  test('analise pronta diz quantos clipes', () => {
+    expect(cortesNotice(done)).toEqual({ title: 'Cortes prontos', body: 'react.mp4: 12 clipes.' })
+  })
+
+  test('refazer clipes tem titulo proprio', () => {
+    expect(cortesNotice({ ...done, kind: 'resegment' })?.title).toBe('Clipes refeitos')
+  })
+
+  test('erro mostra a primeira linha e cancelamento nao avisa', () => {
+    const error: CortesErrorEvent = { ...base, status: 'error', progress: null, error: 'O bruto tem 2 faixa(s)\nTraceback' }
+    expect(cortesNotice(error)).toEqual({ title: 'Os cortes pararam com erro', body: 'react.mp4: O bruto tem 2 faixa(s)' })
+    expect(cortesNotice({ ...error, status: 'cancelled' })).toBeNull()
   })
 })
