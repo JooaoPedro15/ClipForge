@@ -1,6 +1,7 @@
 """Analise salva ao lado do bruto (<bruto>.cortes.json) e escolha de quais clipes vao pro XML."""
 
 import json
+import os
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -37,8 +38,14 @@ def analysis_path(source_path: str | Path) -> Path:
 
 
 def save(analysis: Analysis, path: str | Path) -> Path:
+    """Grava num .tmp e troca de uma vez: um erro no meio nao estraga a analise que ja estava la."""
     out = Path(path)
-    out.write_text(json.dumps({"version": VERSION, **asdict(analysis)}, ensure_ascii=False, indent=1), encoding="utf-8")
+    temp = out.with_name(out.name + ".tmp")
+    try:
+        temp.write_text(json.dumps({"version": VERSION, **asdict(analysis)}, ensure_ascii=False, indent=1), encoding="utf-8")
+        os.replace(temp, out)
+    finally:
+        temp.unlink(missing_ok=True)
     return out
 
 

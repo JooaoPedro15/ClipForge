@@ -2,6 +2,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from cortes.candidates import Candidate
 from cortes.store import Analysis, Clip, analysis_path, load, save, select_clips
@@ -28,6 +29,16 @@ class SaveLoadTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             path = save(sample(), Path(folder) / "b.cortes.json")
             self.assertEqual(load(path), sample())
+
+    def test_failed_save_keeps_the_previous_analysis(self):
+        # Gravacao atomica: um erro no meio nao deixa um cortes.json pela metade no lugar do bom.
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "b.cortes.json"
+            path.write_text("analise anterior", encoding="utf-8")
+            with mock.patch("cortes.store.os.replace", side_effect=OSError("disco cheio")), self.assertRaises(OSError):
+                save(sample(), path)
+            self.assertEqual(path.read_text(encoding="utf-8"), "analise anterior")
+            self.assertEqual([p.name for p in Path(folder).iterdir()], ["b.cortes.json"])
 
     def test_rejects_other_version(self):
         with tempfile.TemporaryDirectory() as folder:
