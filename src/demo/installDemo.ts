@@ -209,6 +209,68 @@ function seedPreEditQueue() {
   })
 }
 
+const demoClipTitles: Array<[string, number]> = [
+  ['Ele percebe que era tudo armação', 7.8],
+  ['O plano dá errado logo de cara', 6.2],
+  ['A cena do elevador', 8.9],
+  ['Ninguém esperava essa volta', 5.4],
+  ['Meu grito no susto', 9.3],
+  ['A conversa que muda tudo', 4.7],
+  ['Fuga pela cozinha', 6.8],
+  ['O final do episódio', 7.1],
+]
+
+// Um react pronto (com lista de clipes) e outro esperando a mesma fila de GPU das outras ferramentas.
+function seedCortesQueue() {
+  const store = useAppStore.getState()
+  const sourcePath = 'E:\\Bruto\\2026-07-28 23-40-19.mp4'
+  let cursor = 144
+  const clips = demoClipTitles.map(([title, score], index) => {
+    const start = cursor
+    cursor += 95 + ((index * 37) % 120)
+    return { n: index + 1, start, end: cursor, title, hook: Math.round(score), score }
+  })
+
+  store.patchCortesSettings({ templatePath: 'D:\\Premiere\\molde-react.xml' })
+  store.setCortesSourcePath('E:\\Bruto\\2026-08-02 22-10-05.mp4')
+  store.upsertCortesEvent({
+    taskId: 'demo-cortes-done',
+    kind: 'analyze',
+    sourcePath,
+    sourceName: '2026-07-28 23-40-19.mp4',
+    status: 'completed',
+    stage: 'done',
+    message: 'Analise pronta: 8 clipes.',
+    progress: 100,
+    startedAt: now - minutes(96),
+    completedAt: now - minutes(6),
+    durationSec: 5_412,
+    warnings: ['Sem -hwaccel cuda: li o bruto na CPU (mais lento).'],
+    analysis: {
+      analysisPath: 'E:\\Bruto\\2026-07-28 23-40-19.cortes.json',
+      sourcePath,
+      durationSec: 7_298,
+      start: 144,
+      end: cursor,
+      durations: { minSec: 70, targetSec: 150, maxSec: 240 },
+      clips,
+      warnings: ['Sem -hwaccel cuda: li o bruto na CPU (mais lento).'],
+    },
+  })
+  store.upsertCortesEvent({
+    taskId: 'demo-cortes-running',
+    kind: 'analyze',
+    sourcePath: 'E:\\Bruto\\2026-08-02 22-10-05.mp4',
+    sourceName: '2026-08-02 22-10-05.mp4',
+    status: 'queued',
+    stage: 'queued',
+    message: 'Na fila (3)',
+    progress: null,
+    // Atras da queima em chines e da pre-edicao: a GPU roda um job por vez.
+    queuePosition: 3,
+  })
+}
+
 // ?animate: a queima em chines (o unico job rodando na GPU) anda sozinha, pro video parecer vivo.
 function animateQueue() {
   window.setInterval(() => {
@@ -236,10 +298,11 @@ export function installDemo(params: URLSearchParams) {
   }
   seedSubtitleQueue()
   seedPreEditQueue()
+  seedCortesQueue()
 
-  // ?demo=clip-splitter abre direto no Pre-Editor.
+  // ?demo=clip-splitter abre direto no Pre-Editor; ?demo=cortes, nos Cortes.
   const tool = params.get('demo')
-  if (tool === 'subtitle-forge' || tool === 'clip-splitter') {
+  if (tool === 'subtitle-forge' || tool === 'clip-splitter' || tool === 'cortes') {
     useAppStore.getState().setActiveTool(tool satisfies ToolId)
   }
   if (params.get('format') === 'shorts') {

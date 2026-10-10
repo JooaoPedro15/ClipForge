@@ -1,4 +1,4 @@
-import { Captions, Scissors } from 'lucide-react'
+import { Captions, Clapperboard, Scissors } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import type { ToolId } from '@/types/subtitle'
@@ -20,6 +20,12 @@ export const tools = [
     label: 'Pré-edição',
     hint: 'Encurta as pausas do vídeo bruto',
     icon: Scissors,
+  },
+  {
+    id: 'cortes' as const,
+    label: 'Cortes',
+    hint: 'Corta o react em clipes pro TikTok e gera o XML do Premiere',
+    icon: Clapperboard,
   },
 ] satisfies Array<{
   id: ToolId

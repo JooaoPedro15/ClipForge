@@ -19,6 +19,7 @@ const shots = [
   { file: 'legendas.png', query: '?demo=subtitle-forge' },
   { file: 'legendas-shorts.png', query: '?demo=subtitle-forge&format=shorts' },
   { file: 'pre-edicao.png', query: '?demo=clip-splitter' },
+  { file: 'cortes.png', query: '?demo=cortes' },
   { file: 'monitor.png', query: '?demo=subtitle-forge&format=shorts', selector: '[aria-label="Inspetor"] figure' },
 ]
 

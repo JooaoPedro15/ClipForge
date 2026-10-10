@@ -31,7 +31,7 @@ O escopo atual e simples: preparar material bruto com rapidez, gerar legendas e 
 | --- | --- | --- |
 | **Legendas** (SubtitleForge) | Estavel | Transcreve audio/video com Whisper e gera arquivos `.srt`. |
 | **Pre-edicao** (Pre-Editor) | Em evolucao | Pre-edita videos brutos, comprime pausas e gera uma versao longa mais rapida de revisar. |
-| **Cortes** | Em construcao (linha de comando) | Corta o react gravado em clipes 9:16 e gera o XML pro Premiere no layout de um molde seu. |
+| **Cortes** | Novo | Corta o react gravado em clipes 9:16 e gera o XML pro Premiere no layout de um molde seu. |
 
 ## Interface
 
@@ -41,14 +41,16 @@ A interface segue o desenho de um editor de video: barra de titulo com o estado 
 | --- | --- |
 | ![Fila de legendas com um video transcrevendo, um na fila e um pronto com os botoes de queima](docs/screenshots/legendas.png) | ![Pre-edicao com o video bruto escolhido, fila e o diagrama de pausas no Inspetor](docs/screenshots/pre-edicao.png) |
 
+![Cortes com o bruto escolhido, um react na fila, outro pronto com a lista de clipes marcados e o Inspetor com molde e duracoes](docs/screenshots/cortes.png)
+
 <img align="right" src="docs/screenshots/monitor.png" alt="Monitor de previa da legenda em 9:16 com barra de transporte" width="260" />
 
 - **Monitor de previa (Legendas):** mostra uma frase de exemplo como ela vai sair, no formato escolhido (9:16 ou 16:9), na posicao da queima e com as opcoes de texto aplicadas: maiusculas/minusculas, acentos, pontuacao, palavras por legenda e caracteres por linha. A formatacao espelha o `render_srt` do Python (`src/lib/captionPreview.ts`, com testes). Troca de legenda como no video e tem pausa.
 - **Diagrama de pausas (Pre-edicao):** o mesmo trecho de exemplo antes e depois, com os limites reais de cada tipo de pausa (`PREEDIT_MODE_SETTINGS`) pra intensidade escolhida: Leve, Equilibrada ou Forte (`src/lib/pausePreview.ts`).
 - **Duas entradas em Legendas:** **Legendar** (bruto ou audio, sai o `.srt` pra editar) e **Versao em chines** (video pronto, sai traduzido e queimado). O que acontece com o arquivo depende de onde ele foi solto, nao de uma opcao lembrada que poderia queimar um video sem querer. O pedido vai junto da tarefa pro processo principal do Electron, que enfileira a queima quando a transcricao termina (`autoBurn`, ver `electron/ipc/autoBurn.flow.test.ts`).
-- **Fila:** uma linha por arquivo, com anel de progresso, o que esta rodando e o que saiu. Video da versao em chines mostra a etapa (1/2 Transcricao, 2/2 Traducao e queima) e so fica pronto quando o video em chines sai. Legenda pronta de Legendar mostra os botoes de queima; pre-edicao pronta mostra quanto o bruto encolheu. A barra de titulo conta a queima como GPU ocupada.
-- **Aviso quando termina:** com a janela em segundo plano, legenda, queima ou pre-edicao que termina (ou falha) gera um aviso do Windows, e clicar nele traz o app pra frente. O icone tambem pisca na barra de tarefas ate voce voltar, o que funciona mesmo com o **Nao incomodar** do Windows ligado (ele bloqueia o aviso, nao o piscar). Cancelamento nao avisa.
-- **Lembra as escolhas:** a ferramenta aberta e as opcoes do Inspetor voltam como estavam na proxima abertura (`localStorage`, chave `clipforge:preferencias`). Caminhos de saida nao sao lembrados, porque valem pra um video so. Opcao nova numa versao futura nasce com o valor padrao e dado corrompido e ignorado (`src/store/preferences.ts`).
+- **Fila:** uma linha por arquivo, com anel de progresso, o que esta rodando e o que saiu. Video da versao em chines mostra a etapa (1/2 Transcricao, 2/2 Traducao e queima) e so fica pronto quando o video em chines sai. Legenda pronta de Legendar mostra os botoes de queima; pre-edicao pronta mostra quanto o bruto encolheu. React nos Cortes mostra a etapa (1/4 Leitura, 2/4 Transcricao, 3/4 Cortes, 4/4 Titulos) e, pronto, a lista de clipes. A barra de titulo conta a queima e os Cortes como GPU ocupada.
+- **Aviso quando termina:** com a janela em segundo plano, legenda, queima, pre-edicao ou analise dos Cortes que termina (ou falha) gera um aviso do Windows, e clicar nele traz o app pra frente. O icone tambem pisca na barra de tarefas ate voce voltar, o que funciona mesmo com o **Nao incomodar** do Windows ligado (ele bloqueia o aviso, nao o piscar). Cancelamento nao avisa.
+- **Lembra as escolhas:** a ferramenta aberta e as opcoes do Inspetor voltam como estavam na proxima abertura (`localStorage`, chave `clipforge:preferencias`). Caminhos de saida nao sao lembrados, porque valem pra um video so; o molde dos Cortes e lembrado, porque vale pra todo react. Opcao nova numa versao futura nasce com o valor padrao e dado corrompido e ignorado (`src/store/preferences.ts`).
 
 <br clear="right" />
 
@@ -60,7 +62,7 @@ As imagens deste README saem do proprio app em **modo demonstracao** (fila de ex
 npm run screenshots
 ```
 
-O script (`scripts/capture-screenshots.mjs`) sobe o Vite, abre o app com `?demo` numa janela escondida do Electron e salva PNG em 2x em `docs/screenshots/`. Pra ver a demo no navegador: `npm run dev` e abra `http://localhost:5173/?demo` (`?demo=clip-splitter` abre na Pre-edicao). O modo demo so existe em dev; o build de producao nao inclui nada dele.
+O script (`scripts/capture-screenshots.mjs`) sobe o Vite, abre o app com `?demo` numa janela escondida do Electron e salva PNG em 2x em `docs/screenshots/`. Pra ver a demo no navegador: `npm run dev` e abra `http://localhost:5173/?demo` (`?demo=clip-splitter` abre na Pre-edicao, `?demo=cortes` nos Cortes). O modo demo so existe em dev; o build de producao nao inclui nada dele.
 
 Pra um video curto (LinkedIn, portfolio):
 
@@ -137,7 +139,18 @@ Pela entrada **Versao em chines** a queima "So chines" comeca sozinha quando a t
 
 Requisito: `ffmpeg`/`ffprobe` precisam estar instalados e acessiveis no PATH (ou em `C:\ffmpeg\bin`) — nao ha download automatico como o modelo Whisper/NLLB.
 
-### Cortes para TikTok (linha de comando)
+### Cortes para TikTok
+
+#### No app
+
+1. Abra **Cortes** no trilho e escolha o **molde** no Inspetor (uma vez so: fica lembrado).
+2. Solte o bruto do react no cartao (ou **Escolher bruto**). Se quiser so um pedaco, preencha **Comecar em** / **Terminar em** (`2:24`, `1:58:00`); vazio e o video inteiro.
+3. **Analisar**: o react entra na mesma fila de GPU das outras ferramentas e passa por 1/4 Leitura, 2/4 Transcricao, 3/4 Cortes e 4/4 Titulos. Um react de 2h leva por volta de 1h30 (o HD externo e o Whisper sao o grosso). Da pra cancelar a qualquer momento; os arquivos temporarios sao apagados.
+4. Pronto, o item mostra os clipes (numero, inicio, duracao, titulo e nota), todos marcados. **Todos/Nenhum** e **Marcar N melhores** mudam a selecao; **Gerar XML** grava `<bruto>.cortes.xml` ao lado do bruto em segundos (sem passar pela fila) e **Abrir pasta** mostra o arquivo. No Premiere: *Arquivo > Importar*.
+
+No Inspetor: **Faixas de audio** (filme 1, mic 2), **Duracao dos clipes** (minimo 70, alvo 150, maximo 240 s) e **Titulos com IA** (o `qwen2.5:7b-instruct` local da titulo e nota de gancho a cada clipe; desligado, os clipes saem `Clipe 01`, `Clipe 02`... com nota so pela sua reacao). Mudou a duracao depois de analisar? O item mostra **Refazer clipes**, que refaz as fronteiras sem reler o bruto. A analise fica salva em `<bruto>.cortes.json`: soltar o mesmo bruto de novo traz a lista de volta na hora. Avisos da analise (ex.: leitura na CPU sem `-hwaccel cuda`, Ollama fora do ar) aparecem em laranja no item.
+
+#### Pela linha de comando
 
 Gera um **XML do Premiere** (Final Cut Pro XML) com os clipes do react numa sequencia so, um depois do outro, com um espaco entre eles e um marcador em cada um. O layout vem de um **molde**: uma sequencia sua ja montada, exportada em *Arquivo > Exportar > Final Cut Pro XML*. Do primeiro clipe do molde o modulo copia filme (V1), webcam (V2, inclusive o Lumetri), loop do link (V3, sequencia aninhada) e as faixas de audio com o volume, e repete pra cada clipe novo trocando so os tempos e o caminho do bruto. No projeto do react, *Arquivo > Importar* o XML: a sequencia aponta pro bruto inteiro, entao da pra esticar clipe, mover tela e mexer no volume normalmente.
 
@@ -260,7 +273,7 @@ Esse comando inicia o Vite, compila o processo principal do Electron em modo wat
 ```text
 clip-forge/
 ├─ electron/             # Processo principal, preload e handlers IPC
-│  ├─ ipc/               # Handlers IPC (subtitle, subtitleBurn, clipSplitter)
+│  ├─ ipc/               # Handlers IPC (subtitle, subtitleBurn, clipSplitter, cortes)
 │  ├─ python/            # Runner Python, leitura de eventos e fila unica de GPU
 │  └─ testing/           # Processo falso e utilitarios dos testes de IPC
 ├─ python/               # Workers locais (faster-whisper, FFmpeg) + modulos puros
@@ -269,13 +282,14 @@ clip-forge/
 │  ├─ segmentation.py    # Palavras do Whisper -> legendas (cards)
 │  ├─ style_*.py         # Aprendizado do estilo (alinhamento, features, arvore, biblioteca, servico)
 │  ├─ cortes/            # Cortes: molde do Premiere, XML, analise do bruto (sem Electron)
-│  ├─ cortes_service.py  # CLI do modulo de cortes (npm run cortes)
+│  ├─ cortes_service.py  # CLI do modulo de cortes (o app e o npm run cortes chamam)
 │  └─ requirements.txt   # Dependencias Python fixadas
 ├─ resources/            # Icones do aplicativo
 ├─ scripts/              # Scripts utilitarios (inclui a captura das telas do README)
 ├─ src/
 │  ├─ components/
 │  │  ├─ clipSplitter/   # Pre-edicao: video bruto, diagrama de pausas, fila
+│  │  ├─ cortes/         # Cortes: bruto e trecho, fila com etapas, lista de clipes, Inspetor do molde
 │  │  ├─ inspector/      # Secoes recolhiveis e campos do Inspetor
 │  │  ├─ layout/         # Barra de titulo, trilho de ferramentas e area de trabalho
 │  │  ├─ subtitle/       # Legendas: monitor de previa, fila, queima, meu estilo

@@ -1,9 +1,11 @@
 import { Rail } from '@/components/layout/Rail'
 import { Titlebar } from '@/components/layout/Titlebar'
 import { useClipSplitter } from '@/hooks/useClipSplitter'
+import { useCortes } from '@/hooks/useCortes'
 import { useSubtitleForge } from '@/hooks/useSubtitleForge'
 import { getGpuStatus, subtitleGpuEntries } from '@/lib/gpuStatus'
 import { ClipSplitterPage } from '@/pages/ClipSplitter'
+import { CortesPage } from '@/pages/Cortes'
 import { SubtitleForgePage } from '@/pages/SubtitleForge'
 import { useAppStore } from '@/store/appStore'
 import type { ToolId } from '@/types/subtitle'
@@ -31,6 +33,7 @@ export default function App() {
   const cortesTasks = useAppStore((state) => state.cortesTasks)
   const clipSplitter = useClipSplitter()
   const subtitleForge = useSubtitleForge()
+  const cortes = useCortes()
 
   // As ferramentas dividem a mesma fila de GPU, entao o status e global.
   const gpu = getGpuStatus(
@@ -50,6 +53,21 @@ export default function App() {
         onPickSourceFile={clipSplitter.pickSourceFile}
         onRetryTask={clipSplitter.retryTask}
         onStartSplit={() => clipSplitter.startSplit()}
+      />
+    )
+  } else if (activeTool === 'cortes') {
+    content = (
+      <CortesPage
+        {...pageMeta.cortes}
+        onAnalyze={cortes.analyze}
+        onCancelTask={cortes.cancelTask}
+        onDropSource={cortes.chooseSource}
+        onGenerateXml={cortes.generateXml}
+        onOpenPath={cortes.openPath}
+        onPickSource={cortes.pickSource}
+        onPickTemplate={cortes.pickTemplate}
+        onResegment={cortes.resegment}
+        onRetryTask={cortes.retryTask}
       />
     )
   } else {
