@@ -41,7 +41,13 @@ export function upsertCortesTask(tasks: CortesTask[], event: CortesEvent): Corte
     xml: event.analysis ? null : (current?.xml ?? null),
   }
 
-  return current ? tasks.map((task) => (task.id === next.id ? next : task)) : [next, ...tasks]
+  const updated = current ? tasks.map((task) => (task.id === next.id ? next : task)) : [next, ...tasks]
+  // O <bruto>.cortes.json foi regravado: outro item parado do mesmo bruto mostraria clipes que nao
+  // existem mais, e o "Gerar XML" dele mandaria numeros da lista nova.
+  const path = event.analysis?.analysisPath
+  return path
+    ? updated.filter((task) => task.id === next.id || isCortesActive(task.status) || task.analysis?.analysisPath !== path)
+    : updated
 }
 
 // Resposta do "Analisar": os eventos do processo principal costumam chegar antes dela, entao

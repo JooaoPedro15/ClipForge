@@ -55,6 +55,13 @@ describe('upsertCortesTask', () => {
     expect(next[0]).toMatchObject({ progress: 40, warnings: ['sem cuda'], stage: 'titling' })
   })
 
+  test('analise nova do mesmo bruto tira da fila o item antigo (os numeros dos clipes mudaram)', () => {
+    const loaded = addLoadedCortesTask([], loadedCortesTask('antigo', 'E:\\Bruto\\react.mp4', analysis))
+    const running = upsertCortesTask(loaded, progress({ taskId: 'novo' }))
+    expect(running.map((task) => task.id)).toEqual(['novo', 'antigo'])
+    expect(upsertCortesTask(running, done({ taskId: 'novo' })).map((task) => task.id)).toEqual(['novo'])
+  })
+
   test('lista nova zera o XML gerado antes (a numeracao mudou)', () => {
     const tasks = patchCortesXml(upsertCortesTask([], done()), 't1', { status: 'done', outputPath: 'E:\\Bruto\\react.cortes.xml', error: null })
     expect(tasks[0]?.xml?.status).toBe('done')
@@ -87,7 +94,8 @@ describe('analise carregada', () => {
 
 describe('patchCortesXml', () => {
   test('mexe so no item certo', () => {
-    const tasks = upsertCortesTask(upsertCortesTask([], done({ taskId: 'a' })), done({ taskId: 'b' }))
+    const other = { ...analysis, analysisPath: 'E:\\Bruto\\outro.cortes.json' }
+    const tasks = upsertCortesTask(upsertCortesTask([], done({ taskId: 'a' })), done({ taskId: 'b', analysis: other }))
     const patched = patchCortesXml(tasks, 'a', { status: 'running', outputPath: null, error: null })
     expect(patched.find((task) => task.id === 'a')?.xml?.status).toBe('running')
     expect(patched.find((task) => task.id === 'b')?.xml).toBeNull()
