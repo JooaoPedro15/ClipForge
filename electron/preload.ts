@@ -112,6 +112,37 @@ const api = {
       }
     },
   },
+  cortes: {
+    // Analise do react em clipes (fila de GPU), XML do Premiere e analise salva ao lado do bruto.
+    analyze: (sourcePath: string, options: Record<string, unknown>) =>
+      ipcRenderer.invoke('cortes:analyze', sourcePath, options),
+    resegment: (taskId: string, request: Record<string, unknown>) =>
+      ipcRenderer.invoke('cortes:resegment', taskId, request),
+    cancel: (taskId: string) => ipcRenderer.invoke('cortes:cancel', taskId),
+    load: (sourcePath: string) => ipcRenderer.invoke('cortes:load', sourcePath),
+    generateXml: (request: Record<string, unknown>) => ipcRenderer.invoke('cortes:generate-xml', request),
+    onProgress: (cb: (data: unknown) => void) => {
+      const listener = (_event: unknown, data: unknown) => cb(data)
+      ipcRenderer.on('cortes:progress', listener)
+      return () => {
+        ipcRenderer.removeListener('cortes:progress', listener)
+      }
+    },
+    onDone: (cb: (data: unknown) => void) => {
+      const listener = (_event: unknown, data: unknown) => cb(data)
+      ipcRenderer.on('cortes:done', listener)
+      return () => {
+        ipcRenderer.removeListener('cortes:done', listener)
+      }
+    },
+    onError: (cb: (data: unknown) => void) => {
+      const listener = (_event: unknown, data: unknown) => cb(data)
+      ipcRenderer.on('cortes:error', listener)
+      return () => {
+        ipcRenderer.removeListener('cortes:error', listener)
+      }
+    },
+  },
 } as const
 
 // Injeta a API no objeto window do renderer.

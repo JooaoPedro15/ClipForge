@@ -3,6 +3,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { registerClipSplitterHandlers } from './ipc/clipSplitter.js'
+import { registerCortesHandlers } from './ipc/cortes.js'
 import { registerSubtitleHandlers } from './ipc/subtitle.js'
 import { registerHardsubHandlers } from './ipc/subtitleBurn.js'
 import { registerSubtitleStyleHandlers } from './ipc/subtitleStyle.js'
@@ -116,6 +117,7 @@ registerSubtitleHandlers()
 registerHardsubHandlers()
 registerSubtitleStyleHandlers()
 registerClipSplitterHandlers()
+registerCortesHandlers()
 
 // Cria a janela quando o Electron estiver pronto e reabre no macOS ao reativar.
 app.whenReady().then(() => {

@@ -80,6 +80,16 @@ function installFakeBridge() {
       onDone: off,
       onError: off,
     },
+    cortes: {
+      analyze: async () => 'demo',
+      resegment: async () => false,
+      cancel: async () => false,
+      load: async () => null,
+      generateXml: async () => ({ ok: false, error: 'Modo demonstração.' }),
+      onProgress: off,
+      onDone: off,
+      onError: off,
+    },
   }
 }
 
