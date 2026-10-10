@@ -69,6 +69,44 @@ class AlignBreaksTest(unittest.TestCase):
         self.assertEqual(len(alignment.labels), 60)
 
 
+class CutSectionsTest(unittest.TestCase):
+    """O usuario corta trechos com fala no Premiere DEPOIS de legendar: isso nao e legenda errada."""
+
+    RAW = timed_words(
+        [
+            ("eu", 0, 0.2), ("fui", 0.25, 0.45), ("la", 0.5, 0.7),
+            ("isso", 1.0, 1.2), ("aqui", 1.25, 1.45), ("nao", 1.5, 1.7), ("presta", 1.75, 2.0),
+            ("ontem", 2.3, 2.5), ("tava", 2.55, 2.8), ("cheio", 2.85, 3.1),
+        ]
+    )
+
+    def test_cut_words_are_told_apart_from_corrected_words(self):
+        cards = [Card(0, 0.75, "eu Fuy la"), Card(0.75, 1.6, "ontem tava cheio")]
+
+        alignment = style_alignment.align_breaks(self.RAW, cards)
+
+        self.assertEqual(alignment.cut_words, {3, 4, 5, 6})
+        self.assertEqual(alignment.word_fixes, [("fui", "Fuy")])
+
+    def test_correction_glued_to_a_cut_has_no_reliable_pair_and_counts_as_cut(self):
+        # "la" corrigido pra "Lah" colado na frase cortada: o difflib junta tudo num bloco 5 -> 1.
+        cards = [Card(0, 0.75, "eu fui Lah"), Card(0.75, 1.6, "ontem tava cheio")]
+
+        alignment = style_alignment.align_breaks(self.RAW, cards)
+
+        self.assertEqual(alignment.cut_words, {2, 3, 4, 5, 6})
+        self.assertEqual(alignment.word_fixes, [])
+
+    def test_heavy_cutting_is_not_mistaken_for_another_video(self):
+        cards = [Card(0, 0.75, "eu fui"), Card(0.75, 1.6, "la ontem tava cheio")]
+
+        alignment = style_alignment.align_breaks(self.RAW, cards)
+
+        # Todas as palavras do SRT existem no bruto: e o mesmo video, so com 40% cortado.
+        self.assertEqual(alignment.match_ratio, 1.0)
+        self.assertAlmostEqual(alignment.cut_share, 0.4)
+
+
 class AlignSpeechTest(unittest.TestCase):
     def test_finds_speech_times_in_the_final_cut_video(self):
         alignment = style_alignment.align_speech(CARDS, FINAL_WORDS)

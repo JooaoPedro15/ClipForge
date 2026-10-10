@@ -56,9 +56,14 @@ class BreakAlignment:
     labels: dict[int, int]
     # palavra original -> indice da legenda corrigida (so palavras que casaram).
     word_card: dict[int, int]
+    # Das palavras do SRT corrigido, quantas existem no bruto (mede "e o mesmo video?" sem punir cortes).
     match_ratio: float
     # (como o Whisper escreveu, como o usuario escreveu) nas trocas de 1 palavra por 1.
     word_fixes: list[tuple[str, str]] = field(default_factory=list)
+    # Palavras do bruto que sumiram do SRT: trecho cortado no Premiere, nao legenda errada.
+    cut_words: set[int] = field(default_factory=set)
+    # Parte do bruto (em palavras) que ficou de fora por corte.
+    cut_share: float = 0.0
 
 
 @dataclass
@@ -106,6 +111,7 @@ def align_breaks(words: list[dict[str, Any]], cards: list[Card]) -> BreakAlignme
     word_card: dict[int, int] = {}
     word_position: dict[int, int] = {}
     word_fixes: list[tuple[str, str]] = []
+    cut_words: set[int] = set()
     for tag, a0, a1, b0, b1 in _opcodes(a_tokens, b_tokens):
         if tag == "equal":
             for offset in range(a1 - a0):
@@ -114,6 +120,10 @@ def align_breaks(words: list[dict[str, Any]], cards: list[Card]) -> BreakAlignme
                 word_position[word_index] = b0 + offset
         elif tag == "replace" and a1 - a0 == 1 and b1 - b0 == 1:
             word_fixes.append((str(words[a_words[a0]]["word"]).strip(), b_raw[b0]))
+        elif tag == "delete" or (tag == "replace" and a1 - a0 > b1 - b0):
+            # delete: sumiu do SRT (cortado). replace desigual: correcao colada num corte,
+            # sem como saber qual palavra virou qual -> tratado como corte (nao vira exemplo).
+            cut_words.update(a_words[a0:a1])
 
     labels: dict[int, int] = {}
     for index in range(len(words) - 1):
@@ -125,8 +135,14 @@ def align_breaks(words: list[dict[str, Any]], cards: list[Card]) -> BreakAlignme
             continue
         labels[index] = int(word_card[index] != word_card[index + 1])
 
-    ratio = len(word_card) / max(len(a_tokens), len(b_tokens), 1)
-    return BreakAlignment(labels=labels, word_card=word_card, match_ratio=ratio, word_fixes=word_fixes)
+    return BreakAlignment(
+        labels=labels,
+        word_card=word_card,
+        match_ratio=len(word_card) / max(len(b_tokens), 1),
+        word_fixes=word_fixes,
+        cut_words=cut_words,
+        cut_share=len(cut_words) / max(len(a_tokens), 1),
+    )
 
 
 def align_speech(cards: list[Card], final_words: list[dict[str, Any]]) -> SpeechAlignment:
@@ -154,5 +170,5 @@ def align_speech(cards: list[Card], final_words: list[dict[str, Any]]) -> Speech
             end = float(final_words[position_word[last]]["end"])
             card_speech[card_index] = (start, end)
 
-    ratio = len(position_word) / max(len(a_tokens), len(b_tokens), 1)
-    return SpeechAlignment(card_speech=card_speech, match_ratio=ratio)
+    # Das palavras do SRT, quantas aparecem no video final (os dois ja estao com os cortes).
+    return SpeechAlignment(card_speech=card_speech, match_ratio=len(position_word) / max(len(b_tokens), 1))
