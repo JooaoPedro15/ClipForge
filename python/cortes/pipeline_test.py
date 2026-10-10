@@ -164,3 +164,23 @@ class ResegmentTest(unittest.TestCase):
         analysis = pipeline.resegment(analysis_with_old_clips(), Durations(70.0, 150.0, 240.0), None)
         self.assertEqual([c.title for c in analysis.clips], ["Comeco", "Clipe 02", "Clipe 03"])
         self.assertEqual([c.hook for c in analysis.clips], [8, None, None])
+
+
+class SaveAndTitleTest(unittest.TestCase):
+    def test_rules_only_analysis_survives_a_crash_in_the_titles(self):
+        # Depois de ~1h30 de leitura e Whisper, um erro do LLM nos titulos nao pode jogar tudo fora.
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "b.cortes.json"
+            with self.assertRaises(RuntimeError):
+                pipeline.save_and_title(analysis_with_old_clips(), path, FakeTitles(error=RuntimeError("corpo truncado")))
+            self.assertEqual(len(store.load(path).clips), 2)
+
+    def test_saves_again_with_titles_and_their_timing(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "b.cortes.json"
+            analysis = analysis_with_old_clips()
+            analysis.clips = pipeline.clips_from([0.0, 150.0, 300.0])
+            pipeline.save_and_title(analysis, path, FakeTitles())
+            saved = store.load(path)
+            self.assertEqual([c.title for c in saved.clips], ["Novo", "Novo"])
+            self.assertIn("titles", saved.timings)

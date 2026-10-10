@@ -130,6 +130,22 @@ def title_clips(
         clip.score = score
 
 
+def save_and_title(
+    analysis: store.Analysis,
+    path: Path,
+    client: Any,
+    on_clip: Callable[[int, int], None] | None = None,
+    note: WarnFn | None = None,
+) -> None:
+    """Grava a analise so com regras ANTES dos titulos (o LLM pode cair, ou o usuario cancelar, depois
+    de ~1h30 de leitura e Whisper) e grava de novo com os titulos e o tempo que eles levaram."""
+    store.save(analysis, path)
+    began = time.perf_counter()
+    title_clips(analysis, client, {}, on_clip, note)
+    analysis.timings["titles"] = round(time.perf_counter() - began, 1)
+    store.save(analysis, path)
+
+
 def resegment(
     analysis: store.Analysis,
     durations: segmenter.Durations,
@@ -249,15 +265,12 @@ def analyze(
         timings=timings,
     )
     client = title_client(options.title_model, note) if options.title_model else None
-    began = time.perf_counter()
-    title_clips(
+    save_and_title(
         analysis,
+        store.analysis_path(source_path),
         client,
-        {},
         lambda done, total: progress("titling", f"Titulos: clipe {done} de {total}...", 80 + 19 * done // total),
         note,
     )
-    lap("titles", began)
-    store.save(analysis, store.analysis_path(source_path))
     progress("done", f"{len(analysis.clips)} clipes.", 100)
     return analysis
