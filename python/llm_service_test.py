@@ -52,6 +52,24 @@ class OllamaClientTest(unittest.TestCase):
         self.assertEqual(body["messages"][0], {"role": "system", "content": "sys"})
         self.assertEqual(body["messages"][1], {"role": "user", "content": "usr"})
 
+    def test_unload_asks_ollama_to_free_the_model_now(self):
+        # keep_alive=0 tira o modelo da VRAM na hora (o padrao do Ollama segura 5 min).
+        client = llm_service.OllamaClient(model="qwen-test", base_url="http://host:1")
+        response = _fake_response({"done": True})
+
+        with mock.patch.object(llm_service.request, "urlopen", return_value=response) as urlopen:
+            self.assertTrue(client.unload())
+
+        req = urlopen.call_args[0][0]
+        self.assertEqual(req.full_url, "http://host:1/api/generate")
+        self.assertEqual(json.loads(req.data.decode("utf-8")), {"model": "qwen-test", "keep_alive": 0})
+
+    def test_unload_with_server_down_is_quiet(self):
+        client = llm_service.OllamaClient(model="qwen-test", base_url="http://host:1")
+
+        with mock.patch.object(llm_service.request, "urlopen", side_effect=llm_service.error.URLError("refused")):
+            self.assertFalse(client.unload())
+
     def test_chat_json_raises_unavailable_when_server_down(self):
         client = llm_service.OllamaClient(model="qwen-test", base_url="http://host:1")
 

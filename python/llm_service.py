@@ -180,6 +180,15 @@ class OllamaClient:
                 return True
         return False
 
+    def unload(self) -> bool:
+        """Tira o modelo da VRAM agora (keep_alive=0). Sem isso o Ollama segura ~5 min e o
+        proximo job da fila de GPU (Whisper) fica sem memoria numa placa de 8GB. False se nao deu."""
+        try:
+            self._request("/api/generate", {"model": self.model, "keep_alive": 0})
+            return True
+        except LLMUnavailableError:
+            return False
+
     def is_available(self) -> bool:
         """True se o servidor responde E o modelo configurado ja foi baixado."""
         try:
