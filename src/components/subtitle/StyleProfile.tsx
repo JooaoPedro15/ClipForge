@@ -17,6 +17,11 @@ export function StyleReportBox({ report }: { report: StyleReport }) {
       <p className="text-text-muted">
         {report.gapExamples} espaços entre palavras e {report.timingSamples} legendas com tempo aproveitados.
       </p>
+      {report.cutShare >= 0.05 ? (
+        <p className="text-text-muted">
+          ~{Math.round(report.cutShare * 100)}% do bruto foi cortado no Premiere e ficou de fora (não conta como erro de legenda).
+        </p>
+      ) : null}
       {report.warnings.map((warning) => (
         <p className="text-status-warn" key={warning}>
           {warning}

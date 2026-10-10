@@ -173,6 +173,8 @@ def learn(
         "f1After": f1_after,
         "gapExamples": len(gaps),
         "timingSamples": len(timing["lead_in_ms"]),
+        # Parte do bruto cortada no Premiere: ficou de fora do aprendizado (nao e erro de legenda).
+        "cutShare": round(breaks.cut_share, 3),
         "warnings": warnings,
     }
 

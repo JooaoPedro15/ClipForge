@@ -62,6 +62,8 @@ export interface StyleReport {
   f1After: number | null
   gapExamples: number
   timingSamples: number
+  // Parte do video bruto (0 a 1) cortada no Premiere: ignorada no aprendizado, nao conta como erro.
+  cutShare: number
   warnings: string[]
 }
 

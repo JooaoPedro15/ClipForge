@@ -131,7 +131,7 @@ O app aprende onde voce quebra as legendas e como ajusta entrada/saida, a partir
 2. Corrija no Premiere e exporte o `.srt` corrigido e o video final (com os cortes).
 3. Na secao **Meu estilo** do Inspetor, escolha video original, SRT corrigido e video final e clique **Ensinar**.
 
-A comparacao e pelo texto (cortes de silencio nao atrapalham). Uma arvore de decisao (scikit-learn) aprende as quebras e medianas aprendem os tempos, com um perfil para vertical e outro para horizontal. Com 3+ videos ensinados no formato, a chave **Usar meu estilo** passa a segmentar novas legendas assim. Biblioteca em `%APPDATA%/<app>/subtitle-style` (cada video pode ser removido e o perfil e retreinado).
+A comparacao e pelo texto, entao cortar o video depois de legendar nao atrapalha: palavra que sumiu do SRT conta como trecho cortado, nao como legenda errada. Legenda que junta falas dos dois lados de um corte fica de fora, os tempos sao medidos no video final, e o relatorio mostra quanto do bruto foi cortado. Nao precisa exportar o video sem cortes. Uma arvore de decisao (scikit-learn) aprende as quebras e medianas aprendem os tempos, com um perfil para vertical e outro para horizontal. Com 3+ videos ensinados no formato, a chave **Usar meu estilo** passa a segmentar novas legendas assim. Biblioteca em `%APPDATA%/<app>/subtitle-style` (cada video pode ser removido e o perfil e retreinado).
 
 ### Queima de legenda no video (hardsub)
 

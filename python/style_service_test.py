@@ -99,6 +99,7 @@ class StyleServiceTest(unittest.TestCase):
         self.assertGreaterEqual(report["f1Formula"], 0.0)
         self.assertEqual(report["gapExamples"], 9)
         self.assertEqual(report["timingSamples"], 4)
+        self.assertEqual(report["cutShare"], 0.0)
         self.assertEqual(FakeWhisperModel.transcribed, ["original.mp4", "final.mp4"])
         self.assertTrue(self.original.with_suffix(".words.json").exists())
         self.assertEqual([video["name"] for video in self.library()["videos"]], ["original.mp4"])
