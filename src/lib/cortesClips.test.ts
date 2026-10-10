@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 
-import { cortesStep, formatClock, isClockText, sameDurations, topClips } from '@/lib/cortesClips'
+import { cortesStep, formatClock, isClockText, refreshAction, sameDurations, topClips } from '@/lib/cortesClips'
 import type { CortesClip } from '@/types/cortes'
 
 const clip = (n: number, score: number | null): CortesClip => ({ n, start: 0, end: 1, title: '', hook: null, score })
@@ -59,5 +59,24 @@ describe('sameDurations', () => {
     const base = { minSec: 70, targetSec: 150, maxSec: 240 }
     expect(sameDurations(base, { ...base })).toBe(true)
     expect(sameDurations(base, { ...base, minSec: 60 })).toBe(false)
+  })
+})
+
+describe('refreshAction', () => {
+  const durations = { minSec: 70, targetSec: 150, maxSec: 240 }
+  const titled = { ...clip(1, 7.1), hook: 8 }
+  const untitled = clip(2, 2.0)
+
+  test('duracoes mudaram: refazer clipes', () => {
+    expect(refreshAction({ durations, clips: [titled] }, { ...durations, maxSec: 200 }, false)).toBe('resegment')
+  })
+
+  test('mesmas duracoes, titulos com IA ligados e clipe sem titulo: gerar titulos', () => {
+    expect(refreshAction({ durations, clips: [titled, untitled] }, durations, true)).toBe('titles')
+  })
+
+  test('sem nada pra refazer: nenhum botao', () => {
+    expect(refreshAction({ durations, clips: [titled, untitled] }, durations, false)).toBeNull()
+    expect(refreshAction({ durations, clips: [titled] }, durations, true)).toBeNull()
   })
 })

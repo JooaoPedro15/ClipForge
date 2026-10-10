@@ -1,5 +1,5 @@
 // Logica pura da tela de Cortes: etapa da fila, N melhores e tempos.
-import type { CortesClip, CortesDurations } from '@/types/cortes'
+import type { CortesAnalysisSummary, CortesClip, CortesDurations } from '@/types/cortes'
 
 interface CortesStep {
   index: 1 | 2 | 3 | 4
@@ -45,4 +45,17 @@ export function isClockText(text: string): boolean {
 
 export function sameDurations(a: CortesDurations, b: CortesDurations): boolean {
   return a.minSec === b.minSec && a.targetSec === b.targetSec && a.maxSec === b.maxSec
+}
+
+// O que o botao de refazer oferece: duracoes novas refazem os clipes; com "Titulos com IA" ligado e
+// clipe sem titulo (analise feita com a chave desligada, ou titulo que falhou), so gera os titulos.
+export function refreshAction(
+  analysis: Pick<CortesAnalysisSummary, 'durations' | 'clips'>,
+  durations: CortesDurations,
+  titlesWithAi: boolean,
+): 'resegment' | 'titles' | null {
+  if (!sameDurations(analysis.durations, durations)) {
+    return 'resegment'
+  }
+  return titlesWithAi && analysis.clips.some((clip) => clip.hook === null) ? 'titles' : null
 }

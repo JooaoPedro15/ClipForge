@@ -12,6 +12,7 @@ interface CortesTaskItemProps {
   task: CortesTask
   templatePath: string
   durations: CortesDurations
+  titlesWithAi: boolean
   onCancel: (taskId: string) => void
   onRetry: (task: CortesTask) => void
   onResegment: (task: CortesTask) => void
@@ -52,7 +53,7 @@ function rightMeta(task: CortesTask): string {
   return task.status === 'completed' && task.durationSec !== null ? formatDuration(task.durationSec) : ''
 }
 
-export function CortesTaskItem({ task, templatePath, durations, onCancel, onRetry, onResegment, onGenerateXml, onOpenPath }: CortesTaskItemProps) {
+export function CortesTaskItem({ task, templatePath, durations, titlesWithAi, onCancel, onRetry, onResegment, onGenerateXml, onOpenPath }: CortesTaskItemProps) {
   const isActive = isCortesActive(task.status)
   const isRunning = task.status === 'preparing' || task.status === 'processing'
   const step = isRunning ? cortesStep(task.stage) : null
@@ -111,6 +112,7 @@ export function CortesTaskItem({ task, templatePath, durations, onCancel, onRetr
             onOpenPath={onOpenPath}
             onResegment={() => onResegment(task)}
             templatePath={templatePath}
+            titlesWithAi={titlesWithAi}
             xml={task.xml}
           />
         ) : null}

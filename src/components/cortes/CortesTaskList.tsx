@@ -6,6 +6,7 @@ interface CortesTaskListProps {
   tasks: CortesTask[]
   templatePath: string
   durations: CortesDurations
+  titlesWithAi: boolean
   onCancel: (taskId: string) => void
   onRetry: (task: CortesTask) => void
   onResegment: (task: CortesTask) => void

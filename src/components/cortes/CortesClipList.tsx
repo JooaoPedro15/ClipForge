@@ -3,7 +3,7 @@ import { useState } from 'react'
 
 import { Button } from '@/components/ui/Button'
 import { NumberStepper } from '@/components/ui/NumberStepper'
-import { formatClock, sameDurations, topClips } from '@/lib/cortesClips'
+import { formatClock, refreshAction, topClips } from '@/lib/cortesClips'
 import { formatDuration, getFileName } from '@/lib/utils'
 import type { CortesAnalysisSummary, CortesDurations, CortesXmlState } from '@/types/cortes'
 
@@ -13,6 +13,8 @@ interface CortesClipListProps {
   templatePath: string
   // Duracoes atuais do Inspetor: se mudaram desde a analise, aparece "Refazer clipes".
   durations: CortesDurations
+  // "Titulos com IA" ligado e clipe sem titulo: aparece "Gerar titulos".
+  titlesWithAi: boolean
   onGenerateXml: (clips: number[]) => void
   onOpenPath: (path: string) => void
   onResegment: () => void
@@ -21,7 +23,7 @@ interface CortesClipListProps {
 const pad = (value: number) => String(value).padStart(2, '0')
 
 // Clipes de um react analisado: marcar quais vao pro XML e gerar.
-export function CortesClipList({ analysis, xml, templatePath, durations, onGenerateXml, onOpenPath, onResegment }: CortesClipListProps) {
+export function CortesClipList({ analysis, xml, templatePath, durations, titlesWithAi, onGenerateXml, onOpenPath, onResegment }: CortesClipListProps) {
   const { clips } = analysis
   // A lista comeca toda marcada; o item recria este componente quando a lista muda.
   const [selected, setSelected] = useState<Set<number>>(() => new Set(clips.map((clip) => clip.n)))
@@ -30,7 +32,7 @@ export function CortesClipList({ analysis, xml, templatePath, durations, onGener
   const allSelected = selected.size === clips.length
   const hasTemplate = templatePath !== ''
   const generating = xml?.status === 'running'
-  const durationsChanged = !sameDurations(analysis.durations, durations)
+  const refresh = refreshAction(analysis, durations, titlesWithAi)
 
   function toggle(n: number) {
     setSelected((current) => {
@@ -95,9 +97,9 @@ export function CortesClipList({ analysis, xml, templatePath, durations, onGener
         >
           Abrir pasta
         </Button>
-        {durationsChanged ? (
+        {refresh ? (
           <Button leadingIcon={<RotateCcw className="h-3.5 w-3.5" />} onClick={onResegment} size="sm" variant="quiet">
-            Refazer clipes ({durations.minSec}–{durations.targetSec}–{durations.maxSec}s)
+            {refresh === 'titles' ? 'Gerar títulos' : `Refazer clipes (${durations.minSec}–${durations.targetSec}–${durations.maxSec}s)`}
           </Button>
         ) : null}
       </div>

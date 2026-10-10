@@ -85,6 +85,7 @@ export function CortesPage({
         onRetry={(task) => void runAction(() => onRetryTask(task))}
         tasks={tasks}
         templatePath={settings.templatePath}
+        titlesWithAi={settings.titlesWithAi}
       />
     </Workspace>
   )
