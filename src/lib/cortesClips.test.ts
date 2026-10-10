@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 
-import { cortesStep, formatClock, isClockText, refreshAction, sameDurations, topClips } from '@/lib/cortesClips'
+import { cortesStep, formatClock, isClockText, refreshAction, sameDurations, topClips, tracksProblem } from '@/lib/cortesClips'
 import type { CortesClip } from '@/types/cortes'
 
 const clip = (n: number, score: number | null): CortesClip => ({ n, start: 0, end: 1, title: '', hook: null, score })
@@ -78,5 +78,19 @@ describe('refreshAction', () => {
   test('sem nada pra refazer: nenhum botao', () => {
     expect(refreshAction({ durations, clips: [titled, untitled] }, durations, false)).toBeNull()
     expect(refreshAction({ durations, clips: [titled] }, durations, true)).toBeNull()
+  })
+})
+
+describe('tracksProblem', () => {
+  test('faixas diferentes a partir de 1: tudo certo', () => {
+    expect(tracksProblem(1, 2)).toBeNull()
+  })
+
+  test('mesma faixa no filme e no mic: explica o porque', () => {
+    expect(tracksProblem(1, 1)).toMatch(/mesma faixa/)
+  })
+
+  test('faixa 0 nao existe', () => {
+    expect(tracksProblem(0, 2)).toMatch(/começam em 1/)
   })
 })

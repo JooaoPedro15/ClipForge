@@ -1,6 +1,6 @@
 import { startTransition, useEffect, useEffectEvent } from 'react'
 
-import { isClockText } from '@/lib/cortesClips'
+import { isClockText, tracksProblem } from '@/lib/cortesClips'
 import { cortesNotice } from '@/lib/finishNotices'
 import { notifyIfAway } from '@/lib/notify'
 import { getFileName } from '@/lib/utils'
@@ -77,6 +77,10 @@ export function useCortes() {
   async function startAnalysis(sourcePath: string, options: CortesAnalyzeOptions): Promise<CortesActionResult> {
     if (!isClockText(options.start) || !isClockText(options.end)) {
       return { ok: false, message: 'Trecho inválido. Use minutos:segundos, ex.: 2:24 ou 1:58:00.' }
+    }
+    const tracks = tracksProblem(options.filmTrack, options.micTrack)
+    if (tracks) {
+      return { ok: false, message: tracks }
     }
     if (!api?.cortes) {
       return { ok: false, message: NO_BRIDGE }

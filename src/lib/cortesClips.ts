@@ -59,3 +59,14 @@ export function refreshAction(
   }
   return titlesWithAi && analysis.clips.some((clip) => clip.hook === null) ? 'titles' : null
 }
+
+// Mesma checagem do cortes_service.py, pra avisar no clique sem subir o Python.
+export function tracksProblem(filmTrack: number, micTrack: number): string | null {
+  if (filmTrack < 1 || micTrack < 1) {
+    return 'As faixas de áudio começam em 1 (faixa 1 = primeira do bruto).'
+  }
+  if (filmTrack === micTrack) {
+    return `Filme e mic estão na mesma faixa (${filmTrack}): toda fala do filme contaria como sua. Use faixas diferentes no Inspetor.`
+  }
+  return null
+}
