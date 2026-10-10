@@ -100,24 +100,30 @@ def title_clips(
 ) -> None:
     """Titulo e gancho de cada clipe (reaproveita os de `keep` com a mesma fronteira) e recalcula a nota."""
     film, mic = analysis.transcript["film"], analysis.transcript["mic"]
-    for clip in analysis.clips:
-        previous = keep.get(_key(clip))
-        if previous is not None and previous.hook is not None:
-            clip.title, clip.hook = previous.title, previous.hook
-        else:
-            clip.title, clip.hook = f"Clipe {clip.n:02d}", None
-            if client is not None:
-                try:
-                    clip.title, clip.hook = titles.title_clip(client, transcript_lines(film, mic, clip.start, clip.end))
-                except titles.TitleResponseError as error:
-                    if note:
-                        note(f"Titulo do clipe {clip.n:02d} falhou ({error}).")
-                except llm_service.LLMUnavailableError as error:
-                    if note:
-                        note(f"O Ollama caiu nos titulos ({error}); o resto ficou sem titulo.")
-                    client = None
-        if on_clip:
-            on_clip(clip.n, len(analysis.clips))
+    llm = client
+    try:
+        for clip in analysis.clips:
+            previous = keep.get(_key(clip))
+            if previous is not None and previous.hook is not None:
+                clip.title, clip.hook = previous.title, previous.hook
+            else:
+                clip.title, clip.hook = f"Clipe {clip.n:02d}", None
+                if client is not None:
+                    try:
+                        clip.title, clip.hook = titles.title_clip(client, transcript_lines(film, mic, clip.start, clip.end))
+                    except titles.TitleResponseError as error:
+                        if note:
+                            note(f"Titulo do clipe {clip.n:02d} falhou ({error}).")
+                    except llm_service.LLMUnavailableError as error:
+                        if note:
+                            note(f"O Ollama caiu nos titulos ({error}); o resto ficou sem titulo.")
+                        client = None
+            if on_clip:
+                on_clip(clip.n, len(analysis.clips))
+    finally:
+        # Tira o modelo da VRAM ja: o proximo job da fila de GPU (Whisper) nao cabe junto numa placa de 8GB.
+        if llm is not None:
+            llm.unload()
     reactions = [titles.reaction_fraction(analysis.mic_speech, clip.start, clip.end) for clip in analysis.clips]
     scores = titles.clip_scores([clip.hook for clip in analysis.clips], reactions)
     for clip, score in zip(analysis.clips, scores, strict=True):

@@ -109,12 +109,20 @@ class TitleClientTest(unittest.TestCase):
 
 
 class FakeTitles:
-    def __init__(self):
+    def __init__(self, error=None):
         self.calls = 0
+        self.unloads = 0
+        self.error = error
 
     def chat_json(self, system, user, temperature=0):
         self.calls += 1
+        if self.error:
+            raise self.error
         return {"titulo": "Novo", "gancho": 6}
+
+    def unload(self):
+        self.unloads += 1
+        return True
 
 
 def analysis_with_old_clips() -> store.Analysis:
@@ -139,6 +147,18 @@ class ResegmentTest(unittest.TestCase):
         self.assertEqual([c.score for c in analysis.clips], [5.6, 4.2, 4.2])
         self.assertEqual(client.calls, 2)
         self.assertEqual(analysis.options["target_sec"], 150.0)
+
+    def test_frees_the_llm_from_the_gpu_when_titles_end(self):
+        # Sem descarregar, o proximo job da fila (Whisper) fica sem VRAM e cai pra CPU.
+        client = FakeTitles()
+        pipeline.resegment(analysis_with_old_clips(), Durations(70.0, 150.0, 240.0), client)
+        self.assertEqual(client.unloads, 1)
+
+    def test_frees_the_llm_even_when_titles_crash(self):
+        client = FakeTitles(error=RuntimeError("corpo truncado"))
+        with self.assertRaises(RuntimeError):
+            pipeline.resegment(analysis_with_old_clips(), Durations(70.0, 150.0, 240.0), client)
+        self.assertEqual(client.unloads, 1)
 
     def test_without_llm_new_clips_get_a_numbered_title(self):
         analysis = pipeline.resegment(analysis_with_old_clips(), Durations(70.0, 150.0, 240.0), None)
