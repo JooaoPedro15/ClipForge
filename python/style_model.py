@@ -36,7 +36,13 @@ def compute_params(videos: list[dict[str, Any]]) -> dict[str, Any]:
     card_ms = [value for item in timing for value in item["card_ms"]]
     lead_in = [value for item in timing for value in item["lead_in_ms"]]
     hold = [value for item in timing for value in item["hold_ms"]]
-    glued_raw_gaps = [gap["raw_gap_ms"] for item in timing for gap in item["glue"] if gap["user_gap_ms"] < GLUE_USER_GAP_MS]
+    # speech_gap_ms = silencio no video final; raw_gap_ms = formato antigo (bibliotecas de antes dos cortes).
+    glued_gaps = [
+        gap.get("speech_gap_ms", gap.get("raw_gap_ms", 0.0))
+        for item in timing
+        for gap in item["glue"]
+        if gap["user_gap_ms"] < GLUE_USER_GAP_MS
+    ]
 
     min_words = max(1, int(percentile(card_words, 5) or 1))
     max_words = max(min_words, int(percentile(card_words, 95) or 8))
@@ -46,7 +52,7 @@ def compute_params(videos: list[dict[str, Any]]) -> dict[str, Any]:
         "max_card_ms": percentile(card_ms, 95) or 5000.0,
         "lead_in_ms": float(statistics.median(lead_in)) if lead_in else 0.0,
         "hold_ms": float(statistics.median(hold)) if hold else 0.0,
-        "glue_ms": percentile(glued_raw_gaps, 90) or 0.0,
+        "glue_ms": percentile(glued_gaps, 90) or 0.0,
         "min_card_ms": percentile(card_ms, 5) or 0.0,
     }
 

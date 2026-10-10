@@ -60,35 +60,39 @@ def build_gap_examples(words: list[dict[str, Any]], alignment: BreakAlignment) -
     examples: list[dict[str, Any]] = []
     card_start = 0
     current_card = alignment.word_card.get(0)
+    # A legenda atual juntou falas dos dois lados de um corte do Premiere: as palavras e o
+    # tempo do bruto nao sao os da legenda do usuario, entao os espacos dela nao ensinam.
+    card_crosses_cut = False
 
     for index in range(len(words) - 1):
+        if index in alignment.cut_words:
+            card_crosses_cut = True
         label = alignment.labels.get(index)
         next_card = alignment.word_card.get(index + 1)
 
         if label is not None:
-            examples.append({"x": gap_features(words, card_start, index), "y": label})
+            if not card_crosses_cut:
+                examples.append({"x": gap_features(words, card_start, index), "y": label})
             if label == 1:
                 card_start = index + 1
                 current_card = next_card
+                card_crosses_cut = False
             continue
 
-        # Espaco sem rotulo (perto de palavra trocada): nao vira exemplo, mas ainda
-        # acompanha em qual legenda do usuario estamos pra manter o estado certo.
+        # Espaco sem rotulo (perto de palavra trocada ou cortada): nao vira exemplo, mas
+        # ainda acompanha em qual legenda do usuario estamos pra manter o estado certo.
         if next_card is not None and next_card != current_card:
             if current_card is not None:
                 card_start = index + 1
+                card_crosses_cut = False
             current_card = next_card
 
     return examples
 
 
 # Quanto antes da fala a legenda entra, quanto segura depois, quais buracos o usuario fecha e o tamanho delas.
-def build_timing_samples(
-    words: list[dict[str, Any]],
-    cards: list[Card],
-    breaks: BreakAlignment,
-    speech: SpeechAlignment,
-) -> dict[str, list[Any]]:
+# Tudo medido no video FINAL (com os cortes), que e o que o usuario via ao decidir.
+def build_timing_samples(cards: list[Card], speech: SpeechAlignment) -> dict[str, list[Any]]:
     lead_in_ms: list[float] = []
     hold_ms: list[float] = []
     for card_index, (speech_start, speech_end) in sorted(speech.card_speech.items()):
@@ -96,20 +100,17 @@ def build_timing_samples(
         lead_in_ms.append((speech_start - card.start) * 1000)
         hold_ms.append((card.end - speech_end) * 1000)
 
-    card_words: dict[int, list[int]] = {}
-    for word_index, card_index in breaks.word_card.items():
-        card_words.setdefault(card_index, []).append(word_index)
-
     glue: list[dict[str, float]] = []
     for card_index in range(len(cards) - 1):
-        current = card_words.get(card_index)
-        following = card_words.get(card_index + 1)
-        if not current or not following:
+        current = speech.card_speech.get(card_index)
+        following = speech.card_speech.get(card_index + 1)
+        if current is None or following is None:
             continue
-        # Buraco no video CRU (o que existe na hora de gerar) x buraco que o usuario deixou.
-        raw_gap_ms = (float(words[min(following)]["start"]) - float(words[max(current)]["end"])) * 1000
+        # Silencio entre as duas falas no video final x buraco que o usuario deixou entre as legendas.
+        # (Medir no bruto contaria trechos que ele cortou e ensinaria a colar por cima de silencio longo.)
+        speech_gap_ms = (following[0] - current[1]) * 1000
         user_gap_ms = (cards[card_index + 1].start - cards[card_index].end) * 1000
-        glue.append({"raw_gap_ms": max(0.0, raw_gap_ms), "user_gap_ms": user_gap_ms})
+        glue.append({"speech_gap_ms": max(0.0, speech_gap_ms), "user_gap_ms": user_gap_ms})
 
     return {
         "lead_in_ms": lead_in_ms,

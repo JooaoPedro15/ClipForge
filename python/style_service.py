@@ -134,7 +134,7 @@ def learn(
     emit("status", "processing", "aligning", "Comparando a sua legenda com a gerada...", progress=75)
     profile = subtitle_service.resolve_style_profile_name(str(original))
     gaps = style_features.build_gap_examples(words, breaks)
-    timing = style_features.build_timing_samples(words, cards, breaks, speech)
+    timing = style_features.build_timing_samples(cards, speech)
 
     emit("status", "processing", "evaluating", "Medindo quanto o perfil atual acertaria...", progress=82)
     current = _current_profile(store, profile)

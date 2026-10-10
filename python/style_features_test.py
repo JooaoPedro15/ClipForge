@@ -59,6 +59,39 @@ class BuildGapExamplesTest(unittest.TestCase):
         self.assertEqual([example["x"][1] for example in examples], [1, 1, 2])
 
 
+class CutSectionsTest(unittest.TestCase):
+    """Trecho com fala cortado no Premiere depois de legendar."""
+
+    RAW = [
+        {"word": f" {word}", "start": start, "end": end}
+        for word, start, end in [
+            ("eu", 0, 0.2), ("fui", 0.25, 0.45), ("la", 0.5, 0.7),
+            ("isso", 1.0, 1.2), ("aqui", 1.25, 1.45), ("nao", 1.5, 1.7), ("presta", 1.75, 2.0),
+            ("ontem", 2.3, 2.5), ("tava", 2.55, 2.8), ("cheio", 2.85, 3.1),
+        ]
+    ]
+    FINAL = [
+        {"word": f" {word}", "start": start, "end": end}
+        for word, start, end in [("eu", 0, 0.2), ("fui", 0.25, 0.45), ("la", 0.5, 0.7), ("ontem", 0.8, 1.0), ("tava", 1.05, 1.3), ("cheio", 1.35, 1.6)]
+    ]
+
+    def test_gaps_inside_a_subtitle_that_crosses_a_cut_are_not_training_examples(self):
+        # "la ontem tava cheio" juntou falas dos dois lados do corte: contar palavras/tempo do bruto ensinaria errado.
+        cards = [Card(0.0, 0.75, "eu fui"), Card(0.75, 1.6, "la ontem tava cheio")]
+
+        examples = style_features.build_gap_examples(self.RAW, style_alignment.align_breaks(self.RAW, cards))
+
+        self.assertEqual([(int(example["x"][1]), example["y"]) for example in examples], [(1, 0), (2, 1)])
+
+    def test_glue_is_measured_in_the_final_video_not_across_the_cut(self):
+        cards = [Card(0.0, 0.75, "eu fui la"), Card(0.75, 1.6, "ontem tava cheio")]
+
+        samples = style_features.build_timing_samples(cards, style_alignment.align_speech(cards, self.FINAL))
+
+        # No video final o buraco entre "la" e "ontem" e 100ms (no bruto seriam 1600ms com a frase cortada).
+        self.assertEqual([{key: round(value, 3) for key, value in gap.items()} for gap in samples["glue"]], [{"speech_gap_ms": 100.0, "user_gap_ms": 0.0}])
+
+
 class BuildTimingSamplesTest(unittest.TestCase):
     def test_lead_in_hold_glue_and_sizes_from_a_cut_video(self):
         raw = [
@@ -76,13 +109,11 @@ class BuildTimingSamplesTest(unittest.TestCase):
         ]
         cards = [Card(0.9, 1.9, "eu fui la"), Card(1.9, 2.8, "ontem e tava")]
 
-        samples = style_features.build_timing_samples(
-            raw, cards, style_alignment.align_breaks(raw, cards), style_alignment.align_speech(cards, final)
-        )
+        samples = style_features.build_timing_samples(cards, style_alignment.align_speech(cards, final))
 
         self.assertEqual(rounded(samples["lead_in_ms"]), [100.0, 0.0])
         self.assertEqual(rounded(samples["hold_ms"]), [200.0, 200.0])
-        self.assertEqual([{key: round(value, 3) for key, value in gap.items()} for gap in samples["glue"]], [{"raw_gap_ms": 1000.0, "user_gap_ms": 0.0}])
+        self.assertEqual([{key: round(value, 3) for key, value in gap.items()} for gap in samples["glue"]], [{"speech_gap_ms": 200.0, "user_gap_ms": 0.0}])
         self.assertEqual(samples["card_words"], [3, 3])
         self.assertEqual(rounded(samples["card_ms"]), [1000.0, 900.0])
 

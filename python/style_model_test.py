@@ -59,9 +59,9 @@ class ComputeParamsTest(unittest.TestCase):
                     "lead_in_ms": [100, 120, 80],
                     "hold_ms": [200, 250, 150],
                     "glue": [
-                        {"raw_gap_ms": 150, "user_gap_ms": 0},
-                        {"raw_gap_ms": 250, "user_gap_ms": 10},
-                        {"raw_gap_ms": 900, "user_gap_ms": 600},
+                        {"speech_gap_ms": 150, "user_gap_ms": 0},
+                        {"raw_gap_ms": 250, "user_gap_ms": 10},  # formato antigo ainda e lido
+                        {"speech_gap_ms": 900, "user_gap_ms": 600},
                     ],
                     "card_words": [2, 3, 3, 4, 5],
                     "card_ms": [600, 900, 1000, 1200, 2000],
