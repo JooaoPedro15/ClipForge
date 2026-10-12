@@ -179,6 +179,20 @@ class ReadSequencesTest(unittest.TestCase):
         self.assertEqual(sequence.final_path, str(final))
         self.assertEqual(sequence.original_path, str(self.tmp / "Sequência 42.mp3"))
 
+    def test_chosen_folder_matches_the_raw_file_by_sequence_name(self):
+        brutos = self.tmp / "audios legendas"
+        brutos.mkdir()
+        (brutos / "Sequência 43.mp3").write_bytes(b"fake")
+        project = FakeProject()
+        project.sequence("Sequência 43", [[project.graphic(0.0, 1.0, "oi")]])
+        project.sequence("Sequência 44", [[project.graphic(0.0, 1.0, "tchau")]])
+        path = project.write(self.tmp / "p.prproj")
+
+        found = {sequence.name: sequence.original_path for sequence in premiere_project.read_sequences(path, brutos)}
+
+        self.assertEqual(found, {"Sequência 43": str(brutos / "Sequência 43.mp3"), "Sequência 44": None})
+        self.assertIsNone(premiere_project.read_sequences(path)[0].original_path)
+
     def test_missing_files_and_audio_exports_are_left_for_the_user_to_pick(self):
         project = FakeProject()
         project.imported_file(self.tmp / "Sequência 7.srt")

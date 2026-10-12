@@ -233,15 +233,23 @@ def _imported_srts(root: ET.Element) -> dict[str, Path]:
     return srts
 
 
-def _original_for(name: str, srts: dict[str, Path]) -> str | None:
-    srt = srts.get(name)
-    if srt is None:
-        return None
+def _with_original_extension(base: Path) -> str | None:
     for extension in ORIGINAL_EXTENSIONS:
-        candidate = srt.with_suffix(extension)
+        candidate = base.with_name(base.name + extension)
         if candidate.exists():
             return str(candidate)
     return None
+
+
+# Bruto da sequencia: na pasta escolhida pelo usuario, arquivo com o nome da sequencia
+# (Sequencia 43 -> Sequencia 43.mp3); sem pasta, do lado do SRT importado com esse nome.
+def _original_for(name: str, srts: dict[str, Path], originals_dir: Path | None) -> str | None:
+    if originals_dir is not None:
+        found = _with_original_extension(originals_dir / name)
+        if found:
+            return found
+    srt = srts.get(name)
+    return _with_original_extension(srt.with_suffix("")) if srt is not None else None
 
 
 def _to_final_time(clips: list[_Clip], start: float, end: float | None) -> list[Card]:
@@ -254,7 +262,7 @@ def _to_final_time(clips: list[_Clip], start: float, end: float | None) -> list[
     return cards
 
 
-def read_sequences(project_path: str | Path) -> list[ProjectSequence]:
+def read_sequences(project_path: str | Path, originals_dir: str | Path | None = None) -> list[ProjectSequence]:
     root = load_root(project_path)
     index = _Index(root)
     srts = _imported_srts(root)
@@ -275,7 +283,7 @@ def read_sequences(project_path: str | Path) -> list[ProjectSequence]:
                 name=name,
                 cards=cards,
                 final_path=final_path if final_path and Path(final_path).exists() else None,
-                original_path=_original_for(name, srts),
+                original_path=_original_for(name, srts, Path(originals_dir) if originals_dir else None),
                 tracks=tracks,
             )
         )

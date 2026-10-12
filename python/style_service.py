@@ -3,7 +3,8 @@
 Uso (chamado pelo Electron, eventos JSON no stdout):
   python style_service.py learn --original V --srt S --final F --store DIR [--model M] [--language pt] [--cpu]
   python style_service.py learn --original V --srt PROJETO.prproj --sequence NOME --final F --store DIR
-  python style_service.py scan-project --project PROJETO.prproj
+  python style_service.py scan-project --project PROJETO.prproj [--originals PASTA]
+  python style_service.py learn-project --project PROJETO.prproj [--originals PASTA] --store DIR [--model M] [--cpu]
   python style_service.py forget --id ID --store DIR
 """
 
@@ -11,6 +12,7 @@ import argparse
 import json
 import re
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -88,14 +90,19 @@ def _natural_key(name: str) -> list[Any]:
     return [int(part) if part.isdigit() else part.lower() for part in re.split(r"(\d+)", name)]
 
 
-# Sequencias com legenda num projeto do Premiere, a mais nova (maior numero) primeiro.
-def scan_project(project_path: str) -> dict[str, Any]:
+def _project_sequences(project_path: str, originals_dir: str | None) -> list[premiere_project.ProjectSequence]:
     try:
-        sequences = premiere_project.read_sequences(project_path)
+        sequences = premiere_project.read_sequences(project_path, originals_dir)
     except premiere_project.ProjectError as error:
         raise StyleError(str(error)) from error
     if not sequences:
         raise StyleError("Nenhuma sequencia desse projeto tem legenda em grafico ou na trilha de legenda.")
+    return sequences
+
+
+# Sequencias com legenda num projeto do Premiere, a mais nova (maior numero) primeiro.
+def scan_project(project_path: str, originals_dir: str | None = None) -> dict[str, Any]:
+    sequences = _project_sequences(project_path, originals_dir)
     ordered = sorted(sequences, key=lambda sequence: _natural_key(sequence.name), reverse=True)
     return {
         "projectPath": project_path,
@@ -148,6 +155,15 @@ def learn(
         if not path.exists():
             raise StyleError(f"{label} nao encontrado: {path}")
 
+    get_model = model_loader(model_size, device, compute_type)
+    cards = load_corrected_cards(srt_path, sequence)
+    if not cards:
+        raise StyleError("A legenda corrigida esta vazia.")
+    return learn_from_cards(original, cards, final_path, store, get_model, language, beam_size)
+
+
+# Whisper carregado so na primeira vez que alguem pede (video com words.json pode nem precisar).
+def model_loader(model_size: str, device: str, compute_type: str) -> Callable[[], Any]:
     loaded_model: dict[str, Any] = {}
 
     def get_model() -> Any:
@@ -156,29 +172,43 @@ def learn(
             loaded_model["model"] = subtitle_service.load_whisper_model(model_size, device, compute_type)
         return loaded_model["model"]
 
-    emit("status", "processing", "original-words", "Lendo as palavras do video original...", progress=15)
+    return get_model
+
+
+def _emit_status(stage: str, message: str, progress: int) -> None:
+    emit("status", "processing", stage, message, progress=progress)
+
+
+def learn_from_cards(
+    original: Path,
+    cards: list[style_alignment.Card],
+    final_path: str,
+    store: Path,
+    get_model: Callable[[], Any],
+    language: str,
+    beam_size: int,
+    status: Callable[[str, str, int], None] = _emit_status,
+) -> dict[str, Any]:
+    status("original-words", "Lendo as palavras do video original...", 15)
     words = load_original_words(original, get_model, language, beam_size)
 
-    cards = load_corrected_cards(srt_path, sequence)
-    if not cards:
-        raise StyleError("A legenda corrigida esta vazia.")
     breaks = style_alignment.align_breaks(words, cards)
     if breaks.match_ratio < style_alignment.MIN_MATCH_RATIO:
         raise StyleError(f"A legenda corrigida nao parece ser desse video (so {breaks.match_ratio:.0%} das palavras bateram).")
 
-    emit("status", "processing", "final-words", "Transcrevendo o video final (com os seus cortes)...", progress=40)
+    status("final-words", "Transcrevendo o video final (com os seus cortes)...", 40)
     final_words = transcribe_words(get_model(), final_path, language, beam_size)
     speech = style_alignment.align_speech(cards, final_words)
     if speech.match_ratio < style_alignment.MIN_MATCH_RATIO:
         raise StyleError(f"O video final nao parece ser o dessa legenda (so {speech.match_ratio:.0%} das palavras bateram).")
 
-    emit("status", "processing", "aligning", "Comparando a sua legenda com a gerada...", progress=75)
+    status("aligning", "Comparando a sua legenda com a gerada...", 75)
     # Bruto em mp3 nao tem imagem: a orientacao vem do video final.
     profile = subtitle_service.resolve_style_profile_name(str(original), subtitle_service.resolve_style_profile_name(final_path))
     gaps = style_features.build_gap_examples(words, breaks)
     timing = style_features.build_timing_samples(cards, speech)
 
-    emit("status", "processing", "evaluating", "Medindo quanto o perfil atual acertaria...", progress=82)
+    status("evaluating", "Medindo quanto o perfil atual acertaria...", 82)
     current = _current_profile(store, profile)
     f1_before = style_model.break_f1(style_model.segment_with_model(words, *current), breaks.labels) if current else None
     f1_formula = style_model.break_f1(formula_groups(words, profile), breaks.labels)
@@ -200,7 +230,7 @@ def learn(
     )
     style_store.add_word_fixes(store, breaks.word_fixes)
 
-    emit("status", "processing", "training", "Treinando o seu estilo...", progress=90)
+    status("training", "Treinando o seu estilo...", 90)
     trained = retrain_profile(store, profile)
     f1_after = style_model.break_f1(style_model.segment_with_model(words, *trained), breaks.labels) if trained else None
 
@@ -219,6 +249,62 @@ def learn(
         "cutShare": round(breaks.cut_share, 3),
         "warnings": warnings,
     }
+
+
+# Ensina de uma vez todas as sequencias completas (bruto + grafico + video final) de um projeto.
+# Uma que falha nao para as outras; ja ensinada e pulada (ensinar de novo = remover e ensinar).
+def learn_project(
+    project_path: str,
+    originals_dir: str | None,
+    store_path: str,
+    model_size: str,
+    language: str,
+    beam_size: int,
+    device: str,
+    compute_type: str,
+) -> dict[str, Any]:
+    store = Path(store_path)
+    emit("status", "processing", "reading-project", "Lendo o projeto do Premiere...", progress=2)
+    sequences = sorted(_project_sequences(project_path, originals_dir), key=lambda sequence: _natural_key(sequence.name))
+    taught_originals = {
+        style_store.video_id_for(str(video.get("originalPath", ""))) for video in style_store.load_library(store).get("videos", [])
+    }
+
+    todo: list[premiere_project.ProjectSequence] = []
+    skipped: list[dict[str, str]] = []
+    for sequence in sequences:
+        if not sequence.original_path:
+            skipped.append({"name": sequence.name, "reason": "bruto nao encontrado"})
+        elif not sequence.final_path:
+            skipped.append({"name": sequence.name, "reason": "sem video final exportado"})
+        elif style_store.video_id_for(sequence.original_path) in taught_originals:
+            skipped.append({"name": sequence.name, "reason": "ja ensinada"})
+        else:
+            todo.append(sequence)
+
+    get_model = model_loader(model_size, device, compute_type)
+    taught: list[dict[str, Any]] = []
+    failed: list[dict[str, str]] = []
+    for number, sequence in enumerate(todo):
+
+        def status(stage: str, message: str, progress: int, number: int = number, name: str = sequence.name) -> None:
+            overall = round(5 + 95 * (number + progress / 100) / len(todo))
+            emit("status", "processing", stage, f"[{number + 1}/{len(todo)}] {name}: {message}", progress=overall)
+
+        try:
+            report = learn_from_cards(
+                Path(sequence.original_path or ""), sequence.cards, sequence.final_path or "", store, get_model, language, beam_size, status
+            )
+            taught.append({"name": sequence.name, **report})
+        except StyleError as error:
+            failed.append({"name": sequence.name, "error": str(error)})
+        except (ImportError, MemoryError):
+            raise
+        except Exception as error:
+            # Arquivo quebrado ou ilegivel: registra e segue com as outras sequencias.
+            failed.append({"name": sequence.name, "error": str(error)})
+
+    return {"taught": taught, "skipped": skipped, "failed": failed}
 
 
 def forget(video_id: str, store_path: str) -> dict[str, Any]:
@@ -247,6 +333,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
     scan_parser = commands.add_parser("scan-project")
     scan_parser.add_argument("--project", required=True)
+    scan_parser.add_argument("--originals", help="pasta dos brutos (Sequencia 43.mp3 = sequencia Sequencia 43)")
+
+    batch_parser = commands.add_parser("learn-project")
+    batch_parser.add_argument("--project", required=True)
+    batch_parser.add_argument("--originals")
+    batch_parser.add_argument("--store", required=True)
+    batch_parser.add_argument("--model", default=subtitle_service.DEFAULT_MODEL)
+    batch_parser.add_argument("--language", default=subtitle_service.DEFAULT_LANGUAGE)
+    batch_parser.add_argument("--beam-size", type=int, default=subtitle_service.DEFAULT_BEAM_SIZE)
+    batch_parser.add_argument("--cpu", action="store_true")
 
     forget_parser = commands.add_parser("forget")
     forget_parser.add_argument("--id", required=True)
@@ -272,8 +368,20 @@ def main(argv: list[str] | None = None) -> int:
             )
             emit("done", "completed", "done", "Estilo atualizado.", progress=100, report=report)
         elif args.command == "scan-project":
-            report = scan_project(args.project)
+            report = scan_project(args.project, args.originals)
             emit("done", "completed", "done", f"{len(report['sequences'])} sequencias com legenda.", progress=100, report=report)
+        elif args.command == "learn-project":
+            report = learn_project(
+                args.project,
+                args.originals,
+                args.store,
+                args.model,
+                args.language,
+                args.beam_size,
+                "cpu" if args.cpu else "cuda",
+                "int8" if args.cpu else "float16",
+            )
+            emit("done", "completed", "done", f"{len(report['taught'])} sequencias ensinadas.", progress=100, report=report)
         else:
             report = forget(args.id, args.store)
             emit("done", "completed", "done", "Video removido e perfil retreinado.", progress=100, report=report)

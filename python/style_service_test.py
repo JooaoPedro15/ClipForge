@@ -11,7 +11,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).parent))
 import style_service
-from premiere_project_test import FakeProject
+from premiere_project_test import FakeProject, export_settings
 
 
 @dataclass
@@ -178,6 +178,34 @@ class StyleServiceTest(unittest.TestCase):
         event = json.loads(output.getvalue().strip().splitlines()[-1])
         self.assertEqual(code, 0)
         self.assertEqual([(item["name"], item["cards"]) for item in event["report"]["sequences"]], [("Sequência 10", 4), ("Sequência 9", 1)])
+
+    def test_learn_project_teaches_every_complete_sequence_once(self):
+        brutos = self.tmp / "brutos"
+        brutos.mkdir()
+        for name in ("Sequência 10", "Sequência 11", "Sequência 12"):
+            (brutos / f"{name}.mp3").write_bytes(b"fake")
+        project = FakeProject()
+        cards = style_service.style_alignment.parse_srt_text(CORRECTED_SRT)
+        exported = export_settings(self.final, 0.0, 10.0)
+        project.sequence("Sequência 10", [[project.graphic(card.start, card.end, card.text) for card in cards]], export=exported)
+        project.sequence("Sequência 11", [[project.graphic(0.0, 1.0, "nada a ver com isso aqui")]], export=exported)
+        project.sequence("Sequência 12", [[project.graphic(0.0, 1.0, "eu fui la")]])
+        project.sequence("Sequência 13", [[project.graphic(0.0, 1.0, "eu fui la")]], export=exported)
+        path = str(project.write(self.tmp / "projeto.prproj"))
+
+        def learn_project() -> dict:
+            with contextlib.redirect_stdout(io.StringIO()):
+                return style_service.learn_project(path, str(brutos), str(self.store), "large-v3", "pt", 5, "cpu", "int8")
+
+        report = learn_project()
+
+        self.assertEqual([(item["name"], item["gapExamples"]) for item in report["taught"]], [("Sequência 10", 9)])
+        self.assertEqual([item["name"] for item in report["failed"]], ["Sequência 11"])
+        self.assertEqual(
+            report["skipped"],
+            [{"name": "Sequência 12", "reason": "sem video final exportado"}, {"name": "Sequência 13", "reason": "bruto nao encontrado"}],
+        )
+        self.assertEqual(learn_project()["skipped"][0], {"name": "Sequência 10", "reason": "ja ensinada"})
 
     def test_formula_groups_follow_the_current_segmentation(self):
         words = []
