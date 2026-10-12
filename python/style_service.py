@@ -403,9 +403,24 @@ class _Lesson:
 
 
 # Videos finais escolhidos (nome livre) pras licoes sem final no projeto: transcreve e casa pela fala.
+def _mtime(path: Path) -> float:
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return 0.0
+
+
+# O final costuma ser exportado pouco depois do mp3 bruto: testa primeiro os videos de data mais perto
+# (com a pasta de Shorts inteira escolhida, evita transcrever dezenas de videos a toa).
+def order_by_date(candidates: list[Path], originals: list[Path]) -> list[Path]:
+    dates = [_mtime(path) for path in originals]
+    return sorted(candidates, key=lambda video: min((abs(_mtime(video) - date) for date in dates), default=0.0))
+
+
 def _match_finals_by_speech(
     lessons: list[_Lesson], candidates: list[Path], get_model: Callable[[], Any], language: str, beam_size: int
 ) -> None:
+    candidates = order_by_date(candidates, [lesson.original for lesson in lessons if not lesson.final_path])
     for number, candidate in enumerate(candidates):
         waiting = [lesson for lesson in lessons if not lesson.final_path]
         if not waiting:

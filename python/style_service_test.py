@@ -1,6 +1,7 @@
 import contextlib
 import io
 import json
+import os
 import sys
 import tempfile
 import types
@@ -228,6 +229,14 @@ class StyleServiceTest(unittest.TestCase):
 
         self.assertEqual(len(report["taught"]), 2)
         self.assertEqual(FakeWhisperModel.transcribed.count("final.mp4"), 1)
+
+    def test_candidate_finals_are_tried_closest_in_date_first(self):
+        bruto, near, far = self.tmp / "b.mp3", self.tmp / "perto.mp4", self.tmp / "longe.mp4"
+        for path, stamp in ((bruto, 1_000_000), (near, 1_000_600), (far, 5_000_000)):
+            path.write_bytes(b"fake")
+            os.utime(path, (stamp, stamp))
+
+        self.assertEqual(style_service.order_by_date([far, near], [bruto]), [near, far])
 
     def test_final_videos_with_any_name_are_matched_by_what_is_said_in_them(self):
         bruto = self.tmp / "Sequência 40.mp3"
