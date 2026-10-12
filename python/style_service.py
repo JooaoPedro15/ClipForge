@@ -2,15 +2,19 @@
 
 Uso (chamado pelo Electron, eventos JSON no stdout):
   python style_service.py learn --original V --srt S --final F --store DIR [--model M] [--language pt] [--cpu]
+  python style_service.py learn --original V --srt PROJETO.prproj --sequence NOME --final F --store DIR
+  python style_service.py scan-project --project PROJETO.prproj
   python style_service.py forget --id ID --store DIR
 """
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
 
+import premiere_project
 import segmentation
 import style_alignment
 import style_features
@@ -66,6 +70,42 @@ def formula_groups(words: list[dict[str, Any]], profile: str) -> list[tuple[int,
     return groups
 
 
+# Legendas corrigidas: SRT exportado ou, se for projeto do Premiere, os graficos de texto da sequencia.
+def load_corrected_cards(corrections_path: str, sequence: str | None) -> list[style_alignment.Card]:
+    path = Path(corrections_path)
+    if path.suffix.lower() != ".prproj":
+        return style_alignment.parse_srt_text(path.read_text(encoding="utf-8-sig"))
+    if not sequence:
+        raise StyleError("Escolha a sequencia do projeto do Premiere.")
+    try:
+        return premiere_project.sequence_cards(path, sequence)
+    except premiere_project.ProjectError as error:
+        raise StyleError(str(error)) from error
+
+
+# "Sequencia 42" antes de "Sequencia 9": numero comparado como numero, nao como texto.
+def _natural_key(name: str) -> list[Any]:
+    return [int(part) if part.isdigit() else part.lower() for part in re.split(r"(\d+)", name)]
+
+
+# Sequencias com legenda num projeto do Premiere, a mais nova (maior numero) primeiro.
+def scan_project(project_path: str) -> dict[str, Any]:
+    try:
+        sequences = premiere_project.read_sequences(project_path)
+    except premiere_project.ProjectError as error:
+        raise StyleError(str(error)) from error
+    if not sequences:
+        raise StyleError("Nenhuma sequencia desse projeto tem legenda em grafico ou na trilha de legenda.")
+    ordered = sorted(sequences, key=lambda sequence: _natural_key(sequence.name), reverse=True)
+    return {
+        "projectPath": project_path,
+        "sequences": [
+            {"name": item.name, "cards": len(item.cards), "finalPath": item.final_path, "originalPath": item.original_path}
+            for item in ordered
+        ],
+    }
+
+
 # Treina de novo com todos os videos do perfil; sem video nenhum, o perfil some.
 def retrain_profile(store: Path, profile: str) -> tuple[Any, dict[str, Any]] | None:
     videos = style_store.load_profile_examples(store, profile)
@@ -100,10 +140,11 @@ def learn(
     beam_size: int,
     device: str,
     compute_type: str,
+    sequence: str | None = None,
 ) -> dict[str, Any]:
     original = Path(original_path)
     store = Path(store_path)
-    for label, path in (("Video original", original), ("SRT corrigido", Path(srt_path)), ("Video final", Path(final_path))):
+    for label, path in (("Video original", original), ("Correcoes (SRT ou projeto)", Path(srt_path)), ("Video final", Path(final_path))):
         if not path.exists():
             raise StyleError(f"{label} nao encontrado: {path}")
 
@@ -118,18 +159,18 @@ def learn(
     emit("status", "processing", "original-words", "Lendo as palavras do video original...", progress=15)
     words = load_original_words(original, get_model, language, beam_size)
 
-    cards = style_alignment.parse_srt_text(Path(srt_path).read_text(encoding="utf-8-sig"))
+    cards = load_corrected_cards(srt_path, sequence)
     if not cards:
-        raise StyleError("O SRT corrigido esta vazio.")
+        raise StyleError("A legenda corrigida esta vazia.")
     breaks = style_alignment.align_breaks(words, cards)
     if breaks.match_ratio < style_alignment.MIN_MATCH_RATIO:
-        raise StyleError(f"O SRT corrigido nao parece ser desse video (so {breaks.match_ratio:.0%} das palavras bateram).")
+        raise StyleError(f"A legenda corrigida nao parece ser desse video (so {breaks.match_ratio:.0%} das palavras bateram).")
 
     emit("status", "processing", "final-words", "Transcrevendo o video final (com os seus cortes)...", progress=40)
     final_words = transcribe_words(get_model(), final_path, language, beam_size)
     speech = style_alignment.align_speech(cards, final_words)
     if speech.match_ratio < style_alignment.MIN_MATCH_RATIO:
-        raise StyleError(f"O video final nao parece ser o desse SRT (so {speech.match_ratio:.0%} das palavras bateram).")
+        raise StyleError(f"O video final nao parece ser o dessa legenda (so {speech.match_ratio:.0%} das palavras bateram).")
 
     emit("status", "processing", "aligning", "Comparando a sua legenda com a gerada...", progress=75)
     profile = subtitle_service.resolve_style_profile_name(str(original))
@@ -194,13 +235,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
     learn_parser = commands.add_parser("learn")
     learn_parser.add_argument("--original", required=True)
-    learn_parser.add_argument("--srt", required=True)
+    learn_parser.add_argument("--srt", required=True, help="SRT corrigido ou projeto do Premiere (.prproj)")
+    learn_parser.add_argument("--sequence", help="sequencia do projeto (quando --srt e um .prproj)")
     learn_parser.add_argument("--final", required=True)
     learn_parser.add_argument("--store", required=True)
     learn_parser.add_argument("--model", default=subtitle_service.DEFAULT_MODEL)
     learn_parser.add_argument("--language", default=subtitle_service.DEFAULT_LANGUAGE)
     learn_parser.add_argument("--beam-size", type=int, default=subtitle_service.DEFAULT_BEAM_SIZE)
     learn_parser.add_argument("--cpu", action="store_true")
+
+    scan_parser = commands.add_parser("scan-project")
+    scan_parser.add_argument("--project", required=True)
 
     forget_parser = commands.add_parser("forget")
     forget_parser.add_argument("--id", required=True)
@@ -222,8 +267,12 @@ def main(argv: list[str] | None = None) -> int:
                 args.beam_size,
                 "cpu" if args.cpu else "cuda",
                 "int8" if args.cpu else "float16",
+                args.sequence,
             )
             emit("done", "completed", "done", "Estilo atualizado.", progress=100, report=report)
+        elif args.command == "scan-project":
+            report = scan_project(args.project)
+            emit("done", "completed", "done", f"{len(report['sequences'])} sequencias com legenda.", progress=100, report=report)
         else:
             report = forget(args.id, args.store)
             emit("done", "completed", "done", "Video removido e perfil retreinado.", progress=100, report=report)

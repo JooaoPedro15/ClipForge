@@ -11,6 +11,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).parent))
 import style_service
+from premiere_project_test import FakeProject
 
 
 @dataclass
@@ -142,6 +143,41 @@ class StyleServiceTest(unittest.TestCase):
         event = json.loads(output.getvalue().strip().splitlines()[-1])
         self.assertEqual(code, 1)
         self.assertEqual((event["event"], event["stage"]), ("error", "style"))
+
+    def premiere_project(self) -> Path:
+        # Mesmas legendas do CORRECTED_SRT, mas como graficos de texto numa sequencia do Premiere.
+        project = FakeProject()
+        cards = style_service.style_alignment.parse_srt_text(CORRECTED_SRT)
+        project.sequence("Sequência 9", [[project.graphic(0.0, 0.5, "outra")]])
+        project.sequence("Sequência 10", [[project.graphic(card.start, card.end, card.text) for card in cards]])
+        return project.write(self.tmp / "projeto.prproj")
+
+    def test_learn_reads_the_corrections_from_a_premiere_project(self):
+        project = self.premiere_project()
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            report = style_service.learn(
+                str(self.original), str(project), str(self.final), str(self.store), "large-v3", "pt", 5, "cpu", "int8", "Sequência 10"
+            )
+
+        self.assertEqual((report["gapExamples"], report["timingSamples"]), (9, 4))
+
+    def test_project_needs_a_known_sequence(self):
+        project = self.premiere_project()
+
+        with self.assertRaises(style_service.StyleError):
+            self.learn(project)
+        with contextlib.redirect_stdout(io.StringIO()), self.assertRaises(style_service.StyleError):
+            style_service.learn(str(self.original), str(project), str(self.final), str(self.store), "large-v3", "pt", 5, "cpu", "int8", "Sequência 99")
+
+    def test_scan_project_lists_sequences_newest_first(self):
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            code = style_service.main(["scan-project", "--project", str(self.premiere_project())])
+
+        event = json.loads(output.getvalue().strip().splitlines()[-1])
+        self.assertEqual(code, 0)
+        self.assertEqual([(item["name"], item["cards"]) for item in event["report"]["sequences"]], [("Sequência 10", 4), ("Sequência 9", 1)])
 
     def test_formula_groups_follow_the_current_segmentation(self):
         words = []
