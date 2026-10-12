@@ -213,6 +213,22 @@ class StyleServiceTest(unittest.TestCase):
         self.assertEqual(report["skipped"], [{"name": "estranho", "reason": "legenda nao encontrada no projeto"}])
         self.assertEqual(self.learn_project(path, [bruto])["skipped"], [{"name": "Sequência 28 3", "reason": "ja ensinado"}])
 
+    def test_shorts_exported_in_the_same_video_transcribe_it_once(self):
+        brutos = [self.tmp / "Sequência 60.mp3", self.tmp / "Sequência 60 2.mp3"]
+        for path in brutos:
+            path.write_bytes(b"fake")
+        project = FakeProject()
+        clips = [project.graphic(start, end, text) for start, end, text in self.shifted(0.0)]
+        clips += [project.graphic(start, end, text) for start, end, text in self.shifted(10.0)]
+        project.sequence("Sequência 60", [clips], export=export_settings(self.final, 0.0, 14.0))
+        path = project.write(self.tmp / "projeto.prproj")
+        FakeWhisperModel.transcribed = []
+
+        report = self.learn_project(path, brutos)
+
+        self.assertEqual(len(report["taught"]), 2)
+        self.assertEqual(FakeWhisperModel.transcribed.count("final.mp4"), 1)
+
     def test_final_videos_with_any_name_are_matched_by_what_is_said_in_them(self):
         bruto = self.tmp / "Sequência 40.mp3"
         bruto.write_bytes(b"fake")

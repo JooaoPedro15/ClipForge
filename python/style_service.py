@@ -478,6 +478,8 @@ def learn_project(
 
     taught: list[dict[str, Any]] = []
     failed: list[dict[str, str]] = []
+    # Varios Shorts podem ter saido do mesmo video (ex.: compilacao): transcreve cada final uma vez so.
+    transcribed: dict[str, list[dict[str, Any]]] = {}
     for number, lesson in enumerate(lessons):
         name = lesson.original.stem
 
@@ -491,16 +493,21 @@ def learn_project(
             for card in lesson.window.cards
         ]
         try:
+            final_path = lesson.final_path or ""
+            final_words = lesson.final_words or transcribed.get(final_path)
+            if final_words is None:
+                status("final-words", "Transcrevendo o video final (com os seus cortes)...", 40)
+                final_words = transcribed[final_path] = transcribe_words(get_model(), final_path, language, beam_size)
             report = learn_from_cards(
                 lesson.original,
                 cards,
-                lesson.final_path or "",
+                final_path,
                 store,
                 get_model,
                 language,
                 beam_size,
                 status,
-                lesson.final_words,
+                final_words,
                 timing_known=offset is not None,
             )
             taught.append({"name": name, "sequence": lesson.window.sequence.name, **report})
