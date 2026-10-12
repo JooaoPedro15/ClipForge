@@ -11,7 +11,9 @@ import base64
 import gzip
 import json
 import struct
+import unicodedata
 import xml.etree.ElementTree as ET
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -241,15 +243,31 @@ def _with_original_extension(base: Path) -> str | None:
     return None
 
 
-# Bruto da sequencia: na pasta escolhida pelo usuario, arquivo com o nome da sequencia
-# (Sequencia 43 -> Sequencia 43.mp3); sem pasta, do lado do SRT importado com esse nome.
-def _original_for(name: str, srts: dict[str, Path], originals_dir: Path | None) -> str | None:
-    if originals_dir is not None:
-        found = _with_original_extension(originals_dir / name)
-        if found:
-            return found
+def _same_name(left: str, right: str) -> bool:
+    # Acento pode vir composto ou decomposto, e o Windows nao diferencia maiuscula.
+    return unicodedata.normalize("NFC", left).casefold() == unicodedata.normalize("NFC", right).casefold()
+
+
+# Bruto da sequencia: entre os arquivos/pastas escolhidos pelo usuario, o que tem o nome da sequencia
+# (Sequencia 43 -> Sequencia 43.mp3); senao, do lado do SRT importado com esse nome.
+def _original_for(name: str, srts: dict[str, Path], originals: list[Path]) -> str | None:
+    for source in originals:
+        if source.is_dir():
+            found = _with_original_extension(source / name)
+            if found:
+                return found
+        elif source.suffix.lower() in ORIGINAL_EXTENSIONS and _same_name(source.stem, name) and source.exists():
+            return str(source)
     srt = srts.get(name)
     return _with_original_extension(srt.with_suffix("")) if srt is not None else None
+
+
+def _as_paths(sources: Iterable[str | Path] | str | Path | None) -> list[Path]:
+    if sources is None:
+        return []
+    if isinstance(sources, (str, Path)):
+        return [Path(sources)]
+    return [Path(source) for source in sources]
 
 
 def _to_final_time(clips: list[_Clip], start: float, end: float | None) -> list[Card]:
@@ -262,10 +280,11 @@ def _to_final_time(clips: list[_Clip], start: float, end: float | None) -> list[
     return cards
 
 
-def read_sequences(project_path: str | Path, originals_dir: str | Path | None = None) -> list[ProjectSequence]:
+def read_sequences(project_path: str | Path, originals: Iterable[str | Path] | str | Path | None = None) -> list[ProjectSequence]:
     root = load_root(project_path)
     index = _Index(root)
     srts = _imported_srts(root)
+    sources = _as_paths(originals)
     sequences = []
     for sequence in root.findall("Sequence"):
         name = sequence.findtext("Name") or ""
@@ -283,7 +302,7 @@ def read_sequences(project_path: str | Path, originals_dir: str | Path | None = 
                 name=name,
                 cards=cards,
                 final_path=final_path if final_path and Path(final_path).exists() else None,
-                original_path=_original_for(name, srts, Path(originals_dir) if originals_dir else None),
+                original_path=_original_for(name, srts, sources),
                 tracks=tracks,
             )
         )

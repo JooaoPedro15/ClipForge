@@ -3,13 +3,15 @@
 Uso (chamado pelo Electron, eventos JSON no stdout):
   python style_service.py learn --original V --srt S --final F --store DIR [--model M] [--language pt] [--cpu]
   python style_service.py learn --original V --srt PROJETO.prproj --sequence NOME --final F --store DIR
-  python style_service.py scan-project --project PROJETO.prproj [--originals PASTA]
-  python style_service.py learn-project --project PROJETO.prproj [--originals PASTA] --store DIR [--model M] [--cpu]
+  python style_service.py scan-project --project PROJETO.prproj [--originals PASTA_OU_MP3 ...]
+  python style_service.py learn-project --project PROJETO.prproj [--originals ...] [--finals ...] [--only NOME] --store DIR
   python style_service.py forget --id ID --store DIR
 """
 
 import argparse
+import difflib
 import json
+import os
 import re
 import sys
 from collections.abc import Callable
@@ -24,6 +26,7 @@ import style_model
 import style_store
 import subtitle_service
 from events import emit
+from text_utils import normalize_token
 
 # Com menos espacos rotulados que isso, o video ensina pouco sobre quebras.
 MIN_GAP_EXAMPLES = 30
@@ -90,9 +93,9 @@ def _natural_key(name: str) -> list[Any]:
     return [int(part) if part.isdigit() else part.lower() for part in re.split(r"(\d+)", name)]
 
 
-def _project_sequences(project_path: str, originals_dir: str | None) -> list[premiere_project.ProjectSequence]:
+def _project_sequences(project_path: str, originals: list[str] | None) -> list[premiere_project.ProjectSequence]:
     try:
-        sequences = premiere_project.read_sequences(project_path, originals_dir)
+        sequences = premiere_project.read_sequences(project_path, originals)
     except premiere_project.ProjectError as error:
         raise StyleError(str(error)) from error
     if not sequences:
@@ -101,8 +104,8 @@ def _project_sequences(project_path: str, originals_dir: str | None) -> list[pre
 
 
 # Sequencias com legenda num projeto do Premiere, a mais nova (maior numero) primeiro.
-def scan_project(project_path: str, originals_dir: str | None = None) -> dict[str, Any]:
-    sequences = _project_sequences(project_path, originals_dir)
+def scan_project(project_path: str, originals: list[str] | None = None) -> dict[str, Any]:
+    sequences = _project_sequences(project_path, originals)
     ordered = sorted(sequences, key=lambda sequence: _natural_key(sequence.name), reverse=True)
     return {
         "projectPath": project_path,
@@ -188,6 +191,7 @@ def learn_from_cards(
     language: str,
     beam_size: int,
     status: Callable[[str, str, int], None] = _emit_status,
+    final_words: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     status("original-words", "Lendo as palavras do video original...", 15)
     words = load_original_words(original, get_model, language, beam_size)
@@ -196,8 +200,9 @@ def learn_from_cards(
     if breaks.match_ratio < style_alignment.MIN_MATCH_RATIO:
         raise StyleError(f"A legenda corrigida nao parece ser desse video (so {breaks.match_ratio:.0%} das palavras bateram).")
 
-    status("final-words", "Transcrevendo o video final (com os seus cortes)...", 40)
-    final_words = transcribe_words(get_model(), final_path, language, beam_size)
+    if final_words is None:
+        status("final-words", "Transcrevendo o video final (com os seus cortes)...", 40)
+        final_words = transcribe_words(get_model(), final_path, language, beam_size)
     speech = style_alignment.align_speech(cards, final_words)
     if speech.match_ratio < style_alignment.MIN_MATCH_RATIO:
         raise StyleError(f"O video final nao parece ser o dessa legenda (so {speech.match_ratio:.0%} das palavras bateram).")
@@ -251,21 +256,81 @@ def learn_from_cards(
     }
 
 
-# Ensina de uma vez todas as sequencias completas (bruto + grafico + video final) de um projeto.
-# Uma que falha nao para as outras; ja ensinada e pulada (ensinar de novo = remover e ensinar).
+def _video_files(sources: list[str]) -> list[Path]:
+    found: list[Path] = []
+    for source in sources:
+        path = Path(source)
+        if path.is_dir():
+            found.extend(sorted(child for child in path.iterdir() if child.suffix.lower() in premiere_project.VIDEO_EXTENSIONS))
+        elif path.exists():
+            found.append(path)
+    return found
+
+
+def _same_file(left: str | Path, right: str | Path) -> bool:
+    return os.path.normcase(os.path.abspath(left)) == os.path.normcase(os.path.abspath(right))
+
+
+# Quanto a fala do video lembra o texto das legendas (0 a 1). Simetrica de proposito: so "as palavras
+# da legenda aparecem no video" faria uma sequencia de uma legenda so bater com qualquer video longo.
+def speech_similarity(cards: list[style_alignment.Card], words: list[dict[str, Any]]) -> float:
+    card_tokens = [token for card in cards for raw in card.text.split() if (token := normalize_token(raw))]
+    spoken = [token for word in words if (token := normalize_token(str(word["word"])))]
+    if not card_tokens or not spoken:
+        return 0.0
+    return difflib.SequenceMatcher(None, card_tokens, spoken, autojunk=False).ratio()
+
+
+# Videos finais escolhidos pelo usuario (nome livre) que o projeto nao liga a nenhuma sequencia:
+# transcreve cada um e da pra sequencia cuja legenda mais parece com o que se fala nele.
+def _match_finals_by_speech(
+    waiting: list[premiere_project.ProjectSequence],
+    candidates: list[Path],
+    get_model: Callable[[], Any],
+    language: str,
+    beam_size: int,
+    transcribed: dict[str, list[dict[str, Any]]],
+) -> None:
+    for number, candidate in enumerate(candidates):
+        open_sequences = [sequence for sequence in waiting if not sequence.final_path]
+        if not open_sequences:
+            return
+        emit(
+            "status",
+            "processing",
+            "matching-finals",
+            f"Descobrindo de qual sequencia e cada video final ({number + 1}/{len(candidates)}): {candidate.name}",
+            progress=3,
+        )
+        words = transcribe_words(get_model(), str(candidate), language, beam_size)
+        score, best = max(((speech_similarity(sequence.cards, words), sequence) for sequence in open_sequences), key=lambda item: item[0])
+        if score >= style_alignment.MIN_MATCH_RATIO:
+            best.final_path = str(candidate)
+            transcribed[str(candidate)] = words
+
+
+# Ensina de uma vez as sequencias de um projeto (ou so `only`). Bruto pelo nome da sequencia; video final pelo
+# projeto ou, se faltar, pelo conteudo dos videos escolhidos. Uma que falha nao para as outras; ja ensinada e pulada
+# (menos quando pedida pelo nome: ai ensina de novo).
 def learn_project(
     project_path: str,
-    originals_dir: str | None,
+    originals: list[str],
+    finals: list[str],
     store_path: str,
     model_size: str,
     language: str,
     beam_size: int,
     device: str,
     compute_type: str,
+    only: str | None = None,
 ) -> dict[str, Any]:
     store = Path(store_path)
     emit("status", "processing", "reading-project", "Lendo o projeto do Premiere...", progress=2)
-    sequences = sorted(_project_sequences(project_path, originals_dir), key=lambda sequence: _natural_key(sequence.name))
+    sequences = sorted(_project_sequences(project_path, originals), key=lambda sequence: _natural_key(sequence.name))
+    if only is not None:
+        sequences = [sequence for sequence in sequences if sequence.name == only]
+        if not sequences:
+            raise StyleError(f"A sequencia '{only}' nao tem legenda em grafico no projeto.")
     taught_originals = {
         style_store.video_id_for(str(video.get("originalPath", ""))) for video in style_store.load_library(store).get("videos", [])
     }
@@ -275,14 +340,25 @@ def learn_project(
     for sequence in sequences:
         if not sequence.original_path:
             skipped.append({"name": sequence.name, "reason": "bruto nao encontrado"})
-        elif not sequence.final_path:
-            skipped.append({"name": sequence.name, "reason": "sem video final exportado"})
-        elif style_store.video_id_for(sequence.original_path) in taught_originals:
+        elif only is None and style_store.video_id_for(sequence.original_path) in taught_originals:
             skipped.append({"name": sequence.name, "reason": "ja ensinada"})
         else:
             todo.append(sequence)
 
     get_model = model_loader(model_size, device, compute_type)
+    transcribed: dict[str, list[dict[str, Any]]] = {}
+    waiting = [sequence for sequence in todo if not sequence.final_path]
+    if waiting and finals:
+        # Final que o projeto ja liga a uma sequencia nao precisa ser transcrito pra descobrir de quem e.
+        linked = [sequence.final_path for sequence in sequences if sequence.final_path]
+        candidates = [video for video in _video_files(finals) if not any(_same_file(video, path) for path in linked)]
+        _match_finals_by_speech(waiting, candidates, get_model, language, beam_size, transcribed)
+    for sequence in waiting:
+        if not sequence.final_path:
+            todo.remove(sequence)
+            skipped.append({"name": sequence.name, "reason": "video final nao encontrado"})
+    skipped.sort(key=lambda item: _natural_key(item["name"]))
+
     taught: list[dict[str, Any]] = []
     failed: list[dict[str, str]] = []
     for number, sequence in enumerate(todo):
@@ -293,7 +369,15 @@ def learn_project(
 
         try:
             report = learn_from_cards(
-                Path(sequence.original_path or ""), sequence.cards, sequence.final_path or "", store, get_model, language, beam_size, status
+                Path(sequence.original_path or ""),
+                sequence.cards,
+                sequence.final_path or "",
+                store,
+                get_model,
+                language,
+                beam_size,
+                status,
+                transcribed.get(sequence.final_path or ""),
             )
             taught.append({"name": sequence.name, **report})
         except StyleError as error:
@@ -333,11 +417,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
     scan_parser = commands.add_parser("scan-project")
     scan_parser.add_argument("--project", required=True)
-    scan_parser.add_argument("--originals", help="pasta dos brutos (Sequencia 43.mp3 = sequencia Sequencia 43)")
+    scan_parser.add_argument("--originals", action="append", help="pasta ou mp3 dos brutos (Sequencia 43.mp3 = sequencia Sequencia 43)")
 
     batch_parser = commands.add_parser("learn-project")
     batch_parser.add_argument("--project", required=True)
-    batch_parser.add_argument("--originals")
+    batch_parser.add_argument("--originals", action="append")
+    batch_parser.add_argument("--finals", action="append", help="videos finais (ou pasta) pra casar pelo conteudo")
+    batch_parser.add_argument("--only", help="ensina so esta sequencia (mesmo se ja ensinada)")
     batch_parser.add_argument("--store", required=True)
     batch_parser.add_argument("--model", default=subtitle_service.DEFAULT_MODEL)
     batch_parser.add_argument("--language", default=subtitle_service.DEFAULT_LANGUAGE)
@@ -373,13 +459,15 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "learn-project":
             report = learn_project(
                 args.project,
-                args.originals,
+                args.originals or [],
+                args.finals or [],
                 args.store,
                 args.model,
                 args.language,
                 args.beam_size,
                 "cpu" if args.cpu else "cuda",
                 "int8" if args.cpu else "float16",
+                args.only,
             )
             emit("done", "completed", "done", f"{len(report['taught'])} sequencias ensinadas.", progress=100, report=report)
         else:

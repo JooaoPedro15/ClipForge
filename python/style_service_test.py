@@ -195,7 +195,7 @@ class StyleServiceTest(unittest.TestCase):
 
         def learn_project() -> dict:
             with contextlib.redirect_stdout(io.StringIO()):
-                return style_service.learn_project(path, str(brutos), str(self.store), "large-v3", "pt", 5, "cpu", "int8")
+                return style_service.learn_project(path, [str(brutos)], [], str(self.store), "large-v3", "pt", 5, "cpu", "int8")
 
         report = learn_project()
 
@@ -203,9 +203,52 @@ class StyleServiceTest(unittest.TestCase):
         self.assertEqual([item["name"] for item in report["failed"]], ["Sequência 11"])
         self.assertEqual(
             report["skipped"],
-            [{"name": "Sequência 12", "reason": "sem video final exportado"}, {"name": "Sequência 13", "reason": "bruto nao encontrado"}],
+            [{"name": "Sequência 12", "reason": "video final nao encontrado"}, {"name": "Sequência 13", "reason": "bruto nao encontrado"}],
         )
         self.assertEqual(learn_project()["skipped"][0], {"name": "Sequência 10", "reason": "ja ensinada"})
+
+    def test_final_videos_with_any_name_are_matched_by_what_is_said_in_them(self):
+        bruto = self.tmp / "Sequência 20.mp3"
+        bruto.write_bytes(b"fake")
+        # O FakeWhisperModel devolve a fala do video final pra todo arquivo com "final" no nome.
+        renamed = self.tmp / "o final que eu renomeei.mp4"
+        renamed.write_bytes(b"fake")
+        extra = self.tmp / "outro final qualquer.mp4"
+        extra.write_bytes(b"fake")
+        project = FakeProject()
+        cards = style_service.style_alignment.parse_srt_text(CORRECTED_SRT)
+        project.sequence("Sequência 20", [[project.graphic(card.start, card.end, card.text) for card in cards]])
+        project.sequence("Sequência 21", [[project.graphic(0.0, 1.0, "nada a ver com isso aqui")]])
+        (self.tmp / "Sequência 21.mp3").write_bytes(b"fake")
+        path = str(project.write(self.tmp / "projeto.prproj"))
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            report = style_service.learn_project(
+                path, [str(bruto), str(self.tmp / "Sequência 21.mp3")], [str(renamed), str(extra)], str(self.store), "large-v3", "pt", 5, "cpu", "int8"
+            )
+
+        self.assertEqual([item["name"] for item in report["taught"]], ["Sequência 20"])
+        self.assertEqual(report["skipped"], [{"name": "Sequência 21", "reason": "video final nao encontrado"}])
+
+    def test_teaching_one_sequence_by_name_teaches_it_again(self):
+        bruto = self.tmp / "Sequência 30.mp3"
+        bruto.write_bytes(b"fake")
+        project = FakeProject()
+        cards = style_service.style_alignment.parse_srt_text(CORRECTED_SRT)
+        exported = export_settings(self.final, 0.0, 10.0)
+        project.sequence("Sequência 30", [[project.graphic(card.start, card.end, card.text) for card in cards]], export=exported)
+        project.sequence("Sequência 31", [[project.graphic(0.0, 1.0, "eu fui la")]], export=exported)
+        path = str(project.write(self.tmp / "projeto.prproj"))
+
+        def learn_only() -> dict:
+            with contextlib.redirect_stdout(io.StringIO()):
+                return style_service.learn_project(path, [str(bruto)], [], str(self.store), "large-v3", "pt", 5, "cpu", "int8", "Sequência 30")
+
+        self.assertEqual([item["name"] for item in learn_only()["taught"]], ["Sequência 30"])
+        again = learn_only()
+        self.assertEqual(([item["name"] for item in again["taught"]], again["skipped"]), (["Sequência 30"], []))
+        with contextlib.redirect_stdout(io.StringIO()), self.assertRaises(style_service.StyleError):
+            style_service.learn_project(path, [], [], str(self.store), "large-v3", "pt", 5, "cpu", "int8", "Sequência 99")
 
     def test_formula_groups_follow_the_current_segmentation(self):
         words = []

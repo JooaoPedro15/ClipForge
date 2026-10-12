@@ -192,6 +192,11 @@ class ReadSequencesTest(unittest.TestCase):
 
         self.assertEqual(found, {"Sequência 43": str(brutos / "Sequência 43.mp3"), "Sequência 44": None})
         self.assertIsNone(premiere_project.read_sequences(path)[0].original_path)
+        # Varios mp3 escolhidos a mao: cada um vai pra sequencia com o mesmo nome (maiuscula nao importa).
+        (brutos / "sequência 44.MP3").write_bytes(b"fake")
+        chosen = [brutos / "Sequência 43.mp3", brutos / "sequência 44.MP3"]
+        found = {sequence.name: sequence.original_path for sequence in premiere_project.read_sequences(path, chosen)}
+        self.assertEqual(found, {"Sequência 43": str(chosen[0]), "Sequência 44": str(chosen[1])})
 
     def test_missing_files_and_audio_exports_are_left_for_the_user_to_pick(self):
         project = FakeProject()
