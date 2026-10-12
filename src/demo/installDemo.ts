@@ -72,6 +72,7 @@ function installFakeBridge() {
       learn: async () => ({ ok: false, error: 'Modo demonstração.' }),
       forget: async () => ({ ok: false, error: 'Modo demonstração.' }),
       scanProject: async () => ({ ok: false, error: 'Modo demonstração.' }),
+      learnProject: async () => ({ ok: false, error: 'Modo demonstração.' }),
       onProgress: off,
     },
     clipSplitter: {

@@ -3,7 +3,7 @@ import { X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { PROFILE_LABELS, describeTiming, formatF1, getProfileStatus } from '@/lib/styleFormat'
 import { cn } from '@/lib/utils'
-import type { StyleLibrary, StyleProfileName, StyleReport } from '@/types/subtitleStyle'
+import type { StyleLibrary, StyleProfileName, StyleProjectLearnReport, StyleReport } from '@/types/subtitleStyle'
 
 // Resultado do ultimo ensino.
 export function StyleReportBox({ report }: { report: StyleReport }) {
@@ -25,6 +25,39 @@ export function StyleReportBox({ report }: { report: StyleReport }) {
       {report.warnings.map((warning) => (
         <p className="text-status-warn" key={warning}>
           {warning}
+        </p>
+      ))}
+    </div>
+  )
+}
+
+// Resultado do "Ensinar todas": o que entrou, o que ficou de fora (e por que) e o que deu erro.
+export function StyleBatchReportBox({ report }: { report: StyleProjectLearnReport }) {
+  const reasons = new Map<string, number>()
+  for (const item of report.skipped) {
+    reasons.set(item.reason, (reasons.get(item.reason) ?? 0) + 1)
+  }
+
+  return (
+    <div className="space-y-1.5 rounded-md border border-line bg-app px-3 py-2.5 text-xs text-text-secondary">
+      <p className="text-[13px] font-medium text-text-primary">
+        {report.taught.length} {report.taught.length === 1 ? 'sequência ensinada' : 'sequências ensinadas'}
+      </p>
+      {report.taught.map((item) => (
+        <p key={item.name}>
+          {item.name}: {PROFILE_LABELS[item.profile]}, acerto {formatF1(item.f1Formula)} na fórmula, {item.gapExamples} espaços
+          {item.cutShare >= 0.05 ? `, ~${Math.round(item.cutShare * 100)}% cortado` : ''}
+        </p>
+      ))}
+      {reasons.size > 0 ? (
+        <p className="text-text-muted">
+          Ficaram de fora:{' '}
+          {[...reasons.entries()].map(([reason, count]) => `${count} ${reason}`).join(', ')}.
+        </p>
+      ) : null}
+      {report.failed.map((item) => (
+        <p className="text-status-warn" key={item.name}>
+          {item.name}: {item.error}
         </p>
       ))}
     </div>

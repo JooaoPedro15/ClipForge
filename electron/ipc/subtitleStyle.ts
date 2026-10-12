@@ -11,6 +11,8 @@ import {
   type StyleProfileName,
   type StyleProfileParams,
   type StyleProgressEvent,
+  type StyleProjectLearnReport,
+  type StyleProjectLearnRequest,
   type StyleProjectScan,
   type StyleReport,
   type StyleRunResult,
@@ -70,8 +72,19 @@ export function buildStyleLearnArgs(request: StyleLearnRequest, storeDir: string
   return args
 }
 
-export function buildStyleScanArgs(projectPath: string) {
-  return ['scan-project', '--project', projectPath]
+export function buildStyleScanArgs(projectPath: string, originalsDir?: string | null) {
+  return ['scan-project', '--project', projectPath, ...(originalsDir ? ['--originals', originalsDir] : [])]
+}
+
+export function buildStyleLearnProjectArgs(request: StyleProjectLearnRequest, storeDir: string) {
+  const args = ['learn-project', '--project', request.projectPath, '--store', storeDir, '--model', request.model, '--language', request.language]
+  if (request.originalsDir) {
+    args.push('--originals', request.originalsDir)
+  }
+  if (request.useCpu) {
+    args.push('--cpu')
+  }
+  return args
 }
 
 export function buildStyleForgetArgs(videoId: string, storeDir: string) {
@@ -162,30 +175,38 @@ async function runStyleService<T>(scriptArgs: string[], sender: WebContents | nu
   return { ok: false, error: lastStderrLine ?? spawnError ?? `Processo finalizado com codigo ${code ?? 'desconhecido'}.` }
 }
 
+function enqueueStyleJob<T>(scriptArgs: string[], sender: WebContents): Promise<StyleRunResult<T>> {
+  return new Promise((resolve) => {
+    gpuQueue.enqueue({
+      id: `style-${Date.now()}`,
+      onQueued: (position, isNext) =>
+        sendProgress(sender, { stage: 'queued', message: isNext ? 'Aguardando inicializacao...' : `Na fila (${position})`, progress: null }),
+      run: async () => {
+        resolve(await runStyleService<T>(scriptArgs, sender))
+        return 'done'
+      },
+    })
+  })
+}
+
 export function registerSubtitleStyleHandlers() {
   ipcMain.handle('subtitleStyle:list', async (): Promise<StyleLibrary> => readStyleLibrary(getStyleStoreDir()))
 
-  // Ensinar roda o Whisper: entra na fila unica de GPU e espera transcricao/queima/Pre-Editor da frente.
-  ipcMain.handle('subtitleStyle:learn', (event, request: StyleLearnRequest): Promise<StyleRunResult<StyleReport>> => {
-    const sender = event.sender
-    const scriptArgs = buildStyleLearnArgs(request, getStyleStoreDir())
-
-    return new Promise((resolve) => {
-      gpuQueue.enqueue({
-        id: `style-${Date.now()}`,
-        onQueued: (position, isNext) =>
-          sendProgress(sender, { stage: 'queued', message: isNext ? 'Aguardando inicializacao...' : `Na fila (${position})`, progress: null }),
-        run: async () => {
-          resolve(await runStyleService<StyleReport>(scriptArgs, sender))
-          return 'done'
-        },
-      })
-    })
-  })
+  // Ensinar (um ou todos) roda o Whisper: entra na fila unica de GPU e espera transcricao/queima/Pre-Editor da frente.
+  ipcMain.handle('subtitleStyle:learn', (event, request: StyleLearnRequest): Promise<StyleRunResult<StyleReport>> =>
+    enqueueStyleJob<StyleReport>(buildStyleLearnArgs(request, getStyleStoreDir()), event.sender),
+  )
+  ipcMain.handle(
+    'subtitleStyle:learnProject',
+    (event, request: StyleProjectLearnRequest): Promise<StyleRunResult<StyleProjectLearnReport>> =>
+      enqueueStyleJob<StyleProjectLearnReport>(buildStyleLearnProjectArgs(request, getStyleStoreDir()), event.sender),
+  )
 
   // Ler o projeto do Premiere so abre o XML (sem Whisper): fora da fila de GPU.
-  ipcMain.handle('subtitleStyle:scanProject', (_event, projectPath: string): Promise<StyleRunResult<StyleProjectScan>> =>
-    runStyleService<StyleProjectScan>(buildStyleScanArgs(projectPath), null),
+  ipcMain.handle(
+    'subtitleStyle:scanProject',
+    (_event, projectPath: string, originalsDir?: string | null): Promise<StyleRunResult<StyleProjectScan>> =>
+      runStyleService<StyleProjectScan>(buildStyleScanArgs(projectPath, originalsDir), null),
   )
 
   // Esquecer so mexe nos arquivos da biblioteca e retreina a arvore: rapido, nao precisa da fila de GPU.

@@ -1,8 +1,8 @@
-import { Check, LoaderCircle, TriangleAlert } from 'lucide-react'
+import { Check, FolderOpen, LoaderCircle, TriangleAlert } from 'lucide-react'
 import { useState } from 'react'
 
 import { InspectorSection } from '@/components/inspector/InspectorSection'
-import { StyleProfile, StyleReportBox } from '@/components/subtitle/StyleProfile'
+import { StyleBatchReportBox, StyleProfile, StyleReportBox } from '@/components/subtitle/StyleProfile'
 import { Button } from '@/components/ui/Button'
 import { CustomSelect } from '@/components/ui/CustomSelect'
 import { useSubtitleStyle } from '@/hooks/useSubtitleStyle'
@@ -42,9 +42,12 @@ function missingFilesHint(item: StyleProjectSequence) {
   return item.finalPath ? null : 'escolha o final'
 }
 
+function isTaught(item: StyleProjectSequence, library: StyleLibrary | null) {
+  return Boolean(item.originalPath && library?.videos.some((video) => video.originalPath === item.originalPath))
+}
+
 function sequenceHint(item: StyleProjectSequence, library: StyleLibrary | null) {
-  const taught = Boolean(item.originalPath && library?.videos.some((video) => video.originalPath === item.originalPath))
-  return [`${item.cards} legendas`, taught ? 'já ensinada' : null, missingFilesHint(item)].filter(Boolean).join(' · ')
+  return [`${item.cards} legendas`, isTaught(item, library) ? 'já ensinada' : null, missingFilesHint(item)].filter(Boolean).join(' · ')
 }
 
 // Secao "Meu estilo" do Inspetor: ensina o app com um video que o usuario corrigiu no Premiere.
@@ -54,6 +57,7 @@ export function StylePanel() {
   const [paths, setPaths] = useState<Record<PickKind, string | null>>({ original: null, srt: null, final: null })
   const [project, setProject] = useState<StyleProjectScan | null>(null)
   const [sequence, setSequence] = useState<string | null>(null)
+  const [originalsDir, setOriginalsDir] = useState<string | null>(null)
 
   if (!style.available) {
     return null
@@ -70,8 +74,36 @@ export function StylePanel() {
     setPaths((current) => ({ ...current, [kind]: first }))
     if (kind === 'srt') {
       setSequence(null)
-      setProject(isPremiereProject(first) ? await style.scanProject(first) : null)
+      setProject(isPremiereProject(first) ? await style.scanProject(first, originalsDir) : null)
     }
+  }
+
+  // Pasta dos brutos: Sequencia 43.mp3 casa com a sequencia de mesmo nome. Rele o projeto pra achar os brutos.
+  async function pickOriginalsDir() {
+    const folder = await window.clipforge.dialog.openDirectory()
+    if (!folder || !paths.srt) {
+      return
+    }
+    setOriginalsDir(folder)
+    const scan = await style.scanProject(paths.srt, folder)
+    setProject(scan)
+    const current = scan?.sequences.find((item) => item.name === sequence)
+    if (current) {
+      setPaths((previous) => ({ ...previous, original: current.originalPath, final: current.finalPath }))
+    }
+  }
+
+  async function teachAll() {
+    if (!paths.srt) {
+      return
+    }
+    await style.learnProject({
+      projectPath: paths.srt,
+      originalsDir,
+      model: settings.model,
+      language: settings.language,
+      useCpu: settings.useCpu,
+    })
   }
 
   // Trocar de sequencia troca bruto e final juntos: caminho velho de outra sequencia ensinaria errado.
@@ -100,6 +132,8 @@ export function StylePanel() {
 
   const ready =
     Boolean(paths.original && paths.srt && paths.final) && (!projectMode || Boolean(sequence)) && !style.running && !style.scanning
+  // Completas e ainda nao ensinadas: o que o "Ensinar todas" vai fazer.
+  const pending = projectMode && project ? project.sequences.filter((item) => item.originalPath && item.finalPath && !isTaught(item, style.library)) : []
   const activeProfiles = PROFILES.filter((profile) => getProfileStatus(style.library, profile).active)
   const summary =
     activeProfiles.length === 0 ? 'Nenhum perfil ativo' : activeProfiles.length === 1 ? '1 perfil ativo' : '2 perfis ativos'
@@ -150,6 +184,18 @@ export function StylePanel() {
                   value={sequence ?? ''}
                 />
               ) : null}
+              {picker.kind === 'srt' && projectMode && project ? (
+                <button
+                  className="app-no-drag mt-1.5 flex w-full items-center gap-2 rounded-md px-1 py-1 text-left text-xs text-text-secondary transition-colors hover:text-text-primary"
+                  onClick={() => void pickOriginalsDir()}
+                  type="button"
+                >
+                  <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">
+                    {originalsDir ? `Brutos de ${getFileName(originalsDir)}` : 'Pasta dos brutos (Sequência 43.mp3 = Sequência 43)'}
+                  </span>
+                </button>
+              ) : null}
             </li>
           )
         })}
@@ -164,6 +210,11 @@ export function StylePanel() {
       >
         {style.running ? 'Ensinando…' : 'Ensinar'}
       </Button>
+      {projectMode && project ? (
+        <Button className="w-full" disabled={pending.length === 0 || style.running || style.scanning} onClick={() => void teachAll()} size="sm" variant="ghost">
+          {pending.length === 0 ? 'Nada novo pra ensinar no projeto' : `Ensinar todas (${pending.length})`}
+        </Button>
+      ) : null}
 
       {style.running && style.progress ? <p className="text-xs text-text-secondary">{style.progress.message}</p> : null}
       {style.error ? (
@@ -173,6 +224,7 @@ export function StylePanel() {
         </p>
       ) : null}
       {style.report ? <StyleReportBox report={style.report} /> : null}
+      {style.batchReport ? <StyleBatchReportBox report={style.batchReport} /> : null}
 
       {PROFILES.map((profile) => (
         <StyleProfile

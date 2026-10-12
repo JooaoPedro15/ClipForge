@@ -69,6 +69,22 @@ export interface StyleProjectScan {
   sequences: StyleProjectSequence[]
 }
 
+// Ensinar todas: cada sequencia completa do projeto (bruto achado + grafico + video final).
+export interface StyleProjectLearnRequest {
+  projectPath: string
+  // Pasta dos brutos: Sequencia 43.mp3 casa com a sequencia "Sequencia 43".
+  originalsDir: string | null
+  model: string
+  language: string
+  useCpu: boolean
+}
+
+export interface StyleProjectLearnReport {
+  taught: Array<StyleReport & { name: string }>
+  skipped: Array<{ name: string; reason: string }>
+  failed: Array<{ name: string; error: string }>
+}
+
 export interface StyleReport {
   videoId: string
   profile: StyleProfileName

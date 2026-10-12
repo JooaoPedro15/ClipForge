@@ -28,6 +28,8 @@ import type {
   StyleLearnRequest,
   StyleLibrary,
   StyleProgressEvent,
+  StyleProjectLearnReport,
+  StyleProjectLearnRequest,
   StyleProjectScan,
   StyleReport,
   StyleRunResult,
@@ -75,7 +77,8 @@ declare global {
         list: () => Promise<StyleLibrary>
         learn: (request: StyleLearnRequest) => Promise<StyleRunResult<StyleReport>>
         forget: (videoId: string) => Promise<StyleRunResult<StyleForgetReport>>
-        scanProject: (projectPath: string) => Promise<StyleRunResult<StyleProjectScan>>
+        scanProject: (projectPath: string, originalsDir?: string | null) => Promise<StyleRunResult<StyleProjectScan>>
+        learnProject: (request: StyleProjectLearnRequest) => Promise<StyleRunResult<StyleProjectLearnReport>>
         onProgress: (cb: (data: StyleProgressEvent) => void) => () => void
       }
       clipSplitter: {

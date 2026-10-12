@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useState } from 'react'
 
-import type { StyleLearnRequest, StyleLibrary, StyleProgressEvent, StyleProjectScan, StyleReport } from '@/types/subtitleStyle'
+import type {
+  StyleLearnRequest,
+  StyleLibrary,
+  StyleProgressEvent,
+  StyleProjectLearnReport,
+  StyleProjectLearnRequest,
+  StyleProjectScan,
+  StyleReport,
+} from '@/types/subtitleStyle'
 
 // Estado do painel "Meu estilo": biblioteca, progresso do ensino em andamento e ultimo resultado.
 export function useSubtitleStyle() {
@@ -11,6 +19,7 @@ export function useSubtitleStyle() {
   const [scanning, setScanning] = useState(false)
   const [progress, setProgress] = useState<StyleProgressEvent | null>(null)
   const [report, setReport] = useState<StyleReport | null>(null)
+  const [batchReport, setBatchReport] = useState<StyleProjectLearnReport | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
@@ -45,6 +54,7 @@ export function useSubtitleStyle() {
       setRunning(true)
       setError(null)
       setReport(null)
+      setBatchReport(null)
       setProgress(null)
       try {
         const result = await api.learn(request)
@@ -73,16 +83,42 @@ export function useSubtitleStyle() {
     [api, refresh],
   )
 
+  // Ensina todas as sequencias completas do projeto de uma vez.
+  const learnProject = useCallback(
+    async (request: StyleProjectLearnRequest) => {
+      if (!api) {
+        return
+      }
+      setRunning(true)
+      setError(null)
+      setReport(null)
+      setBatchReport(null)
+      setProgress(null)
+      try {
+        const result = await api.learnProject(request)
+        if (result.ok) {
+          setBatchReport(result.report)
+        } else {
+          setError(result.error)
+        }
+        await refresh()
+      } finally {
+        setRunning(false)
+      }
+    },
+    [api, refresh],
+  )
+
   // Lista as sequencias com legenda de um projeto do Premiere (null = erro, mostrado em `error`).
   const scanProject = useCallback(
-    async (projectPath: string): Promise<StyleProjectScan | null> => {
+    async (projectPath: string, originalsDir?: string | null): Promise<StyleProjectScan | null> => {
       if (!api) {
         return null
       }
       setScanning(true)
       setError(null)
       try {
-        const result = await api.scanProject(projectPath)
+        const result = await api.scanProject(projectPath, originalsDir)
         if (result.ok) {
           return result.report
         }
@@ -95,5 +131,18 @@ export function useSubtitleStyle() {
     [api],
   )
 
-  return { available: Boolean(api), library, running, scanning, progress, report, error, learn, forget, scanProject }
+  return {
+    available: Boolean(api),
+    library,
+    running,
+    scanning,
+    progress,
+    report,
+    batchReport,
+    error,
+    learn,
+    learnProject,
+    forget,
+    scanProject,
+  }
 }
