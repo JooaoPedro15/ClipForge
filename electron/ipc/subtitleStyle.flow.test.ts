@@ -99,6 +99,23 @@ describe('IPC do aprendizado de estilo', () => {
     expect(style.buildStyleForgetArgs('abc', 'C:\\store')).toEqual(['forget', '--id', 'abc', '--store', 'C:\\store'])
   })
 
+  it('com projeto do Premiere, manda a sequencia e lista as sequencias sem usar a fila de GPU', async () => {
+    const { style, call } = await setup()
+    const request = { ...REQUEST, srtPath: 'C:\\projetos\\roo.prproj', sequence: 'Sequência 42' }
+
+    expect(style.buildStyleLearnArgs(request, 'C:\\store')).toEqual(expect.arrayContaining(['--srt', 'C:\\projetos\\roo.prproj', '--sequence', 'Sequência 42']))
+    expect(style.buildStyleLearnArgs({ ...REQUEST, sequence: null }, 'C:\\store')).not.toContain('--sequence')
+
+    const scan = call<{ ok: boolean; report: { sequences: unknown[] } }>('subtitleStyle:scanProject', 'C:\\projetos\\roo.prproj')
+    await flush()
+    const process = child(0)
+    expect(process.args.slice(-3)).toEqual(['scan-project', '--project', 'C:\\projetos\\roo.prproj'])
+    process.emitStdout(jsonLine({ event: 'done', status: 'completed', stage: 'done', message: '1 sequencias', report: { projectPath: 'x', sequences: [{ name: 'Sequência 42' }] } }))
+    process.close(0)
+
+    expect(await scan).toEqual({ ok: true, report: { projectPath: 'x', sequences: [{ name: 'Sequência 42' }] } })
+  })
+
   it('le a biblioteca e os perfis direto dos arquivos', async () => {
     const { style } = await setup()
     const store = path.join(mocks.userData, 'subtitle-style')

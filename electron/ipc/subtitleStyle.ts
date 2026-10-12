@@ -11,6 +11,7 @@ import {
   type StyleProfileName,
   type StyleProfileParams,
   type StyleProgressEvent,
+  type StyleProjectScan,
   type StyleReport,
   type StyleRunResult,
   type StyleVideoEntry,
@@ -58,11 +59,19 @@ export function buildStyleLearnArgs(request: StyleLearnRequest, storeDir: string
     request.language,
   ]
 
+  if (request.sequence) {
+    args.push('--sequence', request.sequence)
+  }
+
   if (request.useCpu) {
     args.push('--cpu')
   }
 
   return args
+}
+
+export function buildStyleScanArgs(projectPath: string) {
+  return ['scan-project', '--project', projectPath]
 }
 
 export function buildStyleForgetArgs(videoId: string, storeDir: string) {
@@ -173,6 +182,11 @@ export function registerSubtitleStyleHandlers() {
       })
     })
   })
+
+  // Ler o projeto do Premiere so abre o XML (sem Whisper): fora da fila de GPU.
+  ipcMain.handle('subtitleStyle:scanProject', (_event, projectPath: string): Promise<StyleRunResult<StyleProjectScan>> =>
+    runStyleService<StyleProjectScan>(buildStyleScanArgs(projectPath), null),
+  )
 
   // Esquecer so mexe nos arquivos da biblioteca e retreina a arvore: rapido, nao precisa da fila de GPU.
   ipcMain.handle('subtitleStyle:forget', (_event, videoId: string): Promise<StyleRunResult<StyleForgetReport>> =>

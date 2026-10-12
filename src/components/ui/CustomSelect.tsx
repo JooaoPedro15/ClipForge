@@ -15,9 +15,11 @@ interface CustomSelectProps {
   options: SelectOption[]
   className?: string
   id?: string
+  // Texto do botao enquanto nenhuma opcao esta escolhida.
+  placeholder?: string
 }
 
-export function CustomSelect({ value, onChange, options, className, id }: CustomSelectProps) {
+export function CustomSelect({ value, onChange, options, className, id, placeholder }: CustomSelectProps) {
   // Controla a abertura do dropdown e referencia o container para clique externo.
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -60,13 +62,13 @@ export function CustomSelect({ value, onChange, options, className, id }: Custom
         onClick={() => setOpen(!open)}
         type="button"
       >
-        <span className="truncate">{selected?.label ?? value}</span>
+        <span className={cn('truncate', !selected && placeholder && 'text-text-muted')}>{selected?.label ?? placeholder ?? value}</span>
         <ChevronDown className={cn('h-4 w-4 shrink-0 text-text-muted transition-transform', open && 'rotate-180')} />
       </button>
 
       {open && (
         <div
-          className="absolute z-50 mt-1 w-full overflow-hidden rounded-lg border border-line-strong bg-raised py-1 shadow-[0_12px_32px_rgba(0,0,0,0.5)]"
+          className="absolute z-50 mt-1 max-h-72 w-full overflow-y-auto rounded-lg border border-line-strong bg-raised py-1 shadow-[0_12px_32px_rgba(0,0,0,0.5)]"
           role="listbox"
         >
           {options.map((option) => {

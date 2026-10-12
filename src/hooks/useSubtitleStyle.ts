@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 
-import type { StyleLearnRequest, StyleLibrary, StyleProgressEvent, StyleReport } from '@/types/subtitleStyle'
+import type { StyleLearnRequest, StyleLibrary, StyleProgressEvent, StyleProjectScan, StyleReport } from '@/types/subtitleStyle'
 
 // Estado do painel "Meu estilo": biblioteca, progresso do ensino em andamento e ultimo resultado.
 export function useSubtitleStyle() {
@@ -8,6 +8,7 @@ export function useSubtitleStyle() {
   const api = typeof window !== 'undefined' ? window.clipforge?.subtitleStyle : undefined
   const [library, setLibrary] = useState<StyleLibrary | null>(null)
   const [running, setRunning] = useState(false)
+  const [scanning, setScanning] = useState(false)
   const [progress, setProgress] = useState<StyleProgressEvent | null>(null)
   const [report, setReport] = useState<StyleReport | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -72,5 +73,27 @@ export function useSubtitleStyle() {
     [api, refresh],
   )
 
-  return { available: Boolean(api), library, running, progress, report, error, learn, forget }
+  // Lista as sequencias com legenda de um projeto do Premiere (null = erro, mostrado em `error`).
+  const scanProject = useCallback(
+    async (projectPath: string): Promise<StyleProjectScan | null> => {
+      if (!api) {
+        return null
+      }
+      setScanning(true)
+      setError(null)
+      try {
+        const result = await api.scanProject(projectPath)
+        if (result.ok) {
+          return result.report
+        }
+        setError(result.error)
+        return null
+      } finally {
+        setScanning(false)
+      }
+    },
+    [api],
+  )
+
+  return { available: Boolean(api), library, running, scanning, progress, report, error, learn, forget, scanProject }
 }

@@ -28,6 +28,7 @@ import type {
   StyleLearnRequest,
   StyleLibrary,
   StyleProgressEvent,
+  StyleProjectScan,
   StyleReport,
   StyleRunResult,
 } from './subtitleStyle'
@@ -74,6 +75,7 @@ declare global {
         list: () => Promise<StyleLibrary>
         learn: (request: StyleLearnRequest) => Promise<StyleRunResult<StyleReport>>
         forget: (videoId: string) => Promise<StyleRunResult<StyleForgetReport>>
+        scanProject: (projectPath: string) => Promise<StyleRunResult<StyleProjectScan>>
         onProgress: (cb: (data: StyleProgressEvent) => void) => () => void
       }
       clipSplitter: {

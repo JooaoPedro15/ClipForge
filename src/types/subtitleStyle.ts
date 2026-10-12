@@ -47,11 +47,26 @@ export interface StyleLibrary {
 
 export interface StyleLearnRequest {
   originalPath: string
+  // SRT corrigido ou projeto do Premiere (.prproj); no projeto, `sequence` diz qual sequencia.
   srtPath: string
+  sequence?: string | null
   finalPath: string
   model: string
   language: string
   useCpu: boolean
+}
+
+// Sequencia com legenda achada num .prproj; caminhos ficam null quando o projeto nao diz qual e.
+export interface StyleProjectSequence {
+  name: string
+  cards: number
+  finalPath: string | null
+  originalPath: string | null
+}
+
+export interface StyleProjectScan {
+  projectPath: string
+  sequences: StyleProjectSequence[]
 }
 
 export interface StyleReport {

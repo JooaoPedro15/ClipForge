@@ -127,9 +127,11 @@ No caminho NLLB a traducao agrupa os cards do mesmo segmento do Whisper e usa um
 
 O app aprende onde voce quebra as legendas e como ajusta entrada/saida, a partir dos videos que voce corrige no Premiere:
 
-1. Gere a legenda no app (ela salva tambem `video.words.json`, com o tempo de cada palavra).
-2. Corrija no Premiere e exporte o `.srt` corrigido e o video final (com os cortes).
-3. Na secao **Meu estilo** do Inspetor, escolha video original, SRT corrigido e video final e clique **Ensinar**.
+1. Gere a legenda no app (ela salva tambem `video.words.json`, com o tempo de cada palavra). O bruto pode ser video ou o `.mp3` da sequencia.
+2. Corrija no Premiere e exporte o video final (com os cortes).
+3. Na secao **Meu estilo** do Inspetor, escolha o bruto legendado, as correcoes e o video final e clique **Ensinar**.
+
+As correcoes podem ser o `.srt` exportado ou o **proprio projeto do Premiere** (`.prproj`): o app le os graficos de texto da sequencia escolhida (legenda que ja virou grafico pra ter efeitos), com o tempo de cada um na linha do tempo, descontado o inicio da exportacao. A trilha com mais textos e a da legenda; textos de outra trilha so entram se nao ficam por cima dela (titulos ficam de fora). Projeto antigo, com a legenda ainda na trilha de legenda, tambem serve. Ao escolher a sequencia, o app preenche o video final (ultima exportacao da sequencia em video) e o bruto (arquivo com o mesmo nome do `.srt` importado no projeto, ex.: `Sequencia 42.mp3`), quando acha. Codigo em `python/premiere_project.py`; pela linha de comando: `python python/style_service.py scan-project --project roo.prproj`.
 
 A comparacao e pelo texto, entao cortar o video depois de legendar nao atrapalha: palavra que sumiu do SRT conta como trecho cortado, nao como legenda errada. Legenda que junta falas dos dois lados de um corte fica de fora, os tempos sao medidos no video final, e o relatorio mostra quanto do bruto foi cortado. Nao precisa exportar o video sem cortes. Uma arvore de decisao (scikit-learn) aprende as quebras e medianas aprendem os tempos, com um perfil para vertical e outro para horizontal. Com 3+ videos ensinados no formato, a chave **Usar meu estilo** passa a segmentar novas legendas assim. Biblioteca em `%APPDATA%/<app>/subtitle-style` (cada video pode ser removido e o perfil e retreinado).
 
