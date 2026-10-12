@@ -524,6 +524,10 @@ class TranscribeVideoStyleTest(unittest.TestCase):
             self.assertEqual(self.service.resolve_style_profile_name("v.mp4"), "horizontal")
         with mock.patch.object(self.service.ffmpeg_utils, "probe_video", side_effect=RuntimeError("sem video")):
             self.assertEqual(self.service.resolve_style_profile_name("v.mp3"), "horizontal")
+            # So audio (mp3 da sequencia): vale o perfil pedido pela opcao Shorts/Longo.
+            self.assertEqual(self.service.resolve_style_profile_name("v.mp3", "vertical"), "vertical")
+        with mock.patch.object(self.service.ffmpeg_utils, "probe_video", return_value=landscape):
+            self.assertEqual(self.service.resolve_style_profile_name("v.mp4", "vertical"), "horizontal")
 
 
 if __name__ == "__main__":

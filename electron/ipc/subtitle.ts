@@ -340,7 +340,8 @@ export function buildProcessArgs(serviceScriptPath: string, task: SubtitleTaskRe
   }
 
   if (task.styleStore) {
-    args.push('--style-store', task.styleStore)
+    // O perfil sai da orientacao do video; pra entrada so de audio (mp3), da opcao Shorts/Longo.
+    args.push('--style-store', task.styleStore, '--style-profile', task.options.format === 'shorts' ? 'vertical' : 'horizontal')
   }
 
   return args

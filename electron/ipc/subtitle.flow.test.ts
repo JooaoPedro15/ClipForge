@@ -426,7 +426,7 @@ describe('fluxo IPC da transcricao (caracterizacao)', () => {
     child(0).close(0)
     await flush()
 
-    expect(child(0).args.slice(-2)).toEqual(['--style-store', 'C:\\userData\\subtitle-style'])
+    expect(child(0).args.slice(-4, -2)).toEqual(['--style-store', 'C:\\userData\\subtitle-style'])
     expect(child(1).args).not.toContain('--style-store')
   })
 

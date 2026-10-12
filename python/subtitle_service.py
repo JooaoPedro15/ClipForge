@@ -94,17 +94,18 @@ def run_whisper(model: Any, media_path: str, language: str, beam_size: int, word
 
 
 # Perfil de estilo pela orientacao real do video; sem stream de video (ex.: so audio), horizontal.
-def resolve_style_profile_name(input_path: str) -> str:
+# Perfil pela orientacao do video; arquivo so de audio (o mp3 da sequencia) nao tem imagem e usa `fallback`.
+def resolve_style_profile_name(input_path: str, fallback: str = "horizontal") -> str:
     try:
         video_info = ffmpeg_utils.probe_video(input_path)
     except Exception:
-        return "horizontal"
+        return fallback
     return "vertical" if video_info.height > video_info.width else "horizontal"
 
 
 # Perfil aprendido pronto pra uso (>= 3 videos) ou None. Perfil ilegivel nao derruba a transcricao.
-def load_style_for_video(input_path: str, style_store_dir: str) -> tuple[Any, dict[str, Any]] | None:
-    profile = resolve_style_profile_name(input_path)
+def load_style_for_video(input_path: str, style_store_dir: str, audio_profile: str = "horizontal") -> tuple[Any, dict[str, Any]] | None:
+    profile = resolve_style_profile_name(input_path, audio_profile)
     try:
         loaded = style_model.load_profile(style_store.profile_dir(Path(style_store_dir), profile))
     except Exception as error:
@@ -180,6 +181,7 @@ def transcribe_video(
     channel_glossary_path: str = glossary_service.DEFAULT_CHANNEL_GLOSSARY_PATH,
     video_type: str = "",
     style_store_dir: str | None = None,
+    style_profile: str = "horizontal",
 ) -> str:
     input_file = Path(input_path)
 
@@ -225,7 +227,7 @@ def transcribe_video(
         progress=28,
         loadTimeSec=load_time,
     )
-    style = load_style_for_video(str(input_file), style_store_dir) if style_store_dir and word_timestamps else None
+    style = load_style_for_video(str(input_file), style_store_dir, style_profile) if style_store_dir and word_timestamps else None
     emit(
         "status",
         "processing",
@@ -409,6 +411,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--translate-to", default="")
     parser.add_argument("--video-type", default="", help="Contexto do video (ex.: gameplay de terror) pra traducao")
     parser.add_argument("--style-store", default=None, help="Pasta do aprendizado de estilo (userData/subtitle-style)")
+    parser.add_argument(
+        "--style-profile",
+        choices=["vertical", "horizontal"],
+        default="horizontal",
+        help="Perfil de estilo quando a entrada e so audio (vem da opcao Shorts/Longo)",
+    )
     return parser.parse_args()
 
 
@@ -437,6 +445,7 @@ def main() -> int:
             translate_to=translate_to,
             video_type=args.video_type,
             style_store_dir=args.style_store,
+            style_profile=args.style_profile,
         )
         return 0
     except FileNotFoundError:

@@ -92,7 +92,8 @@ describe('buildProcessArgs com estilo aprendido', () => {
 
     const args = buildProcessArgs('script.py', task)
 
-    expect(args.slice(-2)).toEqual(['--style-store', 'C:\\userData\\subtitle-style'])
+    expect(args.slice(-4)).toEqual(['--style-store', 'C:\\userData\\subtitle-style', '--style-profile', 'horizontal'])
+    expect(buildProcessArgs('script.py', { ...task, options: { ...baseOptions, format: 'shorts' } }).slice(-1)).toEqual(['vertical'])
   })
 
   it('omite --style-store sem pasta', () => {
