@@ -10,6 +10,13 @@ import type {
   StyleReport,
 } from '@/types/subtitleStyle'
 
+// Chamada que nem chegou ao Python: o caso tipico e o processo principal antigo (app aberto antes de
+// atualizar), sem o canal novo. Sem isto a tela so ficava parada, sem dizer nada.
+function describeFailure(caught: unknown) {
+  const detail = caught instanceof Error ? caught.message : String(caught)
+  return `Falha ao falar com o app (${detail}). Se o app foi atualizado, feche e abra de novo.`
+}
+
 // Estado do painel "Meu estilo": biblioteca, progresso do ensino em andamento e ultimo resultado.
 export function useSubtitleStyle() {
   // A API do preload e opcional pra UI ainda renderizar fora do Electron (Vite puro).
@@ -64,6 +71,8 @@ export function useSubtitleStyle() {
           setError(result.error)
         }
         await refresh()
+      } catch (caught) {
+        setError(describeFailure(caught))
       } finally {
         setRunning(false)
       }
@@ -102,6 +111,8 @@ export function useSubtitleStyle() {
           setError(result.error)
         }
         await refresh()
+      } catch (caught) {
+        setError(describeFailure(caught))
       } finally {
         setRunning(false)
       }
@@ -123,6 +134,9 @@ export function useSubtitleStyle() {
           return result.report
         }
         setError(result.error)
+        return null
+      } catch (caught) {
+        setError(describeFailure(caught))
         return null
       } finally {
         setScanning(false)
