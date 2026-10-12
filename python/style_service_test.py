@@ -11,6 +11,7 @@ from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).parent))
+import premiere_project
 import style_service
 from premiere_project_test import FakeProject, export_settings
 
@@ -237,6 +238,22 @@ class StyleServiceTest(unittest.TestCase):
             os.utime(path, (stamp, stamp))
 
         self.assertEqual(style_service.order_by_date([far, near], [bruto]), [near, far])
+
+    def test_raw_file_that_became_two_shorts_teaches_the_bigger_one(self):
+        # Bruto longo: a fala do ORIGINAL + um trecho que virou outro Short (outra sequencia).
+        words = [{"word": f" {text}", "start": index * 0.4, "end": index * 0.4 + 0.3} for index, text in enumerate(
+            ("eu fui la ontem e tava cheio de gente demais " * 3 + "bola azul grande voando " * 12).split()
+        )]
+        project = FakeProject()
+        project.sequence("Sequência 1", [[project.graphic(index * 2.0, index * 2.0 + 1.5, "eu fui la ontem e tava cheio de gente demais") for index in range(3)]])
+        project.sequence("Sequência 2", [[project.graphic(0.0, 1.0, "bola azul grande voando bola azul")]])
+        sequences = premiere_project.read_sequences(project.write(self.tmp / "projeto.prproj"))
+
+        window = style_service.locate_short("robo", words, sequences)
+
+        self.assertIsNotNone(window)
+        self.assertEqual((window.sequence.name, window.start, window.end), ("Sequência 1", 0, 3))
+        self.assertLess(window.score, style_service.style_alignment.MIN_MATCH_RATIO)
 
     def test_final_videos_with_any_name_are_matched_by_what_is_said_in_them(self):
         bruto = self.tmp / "Sequência 40.mp3"

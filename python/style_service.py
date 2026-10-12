@@ -270,6 +270,10 @@ AUDIO_EXTENSIONS = (".mp3", ".wav", ".m4a")
 BLOCK_GAP_S = 3.0
 # Janelas com nota ate essa distancia da melhor contam como empate (copias do mesmo Short).
 WINDOW_TIE = 0.02
+# Bruto que virou mais de um Short (ou foi muito cortado): aceita um trecho cujas legendas estao quase
+# todas na fala do bruto, desde que tenha palavras suficientes pra nao ser coincidencia.
+PARTIAL_MIN_COVERAGE = 0.75
+PARTIAL_MIN_TOKENS = 25
 
 
 def _files(sources: list[str], extensions: tuple[str, ...], folder_extensions: tuple[str, ...]) -> list[Path]:
@@ -334,6 +338,13 @@ class _Window:
     sequence: premiere_project.ProjectSequence
     start: int
     end: int
+    # Palavras das legendas do trecho achadas na fala do bruto, e quantas o trecho tem.
+    matched: int = 0
+    size: int = 0
+
+    @property
+    def coverage(self) -> float:
+        return self.matched / self.size if self.size else 0.0
 
     @property
     def cards(self) -> list[style_alignment.Card]:
@@ -366,8 +377,14 @@ def _windows(sequence: premiere_project.ProjectSequence, spoken: list[str], dura
             if not window_tokens:
                 continue
             matcher.set_seq1(window_tokens)
-            found.append(_Window(matcher.ratio(), sequence, start, end))
+            matched = sum(block.size for block in matcher.get_matching_blocks())
+            ratio = 2 * matched / (len(window_tokens) + len(spoken))
+            found.append(_Window(ratio, sequence, start, end, matched, len(window_tokens)))
     return found
+
+
+def _prefer_exported(windows: list[_Window]) -> _Window:
+    return next((window for window in windows if window.exported()), windows[0])
 
 
 # Onde esta o Short desse bruto no projeto: primeiro nas sequencias de nome parecido
@@ -380,16 +397,26 @@ def locate_short(stem: str, words: list[dict[str, Any]], sequences: list[premier
     folded = stem.casefold()
     named = [item for item in sequences if folded == item.name.casefold() or folded.startswith(item.name.casefold() + " ")]
     others = [item for item in sequences if item not in named]
+    every: list[_Window] = []
     for group in (named, others):
         windows = [window for item in group for window in _windows(item, spoken, duration)]
+        every.extend(windows)
         if not windows:
             continue
         best = max(window.score for window in windows)
         if best < style_alignment.MIN_MATCH_RATIO:
             continue
-        tied = [window for window in windows if window.score >= best - WINDOW_TIE]
-        return next((window for window in tied if window.exported()), max(tied, key=lambda window: window.score))
-    return None
+        tied = sorted((window for window in windows if window.score >= best - WINDOW_TIE), key=lambda window: -window.score)
+        return _prefer_exported(tied)
+
+    # Nenhum trecho bate com o bruto inteiro: ele pode ter virado mais de um Short. Fica com o maior
+    # trecho cujas legendas estao quase todas na fala dele.
+    partial = [window for window in every if window.coverage >= PARTIAL_MIN_COVERAGE and window.size >= PARTIAL_MIN_TOKENS]
+    if not partial:
+        return None
+    most = max(window.matched for window in partial)
+    tied = sorted((window for window in partial if window.matched >= most * 0.95), key=lambda window: -window.matched)
+    return _prefer_exported(tied)
 
 
 @dataclass
