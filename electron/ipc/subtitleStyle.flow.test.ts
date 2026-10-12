@@ -115,7 +115,7 @@ describe('IPC do aprendizado de estilo', () => {
       'D:\\x.mp3',
     ])
     const batch = { projectPath: 'C:\\p.prproj', originals: ['D:\\brutos'], finals: ['D:\\a.mp4', 'D:\\b.mp4'], model: 'large-v3', language: 'pt', useCpu: false }
-    expect(style.buildStyleLearnProjectArgs({ ...batch, only: 'Sequência 28 3' }, 'C:\\store')).toEqual([
+    expect(style.buildStyleLearnProjectArgs(batch, 'C:\\store')).toEqual([
       'learn-project',
       '--project',
       'C:\\p.prproj',
@@ -131,10 +131,8 @@ describe('IPC do aprendizado de estilo', () => {
       'D:\\a.mp4',
       '--finals',
       'D:\\b.mp4',
-      '--only',
-      'Sequência 28 3',
     ])
-    expect(style.buildStyleLearnProjectArgs({ ...batch, finals: [] }, 'C:\\store')).not.toContain('--only')
+    expect(style.buildStyleLearnProjectArgs({ ...batch, finals: [] }, 'C:\\store')).not.toContain('--finals')
 
     const scan = call<{ ok: boolean; report: { sequences: unknown[] } }>('subtitleStyle:scanProject', 'C:\\projetos\\roo.prproj')
     await flush()

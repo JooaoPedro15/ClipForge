@@ -66,24 +66,26 @@ export interface StyleProjectSequence {
 
 export interface StyleProjectScan {
   projectPath: string
+  // Brutos que o ensino vai usar: os escolhidos (pasta expandida) ou, sem escolha, os achados pelo SRT importado.
+  rawFiles: number
   sequences: StyleProjectSequence[]
 }
 
-// Ensinar pelo projeto: todas as sequencias completas, ou so `only` (o botao "Ensinar <sequencia>").
+// Ensinar pelo projeto: cada bruto acha o seu Short (trecho de alguma sequencia) pelo que e falado.
 export interface StyleProjectLearnRequest {
   projectPath: string
-  // Pastas ou arquivos dos brutos: Sequencia 43.mp3 casa com a sequencia "Sequencia 43".
+  // Pastas ou arquivos dos brutos; vazio = os achados do lado do SRT importado no projeto.
   originals: string[]
   // Videos finais escolhidos (nome livre): casados pelo conteudo quando o projeto nao diz qual e.
   finals: string[]
-  only?: string | null
   model: string
   language: string
   useCpu: boolean
 }
 
 export interface StyleProjectLearnReport {
-  taught: Array<StyleReport & { name: string }>
+  // name = bruto; sequence = onde o Short dele estava no projeto.
+  taught: Array<StyleReport & { name: string; sequence: string }>
   skipped: Array<{ name: string; reason: string }>
   failed: Array<{ name: string; error: string }>
 }

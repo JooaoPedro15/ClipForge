@@ -45,7 +45,8 @@ export function StyleBatchReportBox({ report }: { report: StyleProjectLearnRepor
       </p>
       {report.taught.map((item) => (
         <p key={item.name}>
-          {item.name}: {PROFILE_LABELS[item.profile]}, acerto {formatF1(item.f1Formula)} na fórmula, {item.gapExamples} espaços
+          {item.name}
+          {item.sequence && item.sequence !== item.name ? ` (na ${item.sequence})` : ''}: {PROFILE_LABELS[item.profile]}, acerto {formatF1(item.f1Formula)} na fórmula, {item.gapExamples} espaços
           {item.cutShare >= 0.05 ? `, ~${Math.round(item.cutShare * 100)}% cortado` : ''}
         </p>
       ))}

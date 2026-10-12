@@ -84,9 +84,6 @@ export function buildStyleScanArgs(projectPath: string, originals?: string[]) {
 export function buildStyleLearnProjectArgs(request: StyleProjectLearnRequest, storeDir: string) {
   const args = ['learn-project', '--project', request.projectPath, '--store', storeDir, '--model', request.model, '--language', request.language]
   args.push(...repeated('--originals', request.originals), ...repeated('--finals', request.finals))
-  if (request.only) {
-    args.push('--only', request.only)
-  }
   if (request.useCpu) {
     args.push('--cpu')
   }
