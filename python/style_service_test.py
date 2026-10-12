@@ -44,6 +44,8 @@ FINAL = [
     segment([("eu", 0.0, 0.2), ("fui", 0.25, 0.45), ("la", 0.5, 0.7), ("ontem", 0.9, 1.1), ("e", 1.15, 1.25), ("tava", 1.3, 1.6)]),
     segment([("cheio", 2.2, 2.4), ("de", 2.45, 2.55), ("gente", 2.6, 2.9), ("demais", 3.1, 3.3)]),
 ]
+# Fala que nao tem nada a ver com nenhuma legenda do projeto.
+STRANGER = [segment([("bola", 0.0, 0.3), ("azul", 0.4, 0.7), ("grande", 0.8, 1.1), ("voando", 1.2, 1.6)])]
 CORRECTED_SRT = (
     "1\n00:00:00,000 --> 00:00:00,900\neu fui la\n\n"
     "2\n00:00:00,900 --> 00:00:01,800\nontem e tava\n\n"
@@ -60,7 +62,8 @@ class FakeWhisperModel:
 
     def transcribe(self, media_path, **kwargs):
         FakeWhisperModel.transcribed.append(Path(media_path).name)
-        segments = FINAL if "final" in Path(media_path).name else ORIGINAL
+        name = Path(media_path).name
+        segments = STRANGER if "estranho" in name else FINAL if "final" in name else ORIGINAL
         return segments, types.SimpleNamespace(language="pt", duration=segments[-1].end)
 
 
@@ -178,77 +181,66 @@ class StyleServiceTest(unittest.TestCase):
         event = json.loads(output.getvalue().strip().splitlines()[-1])
         self.assertEqual(code, 0)
         self.assertEqual([(item["name"], item["cards"]) for item in event["report"]["sequences"]], [("Sequência 10", 4), ("Sequência 9", 1)])
+        self.assertEqual(event["report"]["rawFiles"], 0)
 
-    def test_learn_project_teaches_every_complete_sequence_once(self):
-        brutos = self.tmp / "brutos"
-        brutos.mkdir()
-        for name in ("Sequência 10", "Sequência 11", "Sequência 12"):
-            (brutos / f"{name}.mp3").write_bytes(b"fake")
-        project = FakeProject()
+    def shifted(self, offset: float) -> list:
         cards = style_service.style_alignment.parse_srt_text(CORRECTED_SRT)
-        exported = export_settings(self.final, 0.0, 10.0)
-        project.sequence("Sequência 10", [[project.graphic(card.start, card.end, card.text) for card in cards]], export=exported)
-        project.sequence("Sequência 11", [[project.graphic(0.0, 1.0, "nada a ver com isso aqui")]], export=exported)
-        project.sequence("Sequência 12", [[project.graphic(0.0, 1.0, "eu fui la")]])
-        project.sequence("Sequência 13", [[project.graphic(0.0, 1.0, "eu fui la")]], export=exported)
-        path = str(project.write(self.tmp / "projeto.prproj"))
+        return [(card.start + offset, card.end + offset, card.text) for card in cards]
 
-        def learn_project() -> dict:
-            with contextlib.redirect_stdout(io.StringIO()):
-                return style_service.learn_project(path, [str(brutos)], [], str(self.store), "large-v3", "pt", 5, "cpu", "int8")
+    def learn_project(self, project: Path, originals: list[Path], finals: list[Path] = ()) -> dict:
+        with contextlib.redirect_stdout(io.StringIO()):
+            return style_service.learn_project(
+                str(project), [str(path) for path in originals], [str(path) for path in finals], str(self.store), "large-v3", "pt", 5, "cpu", "int8"
+            )
 
-        report = learn_project()
+    def test_each_raw_file_finds_its_short_inside_a_sequence_with_several_shorts(self):
+        bruto = self.tmp / "Sequência 28 3.mp3"
+        stranger = self.tmp / "estranho.mp3"
+        for path in (bruto, stranger):
+            path.write_bytes(b"fake")
+        project = FakeProject()
+        # Mesma sequencia: o Short em 20s, outro Short em 40s e uma copia do primeiro em 60s (a exportada).
+        clips = [project.graphic(start, end, text) for start, end, text in self.shifted(20.0)]
+        clips += [project.graphic(40.0, 41.0, "outra coisa"), project.graphic(41.0, 42.0, "bem diferente aqui")]
+        clips += [project.graphic(start, end, text) for start, end, text in self.shifted(60.0)]
+        project.sequence("Sequência 28", [clips], export=export_settings(self.final, 60.0, 64.0))
+        path = project.write(self.tmp / "projeto.prproj")
 
-        self.assertEqual([(item["name"], item["gapExamples"]) for item in report["taught"]], [("Sequência 10", 9)])
-        self.assertEqual([item["name"] for item in report["failed"]], ["Sequência 11"])
-        self.assertEqual(
-            report["skipped"],
-            [{"name": "Sequência 12", "reason": "video final nao encontrado"}, {"name": "Sequência 13", "reason": "bruto nao encontrado"}],
-        )
-        self.assertEqual(learn_project()["skipped"][0], {"name": "Sequência 10", "reason": "ja ensinada"})
+        report = self.learn_project(path, [bruto, stranger])
+
+        taught = [(item["name"], item["sequence"], item["gapExamples"], item["timingSamples"]) for item in report["taught"]]
+        self.assertEqual(taught, [("Sequência 28 3", "Sequência 28", 9, 4)])
+        self.assertEqual(report["skipped"], [{"name": "estranho", "reason": "legenda nao encontrada no projeto"}])
+        self.assertEqual(self.learn_project(path, [bruto])["skipped"], [{"name": "Sequência 28 3", "reason": "ja ensinado"}])
 
     def test_final_videos_with_any_name_are_matched_by_what_is_said_in_them(self):
-        bruto = self.tmp / "Sequência 20.mp3"
+        bruto = self.tmp / "Sequência 40.mp3"
         bruto.write_bytes(b"fake")
         # O FakeWhisperModel devolve a fala do video final pra todo arquivo com "final" no nome.
         renamed = self.tmp / "o final que eu renomeei.mp4"
-        renamed.write_bytes(b"fake")
         extra = self.tmp / "outro final qualquer.mp4"
-        extra.write_bytes(b"fake")
+        for path in (renamed, extra):
+            path.write_bytes(b"fake")
         project = FakeProject()
-        cards = style_service.style_alignment.parse_srt_text(CORRECTED_SRT)
-        project.sequence("Sequência 20", [[project.graphic(card.start, card.end, card.text) for card in cards]])
-        project.sequence("Sequência 21", [[project.graphic(0.0, 1.0, "nada a ver com isso aqui")]])
-        (self.tmp / "Sequência 21.mp3").write_bytes(b"fake")
-        path = str(project.write(self.tmp / "projeto.prproj"))
+        project.sequence("Sequência 40", [[project.graphic(start, end, text) for start, end, text in self.shifted(100.0)]])
+        path = project.write(self.tmp / "projeto.prproj")
 
-        with contextlib.redirect_stdout(io.StringIO()):
-            report = style_service.learn_project(
-                path, [str(bruto), str(self.tmp / "Sequência 21.mp3")], [str(renamed), str(extra)], str(self.store), "large-v3", "pt", 5, "cpu", "int8"
-            )
+        self.assertEqual(self.learn_project(path, [bruto])["skipped"], [{"name": "Sequência 40", "reason": "video final nao encontrado"}])
+        report = self.learn_project(path, [bruto], [renamed, extra])
 
-        self.assertEqual([item["name"] for item in report["taught"]], ["Sequência 20"])
-        self.assertEqual(report["skipped"], [{"name": "Sequência 21", "reason": "video final nao encontrado"}])
+        (item,) = report["taught"]
+        # Sem saber de onde o video saiu, aprende quebras mas nao entrada/saida.
+        self.assertEqual((item["gapExamples"], item["timingSamples"]), (9, 0))
+        self.assertTrue(any("Entrada e saida" in warning for warning in item["warnings"]))
 
-    def test_teaching_one_sequence_by_name_teaches_it_again(self):
-        bruto = self.tmp / "Sequência 30.mp3"
-        bruto.write_bytes(b"fake")
+    def test_without_chosen_raw_files_uses_the_ones_next_to_the_imported_srt(self):
+        (self.tmp / "Sequência 50.mp3").write_bytes(b"fake")
         project = FakeProject()
-        cards = style_service.style_alignment.parse_srt_text(CORRECTED_SRT)
-        exported = export_settings(self.final, 0.0, 10.0)
-        project.sequence("Sequência 30", [[project.graphic(card.start, card.end, card.text) for card in cards]], export=exported)
-        project.sequence("Sequência 31", [[project.graphic(0.0, 1.0, "eu fui la")]], export=exported)
-        path = str(project.write(self.tmp / "projeto.prproj"))
+        project.imported_file(self.tmp / "Sequência 50.srt")
+        project.sequence("Sequência 50", [[project.graphic(start, end, text) for start, end, text in self.shifted(0.0)]], export=export_settings(self.final, 0.0, 10.0))
+        path = project.write(self.tmp / "projeto.prproj")
 
-        def learn_only() -> dict:
-            with contextlib.redirect_stdout(io.StringIO()):
-                return style_service.learn_project(path, [str(bruto)], [], str(self.store), "large-v3", "pt", 5, "cpu", "int8", "Sequência 30")
-
-        self.assertEqual([item["name"] for item in learn_only()["taught"]], ["Sequência 30"])
-        again = learn_only()
-        self.assertEqual(([item["name"] for item in again["taught"]], again["skipped"]), (["Sequência 30"], []))
-        with contextlib.redirect_stdout(io.StringIO()), self.assertRaises(style_service.StyleError):
-            style_service.learn_project(path, [], [], str(self.store), "large-v3", "pt", 5, "cpu", "int8", "Sequência 99")
+        self.assertEqual([item["name"] for item in self.learn_project(path, [])["taught"]], ["Sequência 50"])
 
     def test_formula_groups_follow_the_current_segmentation(self):
         words = []

@@ -34,11 +34,15 @@ class ProjectError(Exception):
 @dataclass
 class ProjectSequence:
     name: str
-    # Tempo do video final: ja descontado o inicio da exportacao.
+    # Legendas do trecho da ultima exportacao, no tempo do video final (descontado o inicio).
     cards: list[Card]
     final_path: str | None = None
     original_path: str | None = None
     tracks: list[int] = field(default_factory=list)
+    # Todas as legendas no tempo da sequencia: uma sequencia pode ter varios Shorts (e copias) em blocos.
+    timeline: list[Card] = field(default_factory=list)
+    # Trecho (segundos da sequencia) da ultima exportacao em video; None = projeto nao diz.
+    export_range: tuple[float, float | None] | None = None
 
 
 @dataclass
@@ -293,17 +297,16 @@ def read_sequences(project_path: str | Path, originals: Iterable[str | Path] | s
             continue
         export = _video_export(sequence)
         final_path, start, end = export if export else (None, 0.0, None)
-        cards = _to_final_time(clips, start, end)
-        if not cards:
-            # Legendas todas fora do trecho exportado: nao ha video final pra comparar.
-            continue
+        exists = bool(final_path and Path(final_path).exists())
         sequences.append(
             ProjectSequence(
                 name=name,
-                cards=cards,
-                final_path=final_path if final_path and Path(final_path).exists() else None,
+                cards=_to_final_time(clips, start, end),
+                final_path=final_path if exists else None,
                 original_path=_original_for(name, srts, sources),
                 tracks=tracks,
+                timeline=[Card(start=round(clip.start, 3), end=round(clip.end, 3), text=clip.text) for clip in clips],
+                export_range=(start, end) if exists else None,
             )
         )
     return sequences
@@ -311,6 +314,6 @@ def read_sequences(project_path: str | Path, originals: Iterable[str | Path] | s
 
 def sequence_cards(project_path: str | Path, name: str) -> list[Card]:
     for sequence in read_sequences(project_path):
-        if sequence.name == name:
+        if sequence.name == name and sequence.cards:
             return sequence.cards
     raise ProjectError(f"A sequencia '{name}' nao tem legenda em grafico (ou na trilha de legenda) no projeto.")
