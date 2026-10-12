@@ -122,14 +122,14 @@ export function useSubtitleStyle() {
 
   // Lista as sequencias com legenda de um projeto do Premiere (null = erro, mostrado em `error`).
   const scanProject = useCallback(
-    async (projectPath: string, originalsDir?: string | null): Promise<StyleProjectScan | null> => {
+    async (projectPath: string, originals?: string[]): Promise<StyleProjectScan | null> => {
       if (!api) {
         return null
       }
       setScanning(true)
       setError(null)
       try {
-        const result = await api.scanProject(projectPath, originalsDir)
+        const result = await api.scanProject(projectPath, originals)
         if (result.ok) {
           return result.report
         }

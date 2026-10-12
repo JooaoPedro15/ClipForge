@@ -77,8 +77,7 @@ const api = {
     list: () => ipcRenderer.invoke('subtitleStyle:list'),
     learn: (request: Record<string, unknown>) => ipcRenderer.invoke('subtitleStyle:learn', request),
     forget: (videoId: string) => ipcRenderer.invoke('subtitleStyle:forget', videoId),
-    scanProject: (projectPath: string, originalsDir?: string | null) =>
-      ipcRenderer.invoke('subtitleStyle:scanProject', projectPath, originalsDir),
+    scanProject: (projectPath: string, originals?: string[]) => ipcRenderer.invoke('subtitleStyle:scanProject', projectPath, originals),
     learnProject: (request: Record<string, unknown>) => ipcRenderer.invoke('subtitleStyle:learnProject', request),
     onProgress: (cb: (data: unknown) => void) => {
       const listener = (_event: unknown, data: unknown) => cb(data)

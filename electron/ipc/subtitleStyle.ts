@@ -72,14 +72,20 @@ export function buildStyleLearnArgs(request: StyleLearnRequest, storeDir: string
   return args
 }
 
-export function buildStyleScanArgs(projectPath: string, originalsDir?: string | null) {
-  return ['scan-project', '--project', projectPath, ...(originalsDir ? ['--originals', originalsDir] : [])]
+// Lista vira a opcao repetida (--originals A --originals B), como o argparse le com action="append".
+function repeated(flag: string, values: string[] | undefined) {
+  return (values ?? []).flatMap((value) => [flag, value])
+}
+
+export function buildStyleScanArgs(projectPath: string, originals?: string[]) {
+  return ['scan-project', '--project', projectPath, ...repeated('--originals', originals)]
 }
 
 export function buildStyleLearnProjectArgs(request: StyleProjectLearnRequest, storeDir: string) {
   const args = ['learn-project', '--project', request.projectPath, '--store', storeDir, '--model', request.model, '--language', request.language]
-  if (request.originalsDir) {
-    args.push('--originals', request.originalsDir)
+  args.push(...repeated('--originals', request.originals), ...repeated('--finals', request.finals))
+  if (request.only) {
+    args.push('--only', request.only)
   }
   if (request.useCpu) {
     args.push('--cpu')
@@ -205,8 +211,8 @@ export function registerSubtitleStyleHandlers() {
   // Ler o projeto do Premiere so abre o XML (sem Whisper): fora da fila de GPU.
   ipcMain.handle(
     'subtitleStyle:scanProject',
-    (_event, projectPath: string, originalsDir?: string | null): Promise<StyleRunResult<StyleProjectScan>> =>
-      runStyleService<StyleProjectScan>(buildStyleScanArgs(projectPath, originalsDir), null),
+    (_event, projectPath: string, originals?: string[]): Promise<StyleRunResult<StyleProjectScan>> =>
+      runStyleService<StyleProjectScan>(buildStyleScanArgs(projectPath, originals), null),
   )
 
   // Esquecer so mexe nos arquivos da biblioteca e retreina a arvore: rapido, nao precisa da fila de GPU.

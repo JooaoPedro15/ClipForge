@@ -22,39 +22,64 @@ const PICK_FILTERS: Record<PickKind, Array<{ name: string; extensions: string[] 
 }
 const PROFILES: StyleProfileName[] = ['vertical', 'horizontal']
 // A ordem e a do fluxo real: legenda no app, corrige no Premiere, exporta o final.
-const PICKERS: Array<{ kind: PickKind; label: string; hint: string }> = [
-  { kind: 'original', label: 'Bruto legendado', hint: 'o vídeo ou mp3 que o app legendou' },
+// Com projeto do Premiere, bruto e final aceitam varios arquivos (cada um acha a sua sequencia).
+const PICKERS: Array<{ kind: PickKind; label: string; hint: string; projectHint?: string }> = [
+  {
+    kind: 'original',
+    label: 'Bruto legendado',
+    hint: 'o vídeo ou mp3 que o app legendou',
+    projectHint: 'um ou vários mp3 (Sequência 43.mp3 = Sequência 43)',
+  },
   { kind: 'srt', label: 'Correções', hint: 'SRT ou projeto do Premiere (.prproj)' },
-  { kind: 'final', label: 'Vídeo final', hint: 'já com os seus cortes' },
+  {
+    kind: 'final',
+    label: 'Vídeo final',
+    hint: 'já com os seus cortes',
+    projectHint: 'opcional: o projeto já diz; escolha vários se faltar',
+  },
 ]
 
 function isPremiereProject(filePath: string | null) {
   return Boolean(filePath?.toLowerCase().endsWith('.prproj'))
 }
 
-function missingFilesHint(item: StyleProjectSequence) {
-  if (!item.originalPath && !item.finalPath) {
-    return 'escolha bruto e final'
-  }
-  if (!item.originalPath) {
-    return 'escolha o bruto'
-  }
-  return item.finalPath ? null : 'escolha o final'
-}
-
 function isTaught(item: StyleProjectSequence, library: StyleLibrary | null) {
   return Boolean(item.originalPath && library?.videos.some((video) => video.originalPath === item.originalPath))
 }
 
-function sequenceHint(item: StyleProjectSequence, library: StyleLibrary | null) {
-  return [`${item.cards} legendas`, isTaught(item, library) ? 'já ensinada' : null, missingFilesHint(item)].filter(Boolean).join(' · ')
+// Sem final no projeto, os videos escolhidos sao transcritos e casados pelo que se fala neles.
+function finalHint(item: StyleProjectSequence, hasChosenFinals: boolean) {
+  if (item.finalPath) {
+    return null
+  }
+  return hasChosenFinals ? 'final pelo conteúdo dos vídeos' : 'escolha o vídeo final'
+}
+
+function sequenceHint(item: StyleProjectSequence, library: StyleLibrary | null, hasChosenFinals: boolean) {
+  return [
+    `${item.cards} legendas`,
+    isTaught(item, library) ? 'já ensinada' : null,
+    item.originalPath ? null : 'bruto não achado',
+    finalHint(item, hasChosenFinals),
+  ]
+    .filter(Boolean)
+    .join(' · ')
+}
+
+function describeChosen(files: string[]) {
+  const first = files[0]
+  if (!first) {
+    return null
+  }
+  return files.length === 1 ? getFileName(first) : `${files.length} arquivos (${getFileName(first)}, …)`
 }
 
 // Secao "Meu estilo" do Inspetor: ensina o app com um video que o usuario corrigiu no Premiere.
 export function StylePanel() {
   const style = useSubtitleStyle()
   const settings = useAppStore((state) => state.subtitleSettings)
-  const [paths, setPaths] = useState<Record<PickKind, string | null>>({ original: null, srt: null, final: null })
+  // Tudo que o usuario escolheu em cada campo: com SRT vale o primeiro; com projeto, a lista inteira.
+  const [chosen, setChosen] = useState<Record<PickKind, string[]>>({ original: [], srt: [], final: [] })
   const [project, setProject] = useState<StyleProjectScan | null>(null)
   const [sequence, setSequence] = useState<string | null>(null)
   const [originalsDir, setOriginalsDir] = useState<string | null>(null)
@@ -63,77 +88,79 @@ export function StylePanel() {
     return null
   }
 
-  const projectMode = isPremiereProject(paths.srt)
+  const projectPath = chosen.srt[0] ?? null
+  const projectMode = isPremiereProject(projectPath)
+  const originals = (files: string[], folder: string | null) => [...files, ...(folder ? [folder] : [])]
 
   async function pick(kind: PickKind) {
     const selected = await window.clipforge.dialog.openFiles(PICK_FILTERS[kind])
-    const first = selected[0]
-    if (!first) {
+    if (selected.length === 0) {
       return
     }
-    setPaths((current) => ({ ...current, [kind]: first }))
+    setChosen((current) => ({ ...current, [kind]: selected }))
     if (kind === 'srt') {
+      const first = selected[0] ?? null
       setSequence(null)
-      setProject(isPremiereProject(first) ? await style.scanProject(first, originalsDir) : null)
+      setProject(isPremiereProject(first) && first ? await style.scanProject(first, originals(chosen.original, originalsDir)) : null)
+    } else if (kind === 'original' && projectMode && projectPath) {
+      // Brutos novos: rele o projeto pra mostrar quais sequencias agora tem bruto.
+      setProject(await style.scanProject(projectPath, originals(selected, originalsDir)))
     }
   }
 
-  // Pasta dos brutos: Sequencia 43.mp3 casa com a sequencia de mesmo nome. Rele o projeto pra achar os brutos.
+  // Pasta dos brutos: Sequencia 43.mp3 casa com a sequencia de mesmo nome.
   async function pickOriginalsDir() {
     const folder = await window.clipforge.dialog.openDirectory()
-    if (!folder || !paths.srt) {
+    if (!folder || !projectPath) {
       return
     }
     setOriginalsDir(folder)
-    const scan = await style.scanProject(paths.srt, folder)
-    setProject(scan)
-    const current = scan?.sequences.find((item) => item.name === sequence)
-    if (current) {
-      setPaths((previous) => ({ ...previous, original: current.originalPath, final: current.finalPath }))
-    }
+    setProject(await style.scanProject(projectPath, originals(chosen.original, folder)))
   }
 
-  async function teachAll() {
-    if (!paths.srt) {
+  async function teachProject(only: string | null) {
+    if (!projectPath) {
       return
     }
     await style.learnProject({
-      projectPath: paths.srt,
-      originalsDir,
+      projectPath,
+      originals: originals(chosen.original, originalsDir),
+      finals: chosen.final,
+      only,
       model: settings.model,
       language: settings.language,
       useCpu: settings.useCpu,
     })
-  }
-
-  // Trocar de sequencia troca bruto e final juntos: caminho velho de outra sequencia ensinaria errado.
-  function chooseSequence(name: string) {
-    const found = project?.sequences.find((item) => item.name === name)
-    setSequence(name)
-    if (found) {
-      setPaths((current) => ({ ...current, original: found.originalPath, final: found.finalPath }))
-    }
   }
 
   async function teach() {
-    if (!paths.original || !paths.srt || !paths.final || (projectMode && !sequence)) {
+    if (projectMode) {
+      await teachProject(sequence)
+      return
+    }
+    const [originalPath] = chosen.original
+    const [finalPath] = chosen.final
+    if (!originalPath || !projectPath || !finalPath) {
       return
     }
     await style.learn({
-      originalPath: paths.original,
-      srtPath: paths.srt,
-      sequence: projectMode ? sequence : null,
-      finalPath: paths.final,
+      originalPath,
+      srtPath: projectPath,
+      finalPath,
       model: settings.model,
       language: settings.language,
       useCpu: settings.useCpu,
     })
   }
 
-  const ready =
-    Boolean(paths.original && paths.srt && paths.final) && (!projectMode || Boolean(sequence)) && !style.running && !style.scanning
-  // Completas e ainda nao ensinadas: o que o "Ensinar todas" vai fazer.
-  const pending = projectMode && project ? project.sequences.filter((item) => item.originalPath && item.finalPath && !isTaught(item, style.library)) : []
+  const busy = style.running || style.scanning
+  const ready = !busy && (projectMode ? Boolean(sequence) : chosen.original.length > 0 && chosen.srt.length > 0 && chosen.final.length > 0)
+  // Com bruto e com final (do projeto ou pra casar pelo conteudo), ainda nao ensinadas: o que o "Ensinar todas" tenta.
+  const pending =
+    projectMode && project
+      ? project.sequences.filter((item) => item.originalPath && (item.finalPath || chosen.final.length > 0) && !isTaught(item, style.library))
+      : []
+  const selectedSequence = project?.sequences.find((item) => item.name === sequence) ?? null
   const activeProfiles = PROFILES.filter((profile) => getProfileStatus(style.library, profile).active)
   const summary =
     activeProfiles.length === 0 ? 'Nenhum perfil ativo' : activeProfiles.length === 1 ? '1 perfil ativo' : '2 perfis ativos'
@@ -146,7 +173,8 @@ export function StylePanel() {
 
       <ol className="space-y-1.5">
         {PICKERS.map((picker, index) => {
-          const chosen = paths[picker.kind]
+          const files = chosen[picker.kind]
+          const label = picker.kind === 'srt' ? describeChosen(files.slice(0, 1)) : projectMode ? describeChosen(files) : describeChosen(files.slice(0, 1))
           return (
             <li key={picker.kind}>
               <button
@@ -157,15 +185,15 @@ export function StylePanel() {
                 <span
                   className={cn(
                     'flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold',
-                    chosen ? 'bg-text-primary text-black' : 'border border-line-strong text-text-muted',
+                    label ? 'bg-text-primary text-black' : 'border border-line-strong text-text-muted',
                   )}
                 >
-                  {chosen ? <Check className="h-3 w-3" /> : index + 1}
+                  {label ? <Check className="h-3 w-3" /> : index + 1}
                 </span>
                 <span className="min-w-0">
                   <span className="block text-[13px] text-text-primary">{picker.label}</span>
-                  <span className={cn('block truncate text-xs', chosen ? 'font-mono text-text-secondary' : 'text-text-muted')}>
-                    {chosen ? getFileName(chosen) : picker.hint}
+                  <span className={cn('block truncate text-xs', label ? 'font-mono text-text-secondary' : 'text-text-muted')}>
+                    {label ?? (projectMode && picker.projectHint ? picker.projectHint : picker.hint)}
                   </span>
                 </span>
               </button>
@@ -176,25 +204,39 @@ export function StylePanel() {
                 </p>
               ) : null}
               {picker.kind === 'srt' && projectMode && project ? (
-                <CustomSelect
-                  className="mt-1.5"
-                  onChange={chooseSequence}
-                  options={project.sequences.map((item) => ({ value: item.name, label: item.name, hint: sequenceHint(item, style.library) }))}
-                  placeholder="Escolha a sequência"
-                  value={sequence ?? ''}
-                />
-              ) : null}
-              {picker.kind === 'srt' && projectMode && project ? (
-                <button
-                  className="app-no-drag mt-1.5 flex w-full items-center gap-2 rounded-md px-1 py-1 text-left text-xs text-text-secondary transition-colors hover:text-text-primary"
-                  onClick={() => void pickOriginalsDir()}
-                  type="button"
-                >
-                  <FolderOpen className="h-3.5 w-3.5 shrink-0" />
-                  <span className="truncate">
-                    {originalsDir ? `Brutos de ${getFileName(originalsDir)}` : 'Pasta dos brutos (Sequência 43.mp3 = Sequência 43)'}
-                  </span>
-                </button>
+                <>
+                  <CustomSelect
+                    className="mt-1.5"
+                    onChange={setSequence}
+                    options={project.sequences.map((item) => ({
+                      value: item.name,
+                      label: item.name,
+                      hint: sequenceHint(item, style.library, chosen.final.length > 0),
+                    }))}
+                    placeholder="Escolha a sequência (ou use Ensinar todas)"
+                    value={sequence ?? ''}
+                  />
+                  {selectedSequence ? (
+                    <p className="mt-1 truncate px-1 text-xs text-text-muted">
+                      Bruto: {selectedSequence.originalPath ? getFileName(selectedSequence.originalPath) : 'não achado'} · Final:{' '}
+                      {selectedSequence.finalPath
+                        ? getFileName(selectedSequence.finalPath)
+                        : chosen.final.length > 0
+                          ? 'pelo conteúdo'
+                          : 'não achado'}
+                    </p>
+                  ) : null}
+                  <button
+                    className="app-no-drag mt-1.5 flex w-full items-center gap-2 rounded-md px-1 py-1 text-left text-xs text-text-secondary transition-colors hover:text-text-primary"
+                    onClick={() => void pickOriginalsDir()}
+                    type="button"
+                  >
+                    <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate">
+                      {originalsDir ? `Brutos de ${getFileName(originalsDir)}` : 'Pasta dos brutos (Sequência 43.mp3 = Sequência 43)'}
+                    </span>
+                  </button>
+                </>
               ) : null}
             </li>
           )
@@ -208,10 +250,10 @@ export function StylePanel() {
         onClick={() => void teach()}
         size="sm"
       >
-        {style.running ? 'Ensinando…' : 'Ensinar'}
+        {style.running ? 'Ensinando…' : projectMode && sequence ? `Ensinar ${sequence}` : 'Ensinar'}
       </Button>
       {projectMode && project ? (
-        <Button className="w-full" disabled={pending.length === 0 || style.running || style.scanning} onClick={() => void teachAll()} size="sm" variant="ghost">
+        <Button className="w-full" disabled={pending.length === 0 || busy} onClick={() => void teachProject(null)} size="sm" variant="ghost">
           {pending.length === 0 ? 'Nada novo pra ensinar no projeto' : `Ensinar todas (${pending.length})`}
         </Button>
       ) : null}

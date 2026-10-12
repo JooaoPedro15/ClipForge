@@ -69,11 +69,14 @@ export interface StyleProjectScan {
   sequences: StyleProjectSequence[]
 }
 
-// Ensinar todas: cada sequencia completa do projeto (bruto achado + grafico + video final).
+// Ensinar pelo projeto: todas as sequencias completas, ou so `only` (o botao "Ensinar <sequencia>").
 export interface StyleProjectLearnRequest {
   projectPath: string
-  // Pasta dos brutos: Sequencia 43.mp3 casa com a sequencia "Sequencia 43".
-  originalsDir: string | null
+  // Pastas ou arquivos dos brutos: Sequencia 43.mp3 casa com a sequencia "Sequencia 43".
+  originals: string[]
+  // Videos finais escolhidos (nome livre): casados pelo conteudo quando o projeto nao diz qual e.
+  finals: string[]
+  only?: string | null
   model: string
   language: string
   useCpu: boolean
