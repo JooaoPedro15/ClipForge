@@ -168,14 +168,19 @@ def learn(
 
 
 # Whisper carregado so na primeira vez que alguem pede (video com words.json pode nem precisar).
+# Modelos guardados no modulo (nao na funcao): destruir o modelo do ctranslate2 na GPU as vezes derruba
+# o processo no Windows (0xC0000409). Vivo ate o fim, o "done" sai antes; depois o processo sai com os._exit.
+_LOADED_MODELS: dict[tuple[str, str, str], Any] = {}
+
+
 def model_loader(model_size: str, device: str, compute_type: str) -> Callable[[], Any]:
-    loaded_model: dict[str, Any] = {}
+    key = (model_size, device, compute_type)
 
     def get_model() -> Any:
-        if "model" not in loaded_model:
+        if key not in _LOADED_MODELS:
             emit("status", "preparing", "loading-model", f"Carregando modelo {model_size}...", progress=8)
-            loaded_model["model"] = subtitle_service.load_whisper_model(model_size, device, compute_type)
-        return loaded_model["model"]
+            _LOADED_MODELS[key] = subtitle_service.load_whisper_model(model_size, device, compute_type)
+        return _LOADED_MODELS[key]
 
     return get_model
 
@@ -659,4 +664,8 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    exit_code = main()
+    # O resultado ja foi enviado: sai sem rodar os destrutores (o do Whisper na GPU pode travar o processo).
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(exit_code)

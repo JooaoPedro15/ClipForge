@@ -175,7 +175,9 @@ async function runStyleService<T>(scriptArgs: string[], sender: WebContents | nu
     return { ok: false, error: finished.error ?? finished.message }
   }
 
-  return { ok: false, error: lastStderrLine ?? spawnError ?? `Processo finalizado com codigo ${code ?? 'desconhecido'}.` }
+  // Sem evento final: o Python caiu no meio (ex.: crash da GPU). Cada video e salvo ao terminar, entao nada se perde.
+  const crashed = `O processo do Python fechou de repente (codigo ${code ?? 'desconhecido'}). O que ja foi ensinado ficou salvo: clique de novo pra continuar.`
+  return { ok: false, error: lastStderrLine ?? spawnError ?? crashed }
 }
 
 function enqueueStyleJob<T>(scriptArgs: string[], sender: WebContents): Promise<StyleRunResult<T>> {
