@@ -10,7 +10,6 @@ Uso (chamado pelo Electron, eventos JSON no stdout):
 
 import argparse
 import difflib
-import json
 import os
 import re
 import sys
@@ -28,6 +27,7 @@ import style_store
 import subtitle_service
 from events import emit
 from text_utils import normalize_token
+from whisper_words import load_words, model_loader, transcribe_words
 
 # Com menos espacos rotulados que isso, o video ensina pouco sobre quebras.
 MIN_GAP_EXAMPLES = 30
@@ -37,23 +37,9 @@ class StyleError(Exception):
     """Erro com mensagem pronta pra mostrar ao usuario."""
 
 
-def transcribe_words(model: Any, media_path: str, language: str, beam_size: int) -> list[dict[str, Any]]:
-    segments, _info = subtitle_service.run_whisper(model, media_path, language, beam_size)
-    words: list[dict[str, Any]] = []
-    for segment_index, segment in enumerate(segments):
-        words.extend(subtitle_service.whisper_word_dicts(segment, segment_index, len(words)))
-    return words
-
-
 # Palavras do video cru: reaproveita o words.json da geracao; video antigo (sem ele) e transcrito agora.
 def load_original_words(original: Path, get_model, language: str, beam_size: int) -> list[dict[str, Any]]:
-    words_path = original.with_suffix(".words.json")
-    if words_path.exists():
-        return json.loads(words_path.read_text(encoding="utf-8"))
-
-    words = transcribe_words(get_model(), str(original), language, beam_size)
-    words_path.write_text(json.dumps(words, ensure_ascii=False), encoding="utf-8")
-    return words
+    return load_words(original, get_model, language, beam_size)
 
 
 # Como a formula atual quebraria esse video, em grupos de indices (referencia de F1).
@@ -165,24 +151,6 @@ def learn(
     if not cards:
         raise StyleError("A legenda corrigida esta vazia.")
     return learn_from_cards(original, cards, final_path, store, get_model, language, beam_size)
-
-
-# Whisper carregado so na primeira vez que alguem pede (video com words.json pode nem precisar).
-# Modelos guardados no modulo (nao na funcao): destruir o modelo do ctranslate2 na GPU as vezes derruba
-# o processo no Windows (0xC0000409). Vivo ate o fim, o "done" sai antes; depois o processo sai com os._exit.
-_LOADED_MODELS: dict[tuple[str, str, str], Any] = {}
-
-
-def model_loader(model_size: str, device: str, compute_type: str) -> Callable[[], Any]:
-    key = (model_size, device, compute_type)
-
-    def get_model() -> Any:
-        if key not in _LOADED_MODELS:
-            emit("status", "preparing", "loading-model", f"Carregando modelo {model_size}...", progress=8)
-            _LOADED_MODELS[key] = subtitle_service.load_whisper_model(model_size, device, compute_type)
-        return _LOADED_MODELS[key]
-
-    return get_model
 
 
 def _emit_status(stage: str, message: str, progress: int) -> None:
