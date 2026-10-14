@@ -27,14 +27,14 @@ const PICKERS: Array<{ kind: PickKind; label: string; hint: string; projectHint?
     kind: 'original',
     label: 'Bruto legendado',
     hint: 'o vídeo ou mp3 que o app legendou',
-    projectHint: 'um ou vários mp3 (ou a pasta abaixo)',
+    projectHint: 'opcional: sem escolher, usa os mp3 do lado dos SRT importados',
   },
   { kind: 'srt', label: 'Correções', hint: 'SRT ou projeto do Premiere (.prproj)' },
   {
     kind: 'final',
     label: 'Vídeo final',
     hint: 'já com os seus cortes',
-    projectHint: 'opcional: o projeto já diz; escolha vários se faltar',
+    projectHint: 'o projeto só guarda a última exportação: escolha os outros (pode ser a pasta toda)',
   },
 ]
 
