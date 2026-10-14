@@ -119,6 +119,39 @@ class PreeditServiceTest(unittest.TestCase):
             code = preedit_service.main(["forget", "--id", source_id, "--store", str(self.store)])
         self.assertEqual((code, json.loads(output.getvalue().strip().splitlines()[-1])["report"]["format"]), (0, "longo"))
 
+    def test_a_failing_recording_does_not_stop_the_others(self):
+        real = preedit_service.prepare_audio
+
+        def flaky(recording, *args):
+            if recording.endswith("gravacao1.mp4"):
+                raise RuntimeError("CUDA failed with error out of memory")
+            return real(recording, *args)
+
+        with mock.patch.object(preedit_service, "prepare_audio", side_effect=flaky):
+            report = self.teach(self.project())
+
+        self.assertEqual(len(report["taught"]), 2)
+        (failure,) = report["failed"]
+        self.assertTrue(failure["recording"].endswith("gravacao1.mp4"))
+        self.assertIn("memoria", failure["error"])
+
+    def test_every_transcription_runs_before_the_first_ai_score(self):
+        calls = []
+        real_audio, real_interest = preedit_service.prepare_audio, preedit_service.load_interest
+
+        def audio(*args):
+            calls.append("whisper")
+            return real_audio(*args)
+
+        def scores(*args):
+            calls.append("ia")
+            return real_interest(*args)
+
+        with mock.patch.object(preedit_service, "prepare_audio", side_effect=audio), mock.patch.object(preedit_service, "load_interest", side_effect=scores):
+            self.teach(self.project())
+
+        self.assertEqual(calls, ["whisper"] * 3 + ["ia"] * 3)
+
     def test_project_without_recording_clips(self):
         project = FakeProject()
         project.sequence("So legenda", [[project.graphic(0.0, 1.0, "oi")]])

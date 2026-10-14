@@ -44,10 +44,10 @@ def words_cache(recording: str, audio_track: int) -> Path:
     return Path(recording).with_suffix(f".words.a{audio_track}.json")
 
 
-# Palavras, volume e notas da IA da gravacao. Com os caches prontos nao extrai o audio de novo.
-def prepare_recording(
-    recording: str, audio_track: int, get_model: Callable[[], Any], language: str, beam_size: int, fmt: str, make_client: Callable[[], Any]
-) -> tuple[list[dict[str, Any]], Any, dict[int, float], list[str]]:
+# Palavras e volume da gravacao (so o Whisper usa a GPU). Com os caches prontos nao extrai o audio de novo.
+def prepare_audio(
+    recording: str, audio_track: int, get_model: Callable[[], Any], language: str, beam_size: int
+) -> tuple[list[dict[str, Any]], Any]:
     words_path = words_cache(recording, audio_track)
     wav = None
     if not (words_path.exists() and loudness_cache(recording, audio_track).exists()):
@@ -59,8 +59,22 @@ def prepare_recording(
     finally:
         if wav is not None:
             wav.unlink(missing_ok=True)
+    return words, loud
+
+
+def prepare_recording(
+    recording: str, audio_track: int, get_model: Callable[[], Any], language: str, beam_size: int, fmt: str, make_client: Callable[[], Any]
+) -> tuple[list[dict[str, Any]], Any, dict[int, float], list[str]]:
+    words, loud = prepare_audio(recording, audio_track, get_model, language, beam_size)
     interest, warning = load_interest(recording, build_phrases(words), fmt, make_client)
     return words, loud, interest, [warning] if warning else []
+
+
+def _failure_message(error: Exception) -> str:
+    text = str(error)
+    if "out of memory" in text.lower():
+        return "Placa de video sem memoria: feche outros programas que usam a GPU e ensine de novo (o que ja foi ensinado fica salvo)."
+    return text
 
 
 def _retrain(store_dir: Path, fmt: str) -> dict[str, Any]:
@@ -100,23 +114,45 @@ def teach_projects(
     get_model = whisper_words.model_loader(model_size, device, compute_type)
     taught, skipped, failed, warnings = [], [], [], []
     touched: set[str] = set()
-    for number, item in enumerate(labels):
-        source = store.source_id(item.recording, item.format)
-        if source in taught_ids:
+    pending = []
+    for item in labels:
+        if store.source_id(item.recording, item.format) in taught_ids:
             skipped.append({"recording": item.recording, "reason": "ja ensinada"})
-            continue
-        if not Path(item.recording).exists():
+        elif not Path(item.recording).exists():
             skipped.append({"recording": item.recording, "reason": "gravacao nao encontrada"})
-            continue
-        progress = round(5 + 90 * number / len(labels))
-        emit("status", "processing", "teaching", f"[{number + 1}/{len(labels)}] {Path(item.recording).name}", progress=progress)
+        else:
+            pending.append(item)
+
+    # Fase 1: fala e volume de todas (so o Whisper na GPU). Fase 2: notas da IA (so o Ollama na GPU).
+    # Alternar os dois por gravacao estoura a memoria de uma placa de 8 GB (o Ollama segura o modelo carregado).
+    # Uma gravacao que falha vai pra lista de falhas e o lote segue com as outras.
+    prepared = []
+    for number, item in enumerate(pending):
+        progress = round(5 + 60 * number / max(1, len(pending)))
+        emit("status", "processing", "transcribing", f"Fala [{number + 1}/{len(pending)}] {Path(item.recording).name}", progress=progress)
         try:
-            words, loud, interest, notes = prepare_recording(item.recording, audio_track, get_model, language, beam_size, item.format, make_client)
-            examples = build_examples(item, words, loud, interest)
-        except AudioError as error:
-            failed.append({"recording": item.recording, "error": str(error)})
+            words, loud = prepare_audio(item.recording, audio_track, get_model, language, beam_size)
+        except ImportError:
+            raise
+        except Exception as error:
+            failed.append({"recording": item.recording, "error": _failure_message(error)})
             continue
-        warnings.extend(note for note in notes if note not in warnings)
+        prepared.append((item, words, loud))
+
+    for number, (item, words, loud) in enumerate(prepared):
+        progress = round(65 + 30 * number / max(1, len(prepared)))
+        emit("status", "processing", "scoring", f"Notas da IA [{number + 1}/{len(prepared)}] {Path(item.recording).name}", progress=progress)
+        try:
+            interest, note = load_interest(item.recording, build_phrases(words), item.format, make_client)
+            examples = build_examples(item, words, loud, interest)
+        except ImportError:
+            raise
+        except Exception as error:
+            failed.append({"recording": item.recording, "error": _failure_message(error)})
+            continue
+        if note and note not in warnings:
+            warnings.append(note)
+        source = store.source_id(item.recording, item.format)
         entry = {
             "id": source,
             "kind": "projeto",
