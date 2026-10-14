@@ -26,7 +26,7 @@ from cortes.xmeml_template import TemplateError
 from events import emit
 from llm_service import create_default_client
 from preedit import models, store
-from preedit.audio import AudioError, extract_audio, load_loudness, loudness_cache
+from preedit.audio import AudioError, extract_audio, load_loudness, loudness_cache, resolve_audio_track
 from preedit.dataset import build_examples
 from preedit.editor import plan_long
 from preedit.interest import load_interest
@@ -59,6 +59,11 @@ def prepare_audio(
     finally:
         if wav is not None:
             wav.unlink(missing_ok=True)
+    if not words:
+        raise AudioError(
+            f"Sem fala reconhecida na faixa {audio_track + 1} de {Path(recording).name}: "
+            "escolha a faixa do microfone com --audio-track (0 = primeira faixa)."
+        )
     return words, loud
 
 
@@ -96,7 +101,7 @@ def teach_projects(
     beam_size: int,
     device: str,
     compute_type: str,
-    audio_track: int,
+    audio_track: int | None,
     make_client: Callable[[], Any] = create_default_client,
 ) -> dict[str, Any]:
     store_dir = Path(store_path)
@@ -131,7 +136,8 @@ def teach_projects(
         progress = round(5 + 60 * number / max(1, len(pending)))
         emit("status", "processing", "transcribing", f"Fala [{number + 1}/{len(pending)}] {Path(item.recording).name}", progress=progress)
         try:
-            words, loud = prepare_audio(item.recording, audio_track, get_model, language, beam_size)
+            track = resolve_audio_track(item.recording, audio_track)
+            words, loud = prepare_audio(item.recording, track, get_model, language, beam_size)
         except ImportError:
             raise
         except Exception as error:
@@ -183,7 +189,7 @@ def edit_recording(
     beam_size: int,
     device: str,
     compute_type: str,
-    audio_track: int,
+    audio_track: int | None,
     make_client: Callable[[], Any] = create_default_client,
 ) -> dict[str, Any]:
     if not Path(recording).exists():
@@ -199,7 +205,8 @@ def edit_recording(
     emit("status", "processing", "transcribing", "Lendo a gravacao (fala, volume e notas da IA)...", progress=10)
     get_model = whisper_words.model_loader(model_size, device, compute_type)
     try:
-        words, loud, interest, warnings = prepare_recording(recording, audio_track, get_model, language, beam_size, "longo", make_client)
+        track = resolve_audio_track(recording, audio_track)
+        words, loud, interest, warnings = prepare_recording(recording, track, get_model, language, beam_size, "longo", make_client)
     except AudioError as error:
         raise PreeditError(str(error)) from error
 
@@ -249,7 +256,7 @@ def _add_model_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--model", default=subtitle_service.DEFAULT_MODEL)
     parser.add_argument("--language", default=subtitle_service.DEFAULT_LANGUAGE)
     parser.add_argument("--beam-size", type=int, default=subtitle_service.DEFAULT_BEAM_SIZE)
-    parser.add_argument("--audio-track", type=int, default=0, help="faixa de audio da voz (0 = primeira)")
+    parser.add_argument("--audio-track", type=int, default=None, help="faixa de audio da voz (0 = primeira; padrao: a 2, do microfone)")
     parser.add_argument("--cpu", action="store_true")
 
 

@@ -41,5 +41,7 @@ def load_words(
     if words_path.exists():
         return json.loads(words_path.read_text(encoding="utf-8"))
     words = transcribe_words(get_model(), str(media), language, beam_size)
-    words_path.write_text(json.dumps(words, ensure_ascii=False), encoding="utf-8")
+    # Transcricao vazia (faixa errada, so musica) nao vira cache: senao ficaria vazia pra sempre.
+    if words:
+        words_path.write_text(json.dumps(words, ensure_ascii=False), encoding="utf-8")
     return words

@@ -46,6 +46,16 @@ class LoadWordsTest(unittest.TestCase):
 
             self.assertTrue((Path(tmp) / "bruto.words.json").exists())
 
+    def test_empty_transcription_is_not_cached(self):
+        model = FakeModel()
+        model.transcribe = lambda media_path, **kwargs: ([], None)
+        with tempfile.TemporaryDirectory() as tmp:
+            media = Path(tmp) / "jogo.wav"
+            media.write_bytes(b"fake")
+
+            self.assertEqual(whisper_words.load_words(media, lambda: model, "pt", 5), [])
+            self.assertFalse((Path(tmp) / "jogo.words.json").exists())
+
     def test_model_loader_loads_once(self):
         loaded = []
         original = whisper_words.subtitle_service.load_whisper_model

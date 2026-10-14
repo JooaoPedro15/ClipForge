@@ -2,6 +2,8 @@ import tempfile
 import unittest
 import wave
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
 import numpy as np
 
@@ -47,6 +49,17 @@ class LoudnessTest(unittest.TestCase):
 
             self.assertEqual(first.db, second.db)
             self.assertTrue((Path(tmp) / "gravacao.loudness.a1.json").exists())
+
+    def test_voice_track_defaults_to_the_microphone(self):
+        def streams(count):
+            return mock.patch.object(audio, "probe_source", return_value=SimpleNamespace(audio_streams=count))
+
+        with streams(4):
+            self.assertEqual(audio.resolve_audio_track("gravacao.mp4", None), 1)  # OBS: faixa 2 = microfone
+        with streams(1):
+            self.assertEqual(audio.resolve_audio_track("gravacao.mp4", None), 0)
+        with streams(4):
+            self.assertEqual(audio.resolve_audio_track("gravacao.mp4", 2), 2)
 
     def test_without_cache_or_wav(self):
         with self.assertRaises(audio.AudioError):

@@ -152,6 +152,16 @@ class PreeditServiceTest(unittest.TestCase):
 
         self.assertEqual(calls, ["whisper"] * 3 + ["ia"] * 3)
 
+    def test_recording_without_speech_on_the_track_fails_with_a_hint(self):
+        (self.tmp / "gravacao2.words.a0.json").write_text("[]", encoding="utf-8")
+
+        report = self.teach(self.project())
+
+        self.assertEqual(len(report["taught"]), 2)
+        (failure,) = report["failed"]
+        self.assertIn("faixa 1", failure["error"])
+        self.assertIn("--audio-track", failure["error"])
+
     def test_project_without_recording_clips(self):
         project = FakeProject()
         project.sequence("So legenda", [[project.graphic(0.0, 1.0, "oi")]])

@@ -63,6 +63,13 @@ class ModelsTest(unittest.TestCase):
             self.assertEqual(models.probabilities(loaded.trecho, [row]), models.probabilities(three.trecho, [row]))
             self.assertIn("nota_ia", (directory / "tree_trecho.txt").read_text(encoding="utf-8"))
 
+    def test_recordings_without_rows_do_not_count(self):
+        empty = {**synthetic_recording(5), "phrase": [], "zoom": [], "pause": [], "retake": []}
+
+        trained = models.train_format([synthetic_recording(1), synthetic_recording(2), empty])
+
+        self.assertEqual(trained.params["recordings"], 2)
+
     def test_evaluate_with_few_recordings_and_empty_rows(self):
         self.assertIn("aviso", models.evaluate([synthetic_recording(1)]))
         self.assertEqual(models.probabilities(None, []), [])

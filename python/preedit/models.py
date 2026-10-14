@@ -77,6 +77,8 @@ def probabilities(model: Any, rows: list[list[float]]) -> list[float]:
 
 
 def compute_params(examples: list[dict]) -> dict[str, Any]:
+    # Gravacao sem nenhuma frase (sem fala na faixa) nao ensina nada e nao conta pro minimo.
+    examples = [example for example in examples if example.get("phrase")]
     stats = [example["stats"] for example in examples]
     final_sec = sum(item["final_sec"] for item in stats)
     durations = [value for item in stats for value in item["zoom_durations"]]

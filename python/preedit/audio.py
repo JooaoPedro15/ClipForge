@@ -8,6 +8,7 @@ from pathlib import Path
 
 import ffmpeg_utils
 import numpy as np
+from cortes.media import probe_source
 
 SAMPLE_RATE = 16000
 WINDOW_SEC = 0.1
@@ -77,6 +78,14 @@ def extract_audio(recording: str, audio_track: int, out_wav: Path) -> Path:
         detail = result.stderr.strip()[-200:]
         raise AudioError(f"Nao deu pra ler a faixa de audio {audio_track + 1} de {Path(recording).name}: {detail}")
     return out_wav
+
+
+# Faixa da voz: a pedida ou, sem pedido, a 2 (o OBS do usuario grava o microfone na faixa 2, mesma
+# convencao do Pre-editor atual e dos Cortes); gravacao com uma faixa so usa ela.
+def resolve_audio_track(recording: str, requested: int | None) -> int:
+    if requested is not None:
+        return requested
+    return 1 if probe_source(recording).audio_streams >= 2 else 0
 
 
 def loudness_cache(recording: str, audio_track: int) -> Path:
