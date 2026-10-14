@@ -333,8 +333,9 @@ def sequence_cards(project_path: str | Path, name: str) -> list[Card]:
 
 
 # Escala no efeito Movimento: o id do parametro nao muda com o idioma do Premiere (o nome muda).
+# (O 4 e a caixinha "escala uniforme", com valor true.)
 MOTION_COMPONENT = "AE.ADBE Motion"
-SCALE_PARAMETER_ID = "4"
+SCALE_PARAMETER_ID = "2"
 
 
 @dataclass

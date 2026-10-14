@@ -89,14 +89,19 @@ class FakeProject:
         self.objects.append(f'<SubClip ObjectID="{subclip}"><Clip ObjectRef="{video_clip}"/></SubClip>')
         components = []
         if scale is not None:
-            param, motion = self._next(), self._next()
+            # Como no Premiere: Escala e o parametro 2 do Movimento; o 4 e a caixinha "escala uniforme" (true).
+            param, uniform, motion = self._next(), self._next(), self._next()
             self.objects.append(
-                f'<VideoComponentParam ObjectID="{param}"><Name>Escala</Name><ParameterID>4</ParameterID>'
+                f'<VideoComponentParam ObjectID="{param}"><Name>Escala</Name><ParameterID>2</ParameterID>'
                 f"<StartKeyframe>-91445760000000000,{scale},0,0,0,0,0,0</StartKeyframe></VideoComponentParam>"
             )
             self.objects.append(
-                f'<VideoFilterComponent ObjectID="{motion}"><Component><Params><Param Index="0" ObjectRef="{param}"/>'
-                f"</Params></Component><MatchName>AE.ADBE Motion</MatchName></VideoFilterComponent>"
+                f'<VideoComponentParam ObjectID="{uniform}"><Name> </Name><ParameterID>4</ParameterID>'
+                f"<StartKeyframe>-91445760000000000,true,0,0,0,0,0,0</StartKeyframe></VideoComponentParam>"
+            )
+            self.objects.append(
+                f'<VideoFilterComponent ObjectID="{motion}"><Component><Params><Param Index="0" ObjectRef="{uniform}"/>'
+                f'<Param Index="1" ObjectRef="{param}"/></Params></Component><MatchName>AE.ADBE Motion</MatchName></VideoFilterComponent>'
             )
             components.append(motion)
         return self._clip(start, end, components, subclip)
