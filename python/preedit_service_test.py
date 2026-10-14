@@ -11,6 +11,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).parent))
 import preedit_service
 from cortes.media import SourceMedia
+from llm_service import LLMUnavailableError
 from premiere_project_test import FakeProject
 
 FIXTURE = Path(__file__).parent / "preedit" / "fixtures" / "molde_preedit.xml"
@@ -172,6 +173,28 @@ class PreeditServiceTest(unittest.TestCase):
         report = self.teach(project.write(self.tmp / "broll.prproj"))
 
         self.assertIn({"recording": str(self.tmp / "meme.mp4"), "reason": "fora da trilha principal (b-roll)"}, report["skipped"])
+
+    def test_recordings_taught_without_the_ai_are_taught_again(self):
+        def offline():
+            raise LLMUnavailableError("Ollama fora do ar")
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            first = preedit_service.teach_projects([str(self.project())], str(self.store), "large-v3", "pt", 5, "cpu", "int8", 0, offline)
+        second = self.teach(self.project())
+
+        self.assertTrue(first["warnings"])
+        self.assertEqual((len(second["taught"]), second["skipped"]), (3, []))
+        self.assertEqual(self.teach(self.project())["skipped"][0]["reason"], "ja ensinada")
+
+    def test_edit_changed_in_the_project_is_taught_again(self):
+        self.teach(self.project())
+        project = FakeProject()
+        recording = str(self.recordings[0])
+        project.sequence("Nova edicao", [[project.media_clip(0.0, 4.2, recording, 0.0), project.media_clip(4.2, 8.4, recording, 30.0)]])
+
+        report = self.teach(project.write(self.tmp / "novo.prproj"))
+
+        self.assertEqual([item["recording"] for item in report["taught"]], [recording])
 
     def test_project_without_recording_clips(self):
         project = FakeProject()

@@ -35,16 +35,16 @@ class ScorePhrasesTest(unittest.TestCase):
     def test_every_phrase_gets_a_score_and_the_prompt_follows_the_format(self):
         client = FakeClient([])
 
-        scores = interest.score_phrases(client, phrases(3), "longo")
+        scores, fallbacks = interest.score_phrases(client, phrases(3), "longo")
 
-        self.assertEqual(scores, {0: 8.0, 1: 8.0, 2: 8.0})
+        self.assertEqual((scores, fallbacks), ({0: 8.0, 1: 8.0, 2: 8.0}, 0))
         self.assertEqual(client.calls[0][0], interest.PROMPTS["longo"])
         self.assertIn("[F1] 00:05 frase 1", client.calls[0][1])
 
     def test_bad_reply_is_retried_warmer_and_missing_keys_are_neutral(self):
         client = FakeClient([{"oi": 1}, {"notas": {"F0": 9, "F1": 2, "F2": 4, "F3": 7}}])
 
-        scores = interest.score_phrases(client, phrases(5), "short")
+        scores, _ = interest.score_phrases(client, phrases(5), "short")
 
         self.assertEqual([call[2] for call in client.calls], [0, 0.4])
         self.assertEqual(scores[0], 9.0)
@@ -53,9 +53,9 @@ class ScorePhrasesTest(unittest.TestCase):
     def test_long_recordings_go_in_overlapping_windows(self):
         client = FakeClient([])
 
-        scores = interest.score_phrases(client, phrases(150), "longo")  # 750 s
+        scores, _ = interest.score_phrases(client, phrases(150), "longo")  # 750 s em janelas de 5 min
 
-        self.assertEqual(len(client.calls), 2)
+        self.assertEqual(len(client.calls), 3)
         self.assertEqual(len(scores), 150)
 
 
@@ -73,6 +73,31 @@ class LoadInterestTest(unittest.TestCase):
             self.assertEqual(len(client.calls), 1)
             cached = json.loads((Path(tmp) / "gravacao.interest.longo.json").read_text(encoding="utf-8"))
             self.assertEqual(cached["model"], "qwen-falso")
+
+    def test_window_the_ai_never_answers_warns_and_is_not_cached(self):
+        client = FakeClient([{"oi": 1}] * 3)
+        with tempfile.TemporaryDirectory() as tmp:
+            recording = str(Path(tmp) / "gravacao.mp4")
+
+            scores, warning = interest.load_interest(recording, phrases(2), "longo", lambda: client)
+
+            self.assertEqual(scores, {0: 5.0, 1: 5.0})
+            self.assertIn("nota 5", warning)
+            self.assertFalse((Path(tmp) / "gravacao.interest.longo.json").exists())
+
+    def test_ollama_is_started_when_needed(self):
+        client = FakeClient([])
+        client.started = 0
+
+        def ensure_server_running():
+            client.started += 1
+            return True
+
+        client.ensure_server_running = ensure_server_running
+        with tempfile.TemporaryDirectory() as tmp:
+            interest.load_interest(str(Path(tmp) / "gravacao.mp4"), phrases(2), "longo", lambda: client)
+
+        self.assertEqual(client.started, 1)
 
     def test_without_ollama_everything_is_neutral_and_nothing_is_cached(self):
         def unavailable():

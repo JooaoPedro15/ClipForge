@@ -33,6 +33,7 @@ from preedit.interest import load_interest
 from preedit.molde import load_molde
 from preedit.phrases import build_phrases
 from preedit.project_labels import collect_labels
+from preedit.types import RecordingLabels
 from preedit.xml_output import write_xml
 
 
@@ -82,6 +83,12 @@ def _failure_message(error: Exception) -> str:
     return text
 
 
+def labels_hash(labels: RecordingLabels) -> str:
+    """Muda quando o usuario mexe na edicao dessa gravacao no projeto (ai ela e ensinada de novo)."""
+    payload = json.dumps([[r.start, r.end] for r in labels.kept] + [[z.start, z.end, z.level] for z in labels.zooms])
+    return hashlib.sha1(payload.encode("utf-8")).hexdigest()[:12]
+
+
 def _retrain(store_dir: Path, fmt: str) -> dict[str, Any]:
     examples = store.load_examples(store_dir, fmt)
     directory = store.models_dir(store_dir, fmt)
@@ -118,13 +125,15 @@ def teach_projects(
     if not labels:
         raise PreeditError("Nenhuma sequencia desses projetos tem clipes de gravacao (com cortes) pra ensinar.")
 
-    taught_ids = {source["id"] for source in store.load_library(store_dir)["sources"]}
+    known = {source["id"]: source for source in store.load_library(store_dir)["sources"]}
     get_model = whisper_words.model_loader(model_size, device, compute_type)
     taught, skipped, failed, warnings = [], list(ignored), [], []
     touched: set[str] = set()
     pending = []
     for item in labels:
-        if store.source_id(item.recording, item.format) in taught_ids:
+        previous = known.get(store.source_id(item.recording, item.format))
+        # Ja ensinada so pula se a edicao no projeto e a mesma e as notas da IA vieram de verdade.
+        if previous and previous.get("labelsHash") == labels_hash(item) and not previous.get("semIa"):
             skipped.append({"recording": item.recording, "reason": "ja ensinada"})
         elif not Path(item.recording).exists():
             skipped.append({"recording": item.recording, "reason": "gravacao nao encontrada"})
@@ -161,6 +170,7 @@ def teach_projects(
             continue
         if note and note not in warnings:
             warnings.append(note)
+        missing_ai = bool(note)
         source = store.source_id(item.recording, item.format)
         entry = {
             "id": source,
@@ -170,6 +180,8 @@ def teach_projects(
             "sequences": item.sequences,
             "phrases": len(examples["phrase"]),
             "zooms": examples["stats"]["zooms"],
+            "labelsHash": labels_hash(item),
+            "semIa": missing_ai,
             "taughtAt": int(time.time()),
         }
         store.save_source(store_dir, entry, examples)
