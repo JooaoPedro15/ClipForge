@@ -284,7 +284,19 @@ def _to_final_time(clips: list[_Clip], start: float, end: float | None) -> list[
     return cards
 
 
+@dataclass
+class Project:
+    sequences: list[ProjectSequence]
+    # Bruto (mp3...) do lado de cada SRT importado no projeto, com qualquer nome (Storyteller1.mp3 numa
+    # "Sequencia 02" com varios Shorts): o que o usuario mandou legendar, sem precisar escolher.
+    imported_originals: list[str]
+
+
 def read_sequences(project_path: str | Path, originals: Iterable[str | Path] | str | Path | None = None) -> list[ProjectSequence]:
+    return read_project(project_path, originals).sequences
+
+
+def read_project(project_path: str | Path, originals: Iterable[str | Path] | str | Path | None = None) -> Project:
     root = load_root(project_path)
     index = _Index(root)
     srts = _imported_srts(root)
@@ -309,7 +321,8 @@ def read_sequences(project_path: str | Path, originals: Iterable[str | Path] | s
                 export_range=(start, end) if exists else None,
             )
         )
-    return sequences
+    imported = [found for srt in srts.values() if (found := _with_original_extension(srt.with_suffix("")))]
+    return Project(sequences, imported)
 
 
 def sequence_cards(project_path: str | Path, name: str) -> list[Card]:

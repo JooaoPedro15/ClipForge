@@ -94,23 +94,23 @@ def _natural_key(name: str) -> list[Any]:
     return [int(part) if part.isdigit() else part.lower() for part in re.split(r"(\d+)", name)]
 
 
-def _project_sequences(project_path: str, originals: list[str] | None) -> list[premiere_project.ProjectSequence]:
+def _read_project(project_path: str, originals: list[str] | None) -> premiere_project.Project:
     try:
-        sequences = premiere_project.read_sequences(project_path, originals)
+        project = premiere_project.read_project(project_path, originals)
     except premiere_project.ProjectError as error:
         raise StyleError(str(error)) from error
-    if not sequences:
+    if not project.sequences:
         raise StyleError("Nenhuma sequencia desse projeto tem legenda em grafico ou na trilha de legenda.")
-    return sequences
+    return project
 
 
 # Sequencias com legenda num projeto do Premiere, a mais nova (maior numero) primeiro.
 def scan_project(project_path: str, originals: list[str] | None = None) -> dict[str, Any]:
-    sequences = _project_sequences(project_path, originals)
-    ordered = sorted(sequences, key=lambda sequence: _natural_key(sequence.name), reverse=True)
+    project = _read_project(project_path, originals)
+    ordered = sorted(project.sequences, key=lambda sequence: _natural_key(sequence.name), reverse=True)
     return {
         "projectPath": project_path,
-        "rawFiles": len(raw_files(originals or [], sequences)),
+        "rawFiles": len(raw_files(originals or [], project.imported_originals)),
         "sequences": [
             {"name": item.name, "cards": len(item.timeline), "finalPath": item.final_path, "originalPath": item.original_path}
             for item in ordered
@@ -279,6 +279,10 @@ WINDOW_TIE = 0.02
 # todas na fala do bruto, desde que tenha palavras suficientes pra nao ser coincidencia.
 PARTIAL_MIN_COVERAGE = 0.75
 PARTIAL_MIN_TOKENS = 25
+# Ate esse tamanho o recorte das pontas testa todo par (inicio, fim); acima, corta legenda por legenda.
+REFINE_EXHAUSTIVE_CARDS = 60
+# Quantos trechos (o melhor de cada ponto de partida, pra nao perder copias) passam pelo recorte.
+REFINE_CANDIDATES = 6
 
 
 def _files(sources: list[str], extensions: tuple[str, ...], folder_extensions: tuple[str, ...]) -> list[Path]:
@@ -330,11 +334,10 @@ def card_blocks(cards: list[style_alignment.Card]) -> list[tuple[int, int]]:
     return blocks
 
 
-# Brutos escolhidos (arquivos ou pastas); sem escolha, os achados do lado do SRT importado no projeto.
-def raw_files(originals: list[str], sequences: list[premiere_project.ProjectSequence]) -> list[Path]:
+# Brutos escolhidos (arquivos ou pastas); sem escolha, os do lado de cada SRT importado no projeto.
+def raw_files(originals: list[str], imported: list[str]) -> list[Path]:
     chosen = _files(originals, premiere_project.ORIGINAL_EXTENSIONS, AUDIO_EXTENSIONS)
-    found = [item.original_path for item in sequences if item.original_path]
-    return chosen or _files(found, premiere_project.ORIGINAL_EXTENSIONS, AUDIO_EXTENSIONS)
+    return chosen or _files(imported, premiere_project.ORIGINAL_EXTENSIONS, AUDIO_EXTENSIONS)
 
 
 @dataclass
@@ -392,6 +395,41 @@ def _prefer_exported(windows: list[_Window]) -> _Window:
     return next((window for window in windows if window.exported()), windows[0])
 
 
+# Dois Shorts colados (buraco menor que BLOCK_GAP_S) viram um bloco so: corta das pontas as legendas que
+# nao sao desse bruto, ficando com o recorte cuja fala mais parece com a dele.
+def refine_window(window: _Window, spoken: list[str]) -> _Window:
+    tokens = _tokens_of_cards(window.sequence.timeline)
+    matcher = difflib.SequenceMatcher(None, autojunk=False)
+    matcher.set_seq2(spoken)
+
+    def measure(start: int, end: int) -> _Window | None:
+        flat = [token for card in tokens[start:end] for token in card]
+        if not flat:
+            return None
+        matcher.set_seq1(flat)
+        matched = sum(block.size for block in matcher.get_matching_blocks())
+        return _Window(2 * matched / (len(flat) + len(spoken)), window.sequence, start, end, matched, len(flat))
+
+    best = window
+    if window.end - window.start <= REFINE_EXHAUSTIVE_CARDS:
+        for start in range(window.start, window.end):
+            for end in range(start + 1, window.end + 1):
+                candidate = measure(start, end)
+                if candidate is not None and candidate.score > best.score + 1e-9:
+                    best = candidate
+        return best
+
+    improved = True
+    while improved:
+        improved = False
+        for start, end in ((best.start + 1, best.end), (best.start, best.end - 1)):
+            candidate = measure(start, end) if end > start else None
+            if candidate is not None and candidate.score > best.score + 1e-9:
+                best, improved = candidate, True
+                break
+    return best
+
+
 # Onde esta o Short desse bruto no projeto: primeiro nas sequencias de nome parecido
 # ("Sequencia 28 3" -> "Sequencia 28"), depois no projeto todo. Entre copias, prefere a exportada.
 def locate_short(stem: str, words: list[dict[str, Any]], sequences: list[premiere_project.ProjectSequence]) -> _Window | None:
@@ -408,10 +446,18 @@ def locate_short(stem: str, words: list[dict[str, Any]], sequences: list[premier
         every.extend(windows)
         if not windows:
             continue
-        best = max(window.score for window in windows)
+        # Recorta antes de julgar: um bloco com dois Shorts colados tem nota baixa ate perder a metade alheia.
+        by_start: dict[tuple[int, int], _Window] = {}
+        for window in windows:
+            key = (id(window.sequence), window.start)
+            if key not in by_start or window.score > by_start[key].score:
+                by_start[key] = window
+        candidates = sorted(by_start.values(), key=lambda window: -window.score)[:REFINE_CANDIDATES]
+        refined = [refine_window(window, spoken) for window in candidates]
+        best = max(window.score for window in refined)
         if best < style_alignment.MIN_MATCH_RATIO:
             continue
-        tied = sorted((window for window in windows if window.score >= best - WINDOW_TIE), key=lambda window: -window.score)
+        tied = sorted((window for window in refined if window.score >= best - WINDOW_TIE), key=lambda window: -window.score)
         return _prefer_exported(tied)
 
     # Nenhum trecho bate com o bruto inteiro: ele pode ter virado mais de um Short. Fica com o maior
@@ -421,7 +467,7 @@ def locate_short(stem: str, words: list[dict[str, Any]], sequences: list[premier
         return None
     most = max(window.matched for window in partial)
     tied = sorted((window for window in partial if window.matched >= most * 0.95), key=lambda window: -window.matched)
-    return _prefer_exported(tied)
+    return refine_window(_prefer_exported(tied), spoken)
 
 
 @dataclass
@@ -487,8 +533,9 @@ def learn_project(
 ) -> dict[str, Any]:
     store = Path(store_path)
     emit("status", "processing", "reading-project", "Lendo o projeto do Premiere...", progress=2)
-    sequences = _project_sequences(project_path, originals)
-    brutos = raw_files(originals, sequences)
+    project = _read_project(project_path, originals)
+    sequences = project.sequences
+    brutos = raw_files(originals, project.imported_originals)
     if not brutos:
         raise StyleError("Escolha os brutos (mp3) ou a pasta deles.")
     taught_ids = {style_store.video_id_for(str(video.get("originalPath", ""))) for video in style_store.load_library(store).get("videos", [])}

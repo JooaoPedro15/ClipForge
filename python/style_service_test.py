@@ -239,6 +239,21 @@ class StyleServiceTest(unittest.TestCase):
 
         self.assertEqual(style_service.order_by_date([far, near], [bruto]), [near, far])
 
+    def test_two_shorts_glued_in_one_block_are_cut_apart(self):
+        words = [{"word": f" {text}", "start": index * 0.4, "end": index * 0.4 + 0.3} for index, text in enumerate(
+            "eu fui la ontem e tava cheio de gente demais".split()
+        )]
+        project = FakeProject()
+        # O outro Short vem colado (meio segundo depois): o mesmo bloco.
+        glued = [project.graphic(start, end, text) for start, end, text in self.shifted(0.0)]
+        glued += [project.graphic(4.0 + index, 4.9 + index, "bola azul grande voando") for index in range(4)]
+        project.sequence("Sequência 02", [glued])
+        sequences = premiere_project.read_sequences(project.write(self.tmp / "projeto.prproj"))
+
+        window = style_service.locate_short("Storyteller2", words, sequences)
+
+        self.assertEqual([card.text for card in window.cards], ["eu fui la", "ontem e tava", "cheio de gente", "demais"])
+
     def test_raw_file_that_became_two_shorts_teaches_the_bigger_one(self):
         # Bruto longo: a fala do ORIGINAL + um trecho que virou outro Short (outra sequencia).
         words = [{"word": f" {text}", "start": index * 0.4, "end": index * 0.4 + 0.3} for index, text in enumerate(
@@ -275,14 +290,22 @@ class StyleServiceTest(unittest.TestCase):
         self.assertEqual((item["gapExamples"], item["timingSamples"]), (9, 0))
         self.assertTrue(any("Entrada e saida" in warning for warning in item["warnings"]))
 
-    def test_without_chosen_raw_files_uses_the_ones_next_to_the_imported_srt(self):
-        (self.tmp / "Sequência 50.mp3").write_bytes(b"fake")
+    def test_without_chosen_raw_files_uses_the_ones_next_to_every_imported_srt(self):
+        # Como no Storyteller3: SRTs com outro nome, todos os Shorts numa "Sequencia 02".
+        (self.tmp / "Storyteller1.mp3").write_bytes(b"fake")
+        (self.tmp / "Storyteller2.mp3").write_bytes(b"fake")
         project = FakeProject()
-        project.imported_file(self.tmp / "Sequência 50.srt")
-        project.sequence("Sequência 50", [[project.graphic(start, end, text) for start, end, text in self.shifted(0.0)]], export=export_settings(self.final, 0.0, 10.0))
+        project.imported_file(self.tmp / "Storyteller1.srt")
+        project.imported_file(self.tmp / "Storyteller2.srt")
+        project.sequence("Sequência 02", [[project.graphic(start, end, text) for start, end, text in self.shifted(0.0)]], export=export_settings(self.final, 0.0, 10.0))
         path = project.write(self.tmp / "projeto.prproj")
 
-        self.assertEqual([item["name"] for item in self.learn_project(path, [])["taught"]], ["Sequência 50"])
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(style_service.scan_project(str(path))["rawFiles"], 2)
+        report = self.learn_project(path, [])
+
+        taught = [(item["name"], item["sequence"]) for item in report["taught"]]
+        self.assertEqual(taught, [("Storyteller1", "Sequência 02"), ("Storyteller2", "Sequência 02")])
 
     def test_formula_groups_follow_the_current_segmentation(self):
         words = []
