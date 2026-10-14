@@ -68,7 +68,8 @@ class PreeditServiceTest(unittest.TestCase):
                 timeline += 4.2
             project.sequence(f"Sequência {number}", [clips])
         if extra_missing:
-            project.sequence("Sumiu", [[project.media_clip(0.0, 5.0, str(self.tmp / "nao-existe.mp4"), 0.0)]])
+            missing = str(self.tmp / "nao-existe.mp4")
+            project.sequence("Sumiu", [[project.media_clip(0.0, 5.0, missing, 0.0), project.media_clip(5.0, 8.0, missing, 20.0)]])
         return project.write(self.tmp / "projeto.prproj")
 
     def teach(self, project: Path) -> dict:
@@ -161,6 +162,16 @@ class PreeditServiceTest(unittest.TestCase):
         (failure,) = report["failed"]
         self.assertIn("faixa 1", failure["error"])
         self.assertIn("--audio-track", failure["error"])
+
+    def test_ignored_sources_show_up_in_the_report(self):
+        project = FakeProject()
+        main = [project.media_clip(0.0, 4.2, str(self.recordings[0]), 0.0), project.media_clip(4.2, 8.4, str(self.recordings[0]), 10.0)]
+        broll = [project.media_clip(1.0, 2.0, str(self.tmp / "meme.mp4"), 0.0)]
+        project.sequence("Sequência 1", [main, broll])
+
+        report = self.teach(project.write(self.tmp / "broll.prproj"))
+
+        self.assertIn({"recording": str(self.tmp / "meme.mp4"), "reason": "fora da trilha principal (b-roll)"}, report["skipped"])
 
     def test_project_without_recording_clips(self):
         project = FakeProject()

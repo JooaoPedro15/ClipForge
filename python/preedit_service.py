@@ -32,7 +32,7 @@ from preedit.editor import plan_long
 from preedit.interest import load_interest
 from preedit.molde import load_molde
 from preedit.phrases import build_phrases
-from preedit.project_labels import labels_from_sequences
+from preedit.project_labels import collect_labels
 from preedit.xml_output import write_xml
 
 
@@ -107,17 +107,20 @@ def teach_projects(
     store_dir = Path(store_path)
     emit("status", "processing", "reading-project", "Lendo os projetos do Premiere...", progress=2)
     labels = []
+    ignored: list[dict[str, str]] = []
     for project in projects:
         try:
-            labels.extend(labels_from_sequences(premiere_project.read_video_edits(project)))
+            found, left_out = collect_labels(premiere_project.read_video_edits(project))
         except premiere_project.ProjectError as error:
             raise PreeditError(str(error)) from error
+        labels.extend(found)
+        ignored.extend(item for item in left_out if item not in ignored)
     if not labels:
-        raise PreeditError("Nenhuma sequencia desses projetos tem clipes de gravacao pra ensinar.")
+        raise PreeditError("Nenhuma sequencia desses projetos tem clipes de gravacao (com cortes) pra ensinar.")
 
     taught_ids = {source["id"] for source in store.load_library(store_dir)["sources"]}
     get_model = whisper_words.model_loader(model_size, device, compute_type)
-    taught, skipped, failed, warnings = [], [], [], []
+    taught, skipped, failed, warnings = [], list(ignored), [], []
     touched: set[str] = set()
     pending = []
     for item in labels:

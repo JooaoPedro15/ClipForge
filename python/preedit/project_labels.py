@@ -12,8 +12,10 @@ from preedit.types import Range, RecordingLabels, Zoom
 
 # Escala pelo menos 5% acima da normal da trilha conta como zoom.
 ZOOM_MIN_RATIO = 1.05
-# Clipe acelerado/desacelerado nao diz quanto da gravacao ficou: e ignorado.
+# Clipe acelerado/desacelerado nao diz quanto da gravacao ficou: e ignorado. A folga minima cobre o
+# quadro a mais que o Premiere grava em clipe curto (os zooms de corte tem 0,2-1,4 s).
 SPEED_TOLERANCE = 0.02
+FRAME_TOLERANCE_SEC = 0.05
 MERGE_GAP = 0.05
 
 
@@ -30,7 +32,7 @@ def merge_ranges(ranges: list[Range], gap: float = MERGE_GAP) -> list[Range]:
 def _speed_ok(clip: ClipEdit) -> bool:
     timeline = clip.end - clip.start
     source = clip.source_out - clip.source_in
-    return timeline > 0 and abs(source / timeline - 1.0) <= SPEED_TOLERANCE
+    return timeline > 0 and abs(source - timeline) <= max(FRAME_TOLERANCE_SEC, SPEED_TOLERANCE * timeline)
 
 
 def baseline_scale(clips: list[ClipEdit]) -> float:
@@ -59,35 +61,51 @@ def zoom_track(clips: list[ClipEdit]) -> int:
 
 
 def labels_from_sequences(sequences: list[SequenceEdit]) -> list[RecordingLabels]:
-    kept: dict[tuple[str, str], list[Range]] = defaultdict(list)
-    zooms: dict[tuple[str, str], set[Zoom]] = defaultdict(set)
-    names: dict[tuple[str, str], set[str]] = defaultdict(set)
+    return collect_labels(sequences)[0]
+
+
+# Gabarito por gravacao e o que ficou de fora (com o motivo). So ensina a gravacao da trilha principal
+# (b-roll e capturas em outras trilhas nao sao a edicao do usuario) e so ocorrencias com corte: a gravacao
+# inteira jogada numa sequencia ensinaria "mantem tudo" e, unida a edicao de verdade, apagaria os cortes.
+def collect_labels(sequences: list[SequenceEdit]) -> tuple[list[RecordingLabels], list[dict]]:
+    occurrences: dict[tuple[str, str], list[tuple[str, list[Range], set[Zoom]]]] = defaultdict(list)
+    main_sources: set[str] = set()
+    other_sources: set[str] = set()
     for sequence in sequences:
         clips = [clip for clip in sequence.clips if _speed_ok(clip)]
         if not clips:
             continue
         fmt = "short" if sequence.vertical else "longo"
-        for clip in clips:
-            key = (clip.source, fmt)
-            kept[key].append(Range(clip.source_in, clip.source_out))
-            names[key].add(sequence.name)
         track = zoom_track(clips)
-        track_clips = [clip for clip in clips if clip.track == track]
-        baseline = baseline_scale(track_clips)
-        for clip in track_clips:
-            ratio = _ratio(clip, baseline)
-            if ratio >= ZOOM_MIN_RATIO:
-                zooms[(clip.source, fmt)].add(Zoom(round(clip.source_in, 2), round(clip.source_out, 2), round(ratio, 3)))
+        on_main = {clip.source for clip in clips if clip.track == track}
+        main_sources |= on_main
+        other_sources |= {clip.source for clip in clips} - on_main
+        for source in on_main:
+            ranges = merge_ranges([Range(clip.source_in, clip.source_out) for clip in clips if clip.source == source])
+            track_clips = [clip for clip in clips if clip.track == track and clip.source == source]
+            baseline = baseline_scale(track_clips)
+            zooms = {
+                Zoom(round(clip.source_in, 2), round(clip.source_out, 2), round(_ratio(clip, baseline), 3))
+                for clip in track_clips
+                if _ratio(clip, baseline) >= ZOOM_MIN_RATIO
+            }
+            occurrences[(source, fmt)].append((sequence.name, ranges, zooms))
 
-    labels = [
-        RecordingLabels(
-            recording=source,
-            format=fmt,
-            kept=merge_ranges(ranges),
-            zooms=sorted(zooms[(source, fmt)], key=lambda zoom: zoom.start),
-            preedited="_preedit" in Path(source).stem.lower(),
-            sequences=sorted(names[(source, fmt)]),
+    labels: list[RecordingLabels] = []
+    ignored = [{"recording": source, "reason": "fora da trilha principal (b-roll)"} for source in sorted(other_sources - main_sources)]
+    for (source, fmt), items in sorted(occurrences.items()):
+        with_cuts = [item for item in items if len(item[1]) > 1]
+        if not with_cuts:
+            ignored.append({"recording": source, "reason": "sem cortes (gravacao inteira na sequencia)"})
+            continue
+        labels.append(
+            RecordingLabels(
+                recording=source,
+                format=fmt,
+                kept=merge_ranges([piece for _, ranges, _ in with_cuts for piece in ranges]),
+                zooms=sorted({zoom for _, _, zooms in with_cuts for zoom in zooms}, key=lambda zoom: zoom.start),
+                preedited="_preedit" in Path(source).stem.lower(),
+                sequences=sorted({name for name, _, _ in with_cuts}),
+            )
         )
-        for (source, fmt), ranges in kept.items()
-    ]
-    return sorted(labels, key=lambda item: (item.recording, item.format))
+    return labels, ignored
