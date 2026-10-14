@@ -330,3 +330,116 @@ def sequence_cards(project_path: str | Path, name: str) -> list[Card]:
         if sequence.name == name and sequence.cards:
             return sequence.cards
     raise ProjectError(f"A sequencia '{name}' nao tem legenda em grafico (ou na trilha de legenda) no projeto.")
+
+
+# Escala no efeito Movimento: o id do parametro nao muda com o idioma do Premiere (o nome muda).
+MOTION_COMPONENT = "AE.ADBE Motion"
+SCALE_PARAMETER_ID = "4"
+
+
+@dataclass
+class ClipEdit:
+    track: int
+    # Na sequencia (segundos).
+    start: float
+    end: float
+    source: str
+    # Na gravacao (segundos).
+    source_in: float
+    source_out: float
+    # Escala do Movimento (maior valor se animada); None = clipe sem Movimento.
+    scale: float | None
+
+
+@dataclass
+class SequenceEdit:
+    name: str
+    vertical: bool
+    clips: list[ClipEdit]
+
+
+def _keyframe_values(param: ET.Element) -> list[float]:
+    """Valor inicial e, se animado, os dos keyframes ("tempo,valor,..." separados por ';')."""
+    chunks = [param.findtext("StartKeyframe") or "", *(param.findtext("Keyframes") or "").split(";")]
+    values = []
+    for chunk in chunks:
+        parts = chunk.split(",")
+        if len(parts) > 1:
+            try:
+                values.append(float(parts[1]))
+            except ValueError:
+                continue
+    return values
+
+
+def _motion_scale(index: _Index, item: ET.Element) -> float | None:
+    chain = index.deref(item.find("ClipTrackItem/ComponentOwner/Components"))
+    if chain is None:
+        return None
+    for reference in chain.findall("ComponentChain/Components/Component"):
+        component = index.deref(reference)
+        if component is None or component.findtext("MatchName") != MOTION_COMPONENT:
+            continue
+        for param_reference in component.findall("Component/Params/Param"):
+            param = index.deref(param_reference)
+            if param is not None and param.findtext("ParameterID") == SCALE_PARAMETER_ID:
+                values = _keyframe_values(param)
+                return max(values) if values else None
+    return None
+
+
+# Clipe -> SubClip -> VideoClip (entrada/saida no arquivo) -> VideoMediaSource -> Media (caminho).
+def _clip_source(index: _Index, item: ET.Element) -> tuple[str, float, float] | None:
+    subclip = index.deref(item.find("ClipTrackItem/SubClip"))
+    clip = index.deref(subclip.find("Clip")) if subclip is not None else None
+    source = index.deref(clip.find("Clip/Source")) if clip is not None else None
+    media = index.deref(source.find("MediaSource/Media")) if source is not None else None
+    if media is None:
+        return None
+    path = (media.findtext("ActualMediaFilePath") or media.findtext("FilePath") or "").removeprefix("\\?\\")
+    if Path(path).suffix.lower() not in VIDEO_EXTENSIONS:
+        return None
+    source_in = int(clip.findtext("Clip/InPoint") or 0) / TICKS_PER_SECOND
+    source_out = int(clip.findtext("Clip/OutPoint") or 0) / TICKS_PER_SECOND
+    return path, source_in, source_out
+
+
+def _is_vertical(index: _Index, sequence: ET.Element) -> bool:
+    for track_group in sequence.findall("TrackGroups/TrackGroup"):
+        group = index.deref(track_group.find("Second"))
+        if group is not None and group.tag == "VideoTrackGroup":
+            parts = (group.findtext("FrameRect") or "").split(",")
+            if len(parts) == 4:
+                return int(parts[3]) > int(parts[2])
+    return False
+
+
+# Clipes de video de cada sequencia (sem legenda em grafico, imagem ou template): o que o usuario montou.
+def read_video_edits(project_path: str | Path) -> list[SequenceEdit]:
+    root = load_root(project_path)
+    index = _Index(root)
+    edits = []
+    for sequence in root.findall("Sequence"):
+        clips = []
+        for number, track in enumerate(_tracks(index, sequence, "VideoTrackGroup"), start=1):
+            for item in _track_items(index, track, "VideoClipTrackItem"):
+                if _graphic_text(index, item):
+                    continue
+                found = _clip_source(index, item)
+                if found is None:
+                    continue
+                path, source_in, source_out = found
+                clips.append(
+                    ClipEdit(
+                        track=number,
+                        start=round(_seconds(item, "Start"), 3),
+                        end=round(_seconds(item, "End"), 3),
+                        source=path,
+                        source_in=round(source_in, 3),
+                        source_out=round(source_out, 3),
+                        scale=_motion_scale(index, item),
+                    )
+                )
+        if clips:
+            edits.append(SequenceEdit(sequence.findtext("Name") or "", _is_vertical(index, sequence), clips))
+    return edits

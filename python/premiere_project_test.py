@@ -61,7 +61,7 @@ class FakeProject:
         )
         return component
 
-    def _clip(self, start: float, end: float, components: list[str]) -> str:
+    def _clip(self, start: float, end: float, components: list[str], subclip: str | None = None) -> str:
         chain, item = self._next(), self._next()
         motion = self._next()
         self.objects.append(f'<VideoFilterComponent ObjectID="{motion}"><MatchName>AE.ADBE Motion</MatchName></VideoFilterComponent>')
@@ -69,11 +69,37 @@ class FakeProject:
         self.objects.append(f'<VideoComponentChain ObjectID="{chain}"><ComponentChain><Components>{listed}</Components></ComponentChain></VideoComponentChain>')
         # Premiere nao grava valor padrao: clipe no inicio da sequencia vem sem <Start>.
         start_tag = f"<Start>{ticks(start)}</Start>" if start else ""
+        sub_tag = f'<SubClip ObjectRef="{subclip}"/>' if subclip else ""
         self.objects.append(
             f'<VideoClipTrackItem ObjectID="{item}"><ClipTrackItem><ComponentOwner><Components ObjectRef="{chain}"/></ComponentOwner>'
-            f"<TrackItem>{start_tag}<End>{ticks(end)}</End></TrackItem></ClipTrackItem></VideoClipTrackItem>"
+            f"<TrackItem>{start_tag}<End>{ticks(end)}</End></TrackItem>{sub_tag}</ClipTrackItem></VideoClipTrackItem>"
         )
         return item
+
+    def media_clip(self, start: float, end: float, source: str, source_in: float, scale: float | None = 100.0) -> str:
+        """Clipe da gravacao: SubClip -> VideoClip (entrada/saida) -> VideoMediaSource -> Media, com Escala do Movimento."""
+        media_uid = f"media-{self._next()}"
+        media_source, video_clip, subclip = self._next(), self._next(), self._next()
+        self.objects.append(f'<Media ObjectUID="{media_uid}"><FilePath>{source}</FilePath><ActualMediaFilePath>{source}</ActualMediaFilePath></Media>')
+        self.objects.append(f'<VideoMediaSource ObjectID="{media_source}"><MediaSource><Media ObjectURef="{media_uid}"/></MediaSource></VideoMediaSource>')
+        self.objects.append(
+            f'<VideoClip ObjectID="{video_clip}"><Clip><Source ObjectRef="{media_source}"/>'
+            f"<OutPoint>{ticks(source_in + end - start)}</OutPoint><InPoint>{ticks(source_in)}</InPoint></Clip></VideoClip>"
+        )
+        self.objects.append(f'<SubClip ObjectID="{subclip}"><Clip ObjectRef="{video_clip}"/></SubClip>')
+        components = []
+        if scale is not None:
+            param, motion = self._next(), self._next()
+            self.objects.append(
+                f'<VideoComponentParam ObjectID="{param}"><Name>Escala</Name><ParameterID>4</ParameterID>'
+                f"<StartKeyframe>-91445760000000000,{scale},0,0,0,0,0,0</StartKeyframe></VideoComponentParam>"
+            )
+            self.objects.append(
+                f'<VideoFilterComponent ObjectID="{motion}"><Component><Params><Param Index="0" ObjectRef="{param}"/>'
+                f"</Params></Component><MatchName>AE.ADBE Motion</MatchName></VideoFilterComponent>"
+            )
+            components.append(motion)
+        return self._clip(start, end, components, subclip)
 
     def graphic(self, start: float, end: float, text: str, digest: str | None = None, empty: bool = False) -> str:
         return self._clip(start, end, [self._text_component(text, digest or f"h{self._next()}", empty)])
@@ -103,7 +129,14 @@ class FakeProject:
         self.objects.append(f'<{tag} ObjectUID="{uid}">{body}</{tag}>')
         return uid
 
-    def sequence(self, name: str, video_tracks: list[list[str]], caption_tracks: list[list[str]] = (), export: dict | None = None):
+    def sequence(
+        self,
+        name: str,
+        video_tracks: list[list[str]],
+        caption_tracks: list[list[str]] = (),
+        export: dict | None = None,
+        frame: str = "0,0,1920,1080",
+    ):
         groups = []
         for tag, track_tag, tracks, wrapper in (
             ("VideoTrackGroup", "VideoClipTrack", video_tracks, ""),
@@ -112,7 +145,8 @@ class FakeProject:
             uids = [self._track(track_tag, items, wrapper) for items in tracks]
             group = self._next()
             listed = "".join(f'<Track Index="{i}" ObjectURef="{uid}"/>' for i, uid in enumerate(uids))
-            self.objects.append(f'<{tag} ObjectID="{group}"><TrackGroup><Tracks>{listed}</Tracks></TrackGroup></{tag}>')
+            extra = f"<FrameRect>{frame}</FrameRect>" if tag == "VideoTrackGroup" else ""
+            self.objects.append(f'<{tag} ObjectID="{group}"><TrackGroup><Tracks>{listed}</Tracks></TrackGroup>{extra}</{tag}>')
             groups.append(group)
         export_tag = ""
         if export:
@@ -236,6 +270,43 @@ class ReadSequencesTest(unittest.TestCase):
             premiere_project.read_sequences(broken)
         with self.assertRaises(premiere_project.ProjectError):
             premiere_project.read_sequences(self.tmp / "nao-existe.prproj")
+
+
+class ReadVideoEditsTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_clips_bring_source_entry_and_motion_scale(self):
+        project = FakeProject()
+        bruto = r"E:\Bruto\2026-10-05 14-50-31.mp4"
+        top = [project.media_clip(0.0, 3.5, bruto, 71.91, scale=62.7)]
+        bottom = [project.media_clip(0.0, 3.5, bruto, 71.91), project.media_clip(3.5, 4.5, bruto, 93.93, scale=170.0)]
+        legenda = [project.graphic(0.0, 1.0, "oi gente")]
+        project.sequence("Sequência 41", [bottom, top, legenda], frame="0,0,1080,1920")
+        project.sequence("So legenda", [[project.graphic(0.0, 1.0, "nada")]])
+
+        (edit,) = premiere_project.read_video_edits(project.write(self.tmp / "p.prproj"))
+
+        self.assertEqual((edit.name, edit.vertical), ("Sequência 41", True))
+        rows = [(c.track, c.start, c.end, c.source_in, c.source_out, c.scale) for c in edit.clips]
+        self.assertEqual(
+            rows,
+            [(1, 0.0, 3.5, 71.91, 75.41, 100.0), (1, 3.5, 4.5, 93.93, 94.93, 170.0), (2, 0.0, 3.5, 71.91, 75.41, 62.7)],
+        )
+        self.assertEqual(edit.clips[0].source, bruto)
+
+    def test_images_and_clips_without_motion(self):
+        project = FakeProject()
+        project.sequence("Longo", [[project.media_clip(0.0, 2.0, r"E:\Bruto\a.mp4", 10.0, scale=None), project.media_clip(2.0, 3.0, r"E:\Bruto\capa.png", 0.0)]])
+
+        (edit,) = premiere_project.read_video_edits(project.write(self.tmp / "p.prproj"))
+
+        self.assertFalse(edit.vertical)
+        self.assertEqual([(c.source, c.scale) for c in edit.clips], [(r"E:\Bruto\a.mp4", None)])
 
 
 if __name__ == "__main__":
