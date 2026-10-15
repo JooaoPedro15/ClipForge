@@ -2,6 +2,7 @@
 
 Uso (eventos JSON no stdout, como os outros servicos):
   python preedit_service.py teach-project --project P [--project P2] --store DIR [--model M] [--audio-track 0] [--cpu]
+  python preedit_service.py teach-final --project P [--project P2] --videos PASTA --store DIR [--model M] [--cpu]
   python preedit_service.py edit --recording R --molde M --store DIR --minutes 12 [--out X] [--audio-track 0] [--cpu]
   python preedit_service.py report --store DIR
   python preedit_service.py forget --id ID --store DIR
@@ -25,14 +26,14 @@ from cortes.media import probe_source
 from cortes.xmeml_template import TemplateError
 from events import emit
 from llm_service import create_default_client
-from preedit import models, store
+from preedit import finals, models, store
 from preedit.audio import AudioError, extract_audio, load_loudness, loudness_cache, resolve_audio_track
 from preedit.dataset import build_examples
 from preedit.editor import plan_long
 from preedit.interest import load_interest
 from preedit.molde import load_molde
 from preedit.phrases import build_phrases
-from preedit.project_labels import collect_labels
+from preedit.project_labels import collect_labels, final_labels
 from preedit.types import RecordingLabels
 from preedit.xml_output import write_xml
 
@@ -91,13 +92,89 @@ def labels_hash(labels: RecordingLabels) -> str:
 
 def _retrain(store_dir: Path, fmt: str) -> dict[str, Any]:
     examples = store.load_examples(store_dir, fmt)
-    directory = store.models_dir(store_dir, fmt)
     trained = models.train_format(examples) if examples else None
     if trained is None:
-        return {"aviso": "Exemplos insuficientes pra treinar esse formato."}
+        # So videos finais (ou nada): o editor nao treina, mas o que der pra medir aparece.
+        report = models.evaluate(examples) if examples else {}
+        report["aviso"] = "Exemplos insuficientes pra treinar esse formato (o editor precisa de gravacoes com bruto)."
+        return report
     report = models.evaluate(examples)
-    models.save_models(directory, trained, report)
+    models.save_models(store.models_dir(store_dir, fmt), trained, report)
     return report
+
+
+def _teach_labels(
+    labels: list[RecordingLabels],
+    store_dir: Path,
+    get_model: Callable[[], Any],
+    language: str,
+    beam_size: int,
+    audio_track: int | None,
+    make_client: Callable[[], Any],
+    entry_extra: Callable[[RecordingLabels], dict[str, Any]],
+    prefer_mic: bool = True,
+) -> tuple[list[dict], list[dict], list[dict], list[str], set[str]]:
+    """Ensina os gabaritos e devolve taught, skipped, failed, warnings e os formatos tocados."""
+    known = {source["id"]: source for source in store.load_library(store_dir)["sources"]}
+    taught, skipped, failed, warnings = [], [], [], []
+    touched: set[str] = set()
+    pending = []
+    for item in labels:
+        previous = known.get(store.source_id(item.recording, item.format))
+        # Ja ensinada so pula se a edicao no projeto e a mesma e as notas da IA vieram de verdade.
+        if previous and previous.get("labelsHash") == labels_hash(item) and not previous.get("semIa"):
+            skipped.append({"recording": item.recording, "reason": "ja ensinada"})
+        elif not Path(item.recording).exists():
+            skipped.append({"recording": item.recording, "reason": "gravacao nao encontrada"})
+        else:
+            pending.append(item)
+
+    # Fase 1: fala e volume de todas (so o Whisper na GPU). Fase 2: notas da IA (so o Ollama na GPU).
+    # Alternar os dois por gravacao estoura a memoria de uma placa de 8 GB (o Ollama segura o modelo carregado).
+    # Uma gravacao que falha vai pra lista de falhas e o lote segue com as outras.
+    prepared = []
+    for number, item in enumerate(pending):
+        progress = round(5 + 60 * number / max(1, len(pending)))
+        emit("status", "processing", "transcribing", f"Fala [{number + 1}/{len(pending)}] {Path(item.recording).name}", progress=progress)
+        try:
+            track = resolve_audio_track(item.recording, audio_track, prefer_mic)
+            words, loud = prepare_audio(item.recording, track, get_model, language, beam_size)
+        except ImportError:
+            raise
+        except Exception as error:
+            failed.append({"recording": item.recording, "error": _failure_message(error)})
+            continue
+        prepared.append((item, words, loud))
+
+    for number, (item, words, loud) in enumerate(prepared):
+        progress = round(65 + 30 * number / max(1, len(prepared)))
+        emit("status", "processing", "scoring", f"Notas da IA [{number + 1}/{len(prepared)}] {Path(item.recording).name}", progress=progress)
+        try:
+            interest, note = load_interest(item.recording, build_phrases(words), item.format, make_client)
+            examples = build_examples(item, words, loud, interest)
+        except ImportError:
+            raise
+        except Exception as error:
+            failed.append({"recording": item.recording, "error": _failure_message(error)})
+            continue
+        if note and note not in warnings:
+            warnings.append(note)
+        entry = {
+            "id": store.source_id(item.recording, item.format),
+            **entry_extra(item),
+            "format": item.format,
+            "recording": item.recording,
+            "sequences": item.sequences,
+            "phrases": len(examples["phrase"]),
+            "zooms": examples["stats"]["zooms"],
+            "labelsHash": labels_hash(item),
+            "semIa": bool(note),
+            "taughtAt": int(time.time()),
+        }
+        store.save_source(store_dir, entry, examples)
+        taught.append({key: entry[key] for key in ("recording", "format", "sequences", "phrases", "zooms")})
+        touched.add(item.format)
+    return taught, skipped, failed, warnings, touched
 
 
 def teach_projects(
@@ -125,72 +202,105 @@ def teach_projects(
     if not labels:
         raise PreeditError("Nenhuma sequencia desses projetos tem clipes de gravacao (com cortes) pra ensinar.")
 
-    known = {source["id"]: source for source in store.load_library(store_dir)["sources"]}
     get_model = whisper_words.model_loader(model_size, device, compute_type)
-    taught, skipped, failed, warnings = [], list(ignored), [], []
-    touched: set[str] = set()
-    pending = []
-    for item in labels:
-        previous = known.get(store.source_id(item.recording, item.format))
-        # Ja ensinada so pula se a edicao no projeto e a mesma e as notas da IA vieram de verdade.
-        if previous and previous.get("labelsHash") == labels_hash(item) and not previous.get("semIa"):
-            skipped.append({"recording": item.recording, "reason": "ja ensinada"})
-        elif not Path(item.recording).exists():
-            skipped.append({"recording": item.recording, "reason": "gravacao nao encontrada"})
-        else:
-            pending.append(item)
-
-    # Fase 1: fala e volume de todas (so o Whisper na GPU). Fase 2: notas da IA (so o Ollama na GPU).
-    # Alternar os dois por gravacao estoura a memoria de uma placa de 8 GB (o Ollama segura o modelo carregado).
-    # Uma gravacao que falha vai pra lista de falhas e o lote segue com as outras.
-    prepared = []
-    for number, item in enumerate(pending):
-        progress = round(5 + 60 * number / max(1, len(pending)))
-        emit("status", "processing", "transcribing", f"Fala [{number + 1}/{len(pending)}] {Path(item.recording).name}", progress=progress)
-        try:
-            track = resolve_audio_track(item.recording, audio_track)
-            words, loud = prepare_audio(item.recording, track, get_model, language, beam_size)
-        except ImportError:
-            raise
-        except Exception as error:
-            failed.append({"recording": item.recording, "error": _failure_message(error)})
-            continue
-        prepared.append((item, words, loud))
-
-    for number, (item, words, loud) in enumerate(prepared):
-        progress = round(65 + 30 * number / max(1, len(prepared)))
-        emit("status", "processing", "scoring", f"Notas da IA [{number + 1}/{len(prepared)}] {Path(item.recording).name}", progress=progress)
-        try:
-            interest, note = load_interest(item.recording, build_phrases(words), item.format, make_client)
-            examples = build_examples(item, words, loud, interest)
-        except ImportError:
-            raise
-        except Exception as error:
-            failed.append({"recording": item.recording, "error": _failure_message(error)})
-            continue
-        if note and note not in warnings:
-            warnings.append(note)
-        missing_ai = bool(note)
-        source = store.source_id(item.recording, item.format)
-        entry = {
-            "id": source,
-            "kind": "projeto",
-            "format": item.format,
-            "recording": item.recording,
-            "sequences": item.sequences,
-            "phrases": len(examples["phrase"]),
-            "zooms": examples["stats"]["zooms"],
-            "labelsHash": labels_hash(item),
-            "semIa": missing_ai,
-            "taughtAt": int(time.time()),
-        }
-        store.save_source(store_dir, entry, examples)
-        taught.append({key: entry[key] for key in ("recording", "format", "sequences", "phrases", "zooms")})
-        touched.add(item.format)
-
+    taught, skipped, failed, warnings, touched = _teach_labels(
+        labels, store_dir, get_model, language, beam_size, audio_track, make_client, entry_extra=lambda item: {"kind": "projeto"}
+    )
     emit("status", "processing", "training", "Treinando os modelos...", progress=96)
     trained = {fmt: _retrain(store_dir, fmt) for fmt in sorted(touched)}
-    return {"taught": taught, "skipped": skipped, "failed": failed, "models": trained, "warnings": warnings}
+    return {"taught": taught, "skipped": ignored + skipped, "failed": failed, "models": trained, "warnings": warnings}
+
+
+def _read_candidates(projects: list[str]) -> list[finals.Candidate]:
+    candidates = []
+    for project in projects:
+        try:
+            sequences = premiere_project.read_video_edits(project)
+        except (premiere_project.ProjectError, OSError, EOFError) as error:
+            raise PreeditError(f"Nao consegui ler {Path(project).name}: {error}") from error
+        modified = Path(project).stat().st_mtime
+        candidates += [finals.Candidate(project, sequence, modified) for sequence in sequences]
+    return candidates
+
+
+# Ensina zoom com projetos antigos (bruto offline) e os videos que as sequencias exportaram.
+def teach_finals(
+    projects: list[str],
+    videos_dir: str,
+    store_path: str,
+    model_size: str,
+    language: str,
+    beam_size: int,
+    device: str,
+    compute_type: str,
+    audio_track: int | None,
+    make_client: Callable[[], Any] = create_default_client,
+) -> dict[str, Any]:
+    folder = Path(videos_dir)
+    files = finals.scan_videos(folder) if folder.is_dir() else {}
+    if not files:
+        raise PreeditError(f"Nenhum video (.mp4, .mov, .mkv) em {videos_dir}.")
+    emit("status", "processing", "reading-project", "Lendo os projetos do Premiere...", progress=2)
+    candidates = _read_candidates(projects)
+
+    emit("status", "processing", "pairing", "Procurando os videos exportados...", progress=4)
+    failed: list[dict] = []
+    measured: dict[str, float] = {}
+
+    def duration_of(path: str) -> float:
+        if path not in measured:
+            try:
+                measured[path] = probe_source(path).duration_sec
+            except (RuntimeError, ValueError, KeyError) as error:
+                failed.append({"recording": path, "error": str(error)})
+                measured[path] = -1.0
+        return measured[path]
+
+    pairs, skipped, unpaired = finals.pair_videos(candidates, files, duration_of)
+    labels, project_of, pair_rows = [], {}, []
+    for pair in pairs:
+        item = final_labels(pair.sequence, pair.video, pair.start, pair.end)
+        pair_rows.append(
+            {
+                "project": pair.project,
+                "sequence": pair.sequence.name,
+                "video": pair.video,
+                "start": pair.start,
+                "end": pair.end,
+                "format": "short" if pair.sequence.vertical else "longo",
+                "zooms": len(item.zooms) if item else 0,
+            }
+        )
+        if item is None:
+            skipped.append({"recording": pair.video, "reason": f"sem zoom ({pair.sequence.name})"})
+            continue
+        labels.append(item)
+        project_of[pair.video] = pair.project
+
+    store_dir = Path(store_path)
+    get_model = whisper_words.model_loader(model_size, device, compute_type)
+    taught, more_skipped, more_failed, warnings, touched = _teach_labels(
+        labels,
+        store_dir,
+        get_model,
+        language,
+        beam_size,
+        audio_track,
+        make_client,
+        entry_extra=lambda item: {"kind": "final", "project": project_of[item.recording]},
+        prefer_mic=False,
+    )
+    emit("status", "processing", "training", "Treinando os modelos...", progress=96)
+    trained = {fmt: _retrain(store_dir, fmt) for fmt in sorted(touched)}
+    return {
+        "pairs": pair_rows,
+        "unpairedSequences": unpaired,
+        "taught": taught,
+        "skipped": skipped + more_skipped,
+        "failed": failed + more_failed,
+        "models": trained,
+        "warnings": warnings,
+    }
 
 
 def edit_recording(
@@ -283,6 +393,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     teach_parser.add_argument("--project", action="append", required=True)
     _add_model_args(teach_parser)
 
+    final_parser = commands.add_parser("teach-final")
+    final_parser.add_argument("--project", action="append", required=True)
+    final_parser.add_argument("--videos", required=True, help="pasta com os videos exportados (procura em subpastas)")
+    _add_model_args(final_parser)
+
     edit_parser = commands.add_parser("edit")
     edit_parser.add_argument("--recording", required=True)
     edit_parser.add_argument("--molde", required=True)
@@ -307,6 +422,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "teach-project":
             result = teach_projects(args.project, args.store, args.model, args.language, args.beam_size, device, compute_type, args.audio_track)
             emit("done", "completed", "done", f"{len(result['taught'])} gravacoes ensinadas.", progress=100, report=result)
+        elif args.command == "teach-final":
+            result = teach_finals(args.project, args.videos, args.store, args.model, args.language, args.beam_size, device, compute_type, args.audio_track)
+            emit("done", "completed", "done", f"{len(result['taught'])} videos finais ensinados.", progress=100, report=result)
         elif args.command == "edit":
             result = edit_recording(
                 args.recording, args.molde, args.store, args.minutes, args.out, args.model, args.language, args.beam_size, device, compute_type, args.audio_track

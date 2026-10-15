@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 import preedit_service
 from cortes.media import SourceMedia
 from llm_service import LLMUnavailableError
-from premiere_project_test import FakeProject
+from premiere_project_test import FakeProject, export_settings
 
 FIXTURE = Path(__file__).parent / "preedit" / "fixtures" / "molde_preedit.xml"
 
@@ -201,6 +201,91 @@ class PreeditServiceTest(unittest.TestCase):
         project.sequence("So legenda", [[project.graphic(0.0, 1.0, "oi")]])
         with self.assertRaises(preedit_service.PreeditError):
             self.teach(project.write(self.tmp / "vazio.prproj"))
+
+
+class TeachFinalsTest(unittest.TestCase):
+    """Videos finais com caches prontos; a duracao vem de um probe falso."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp = Path(self._tmp.name)
+        self.store = self.tmp / "store"
+        self.videos = self.tmp / "Finais"
+        self.videos.mkdir()
+        self.durations = {}
+        for number in range(4):
+            video = self.videos / f"pronto{number}.mp4"
+            video.write_bytes(b"fake")
+            (self.videos / f"pronto{number}.words.a0.json").write_text(json.dumps(recording_words(20)), encoding="utf-8")
+            (self.videos / f"pronto{number}.loudness.a0.json").write_text(json.dumps({"window": 0.1, "db": [-30.0] * 1000}), encoding="utf-8")
+            self.durations[str(video)] = 100.0 + number * 10
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def project(self, zoom_scale: float = 160.0, name: str = "projeto.prproj") -> Path:
+        project = FakeProject()
+        for number in range(4):
+            duration = 100.0 + number * 10
+            bruto = str(self.tmp / f"sumiu{number}.mp4")  # bruto offline: so o caminho
+            clips = [
+                project.media_clip(0.0, 10.0, bruto, 0.0),
+                project.media_clip(10.0, 12.0, bruto, 50.0, scale=zoom_scale),
+                project.media_clip(12.0, duration, bruto, 52.0),
+            ]
+            exported = Path(r"C:\Users\Joao\Desktop") / f"pronto{number}.mp4"
+            project.sequence(f"Longo {number}", [clips], export=export_settings(exported, 0.0, duration))
+        return project.write(self.tmp / name)
+
+    def teach(self, project: Path) -> dict:
+        def probe(path):
+            return SourceMedia(path, self.durations[path], 30.0, 1920, 1080, 1)
+
+        with mock.patch.object(preedit_service, "probe_source", side_effect=probe), contextlib.redirect_stdout(io.StringIO()):
+            return preedit_service.teach_finals([str(project)], str(self.videos), str(self.store), "large-v3", "pt", 5, "cpu", "int8", 0, FakeClient)
+
+    def test_pairs_by_export_and_teaches_only_zoom(self):
+        report = self.teach(self.project())
+
+        self.assertEqual(len(report["pairs"]), 4)
+        self.assertEqual((len(report["taught"]), report["skipped"], report["failed"]), (4, [], []))
+        library = json.loads((self.store / "library.json").read_text(encoding="utf-8"))
+        self.assertEqual({source["kind"] for source in library["sources"]}, {"final"})
+        self.assertEqual(report["taught"][0]["phrases"], 0)
+        # So videos finais: o editor nao treina (precisa de bruto), mas o zoom deles e medido.
+        self.assertIn("zoom_f1_finais", report["models"]["longo"])
+        self.assertIn("bruto", report["models"]["longo"]["aviso"])
+
+    def test_already_taught_videos_are_skipped(self):
+        self.teach(self.project())
+
+        again = self.teach(self.project())
+
+        self.assertEqual([item["reason"] for item in again["skipped"]], ["ja ensinada"] * 4)
+
+    def test_changed_zooms_teach_the_video_again(self):
+        self.teach(self.project())
+
+        report = self.teach(self.project(zoom_scale=200.0, name="autosave.prproj"))
+
+        self.assertEqual(len(report["taught"]), 4)
+
+    def test_sequence_without_zoom_is_skipped_with_the_reason(self):
+        report = self.teach(self.project(zoom_scale=100.0))
+
+        self.assertEqual(report["taught"], [])
+        self.assertEqual({item["reason"] for item in report["skipped"]}, {f"sem zoom (Longo {n})" for n in range(4)})
+
+    def test_folder_without_videos_is_a_clear_error(self):
+        with self.assertRaises(preedit_service.PreeditError):
+            preedit_service.teach_finals([str(self.project())], str(self.tmp / "nao-existe"), str(self.store), "large-v3", "pt", 5, "cpu", "int8", 0, FakeClient)
+
+    def test_bad_project_is_a_clear_error(self):
+        broken = self.tmp / "quebrado.prproj"
+        broken.write_bytes(b"isso nao e um projeto")
+
+        with self.assertRaises(preedit_service.PreeditError):
+            self.teach(broken)
 
 
 if __name__ == "__main__":
