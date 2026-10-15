@@ -35,6 +35,8 @@ class RecordingLabels:
     sequences: list[str] = field(default_factory=list)
     # Gabarito de video final (sem bruto): tempos sao do mp4 e so o zoom ensina.
     final: bool = False
+    # Video final: as gravacoes do trecho (se o bruto existe, a edicao ja e ensinada pelo projeto).
+    sources: list[str] = field(default_factory=list)
 
     @property
     def span(self) -> Range:

@@ -257,6 +257,8 @@ def teach_finals(
         return measured[path]
 
     pairs, skipped, unpaired = finals.pair_videos(candidates, files, duration_of)
+    store_dir = Path(store_path)
+    taught_raw = {os.path.normcase(source["recording"]) for source in store.load_library(store_dir)["sources"] if source.get("kind") == "projeto"}
     labels, project_of, pair_rows = [], {}, []
     for pair in pairs:
         item = final_labels(pair.sequence, pair.video, pair.start, pair.end)
@@ -274,10 +276,15 @@ def teach_finals(
         if item is None:
             skipped.append({"recording": pair.video, "reason": f"sem zoom ({pair.sequence.name})"})
             continue
+        # Bruto ainda no disco ou ja ensinado: o teach-project ensina essa edicao (com os cortes). Ensinar
+        # tambem o video final contaria a mesma edicao duas vezes e enviesaria o "com x sem finais".
+        twin = next((source for source in item.sources if os.path.normcase(source) in taught_raw or Path(source).exists()), None)
+        if twin:
+            skipped.append({"recording": pair.video, "reason": f"bruto disponivel ({Path(twin).name}): ensine com teach-project"})
+            continue
         labels.append(item)
         project_of[pair.video] = pair.project
 
-    store_dir = Path(store_path)
     get_model = whisper_words.model_loader(model_size, device, compute_type)
     taught, more_skipped, more_failed, warnings, touched = _teach_labels(
         labels,

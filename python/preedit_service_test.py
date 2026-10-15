@@ -276,6 +276,19 @@ class TeachFinalsTest(unittest.TestCase):
         self.assertEqual(report["taught"], [])
         self.assertEqual({item["reason"] for item in report["skipped"]}, {f"sem zoom (Longo {n})" for n in range(4)})
 
+    def test_video_whose_recording_exists_or_was_taught_is_left_to_teach_project(self):
+        # Sem isso a mesma edicao entraria duas vezes (pelo bruto e pelo video final).
+        (self.tmp / "sumiu0.mp4").write_bytes(b"bruto ainda no disco")
+        taught_raw = {"id": "bruto1", "kind": "projeto", "format": "longo", "recording": str(self.tmp / "sumiu1.mp4")}
+        preedit_service.store.save_source(self.store, taught_raw, {"phrase": [], "zoom": []})
+
+        report = self.teach(self.project())
+
+        self.assertEqual(len(report["taught"]), 2)
+        reasons = {item["recording"]: item["reason"] for item in report["skipped"]}
+        self.assertEqual(reasons[str(self.videos / "pronto0.mp4")], "bruto disponivel (sumiu0.mp4): ensine com teach-project")
+        self.assertEqual(reasons[str(self.videos / "pronto1.mp4")], "bruto disponivel (sumiu1.mp4): ensine com teach-project")
+
     def test_folder_without_videos_is_a_clear_error(self):
         with self.assertRaises(preedit_service.PreeditError):
             preedit_service.teach_finals([str(self.project())], str(self.tmp / "nao-existe"), str(self.store), "large-v3", "pt", 5, "cpu", "int8", 0, FakeClient)

@@ -143,9 +143,8 @@ def final_labels(sequence: SequenceEdit, video: str, start: float = 0.0, end: fl
     for clip in on_track:
         seconds[clip.source] += clip.end - clip.start
     zooms: list[Zoom] = []
-    for source, total in seconds.items():
-        if total < MAIN_SOURCE_SHARE * length:
-            continue
+    main_sources = sorted(source for source, total in seconds.items() if total >= MAIN_SOURCE_SHARE * length)
+    for source in main_sources:
         source_clips = [clip for clip in on_track if clip.source == source]
         baseline = _time_baseline(source_clips)
         zooms += [
@@ -162,4 +161,5 @@ def final_labels(sequence: SequenceEdit, video: str, start: float = 0.0, end: fl
         zooms=sorted(zooms, key=lambda zoom: zoom.start),
         sequences=[sequence.name],
         final=True,
+        sources=main_sources,
     )

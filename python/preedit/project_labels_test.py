@@ -102,6 +102,7 @@ class FinalLabelsTest(unittest.TestCase):
         self.assertEqual(labels.kept, [Range(0.0, 45.0)])
         self.assertEqual(labels.zooms, [Zoom(20.0, 21.5, 1.5)])
         self.assertEqual(labels.sequences, ["Sequência 03"])
+        self.assertEqual(labels.sources, [BRUTO])  # pra nao ensinar de novo o que ja veio do bruto
 
     def test_zoom_heavy_range_keeps_the_normal_scale_by_time(self):
         # Short de 22 s cortado de uma sequencia longa: 6 zooms de 130%, cada um partido em 2 clipes.
