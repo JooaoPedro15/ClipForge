@@ -36,6 +36,15 @@ class PairTest(unittest.TestCase):
 
         self.assertEqual((pair.start, pair.end), (0.0, 60.0))
 
+    def test_the_copy_matching_the_range_wins_over_one_matching_the_whole_sequence(self):
+        sequence = candidate("S", 60.0, (r"D:\Prontos\a.mp4", 10.0, 35.0))
+        whole, short = "D:/Finais/x/a.mp4", "D:/Finais/y/a.mp4"
+        durations = {str(Path(whole)): 60.0, str(Path(short)): 25.0}
+
+        (pair,), _, _ = pair_videos([sequence], folder(whole, short), durations.get)
+
+        self.assertEqual((pair.video, pair.start, pair.end), (str(Path(short)), 10.0, 35.0))
+
     def test_missing_file_and_wrong_duration_are_reported(self):
         sequences = [candidate("S1", 100.0, (r"D:\Prontos\sumiu.mp4", 0.0, 30.0)), candidate("S2", 100.0, (r"D:\Prontos\curto.mp4", 0.0, 10.0))]
 

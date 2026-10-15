@@ -68,10 +68,12 @@ def _unique_exports(candidates: list[Candidate]) -> tuple[list[Candidate], int]:
 
 def _match(item: Candidate, options: list[Path], duration_of: Callable[[str], float]) -> Pair | None:
     _, start, end = item.sequence.export
-    for option in options:
-        seconds = duration_of(str(option))
+    durations = [(option, duration_of(str(option))) for option in options]
+    # O trecho gravado vem primeiro em todas as copias; so depois a sequencia inteira.
+    for option, seconds in durations:
         if _same(seconds, end - start):
             return Pair(item.project, item.sequence, str(option), start, end)
+    for option, seconds in durations:
         if _same(seconds, item.sequence.duration):
             # Export de "sequencia inteira" com entrada/saida antigas gravadas no projeto.
             return Pair(item.project, item.sequence, str(option), 0.0, item.sequence.duration)
