@@ -118,6 +118,16 @@ def _f1(truth: list[float], predicted: list[int]) -> float | None:
     return round(float(f1_score([int(y) for y in truth], predicted, zero_division=0)), 3)
 
 
+# Chance de uma frase mantida ter nota maior que uma tirada (AUC; 0,5 = chute). E o que o editor usa:
+# ele tira as frases de menor nota ate a duracao alvo, entao vale mais que o F1 no limiar de 0,5.
+def _ranking(truth: list[float], scores: list[float]) -> float | None:
+    if not scores or len(set(truth)) < 2:
+        return None
+    from sklearn.metrics import roc_auc_score
+
+    return round(float(roc_auc_score([int(y) for y in truth], scores)), 3)
+
+
 # Mede em gravacoes que ficaram fora do treino, ao lado do que o Pre-editor atual faria:
 # ele mantem todo o conteudo, nao tira regravada, nao da zoom e deixa uma pausa "padrao" (a mediana).
 def evaluate(examples: list[dict]) -> dict[str, Any]:
@@ -130,9 +140,12 @@ def evaluate(examples: list[dict]) -> dict[str, Any]:
     report: dict[str, Any] = {"gravacoes_treino": len(train), "gravacoes_teste": len(test)}
 
     x, y = _rows(test, "phrase")
-    predicted = [int(p >= 0.5) for p in probabilities(trained.trecho if trained else None, x)]
+    scores = probabilities(trained.trecho if trained else None, x)
+    predicted = [int(p >= 0.5) for p in scores]
     report["trecho_f1"] = _f1(y, predicted) if predicted else None
     report["trecho_f1_referencia"] = _f1(y, [1] * len(y))
+    report["trecho_ordem"] = _ranking(y, scores)
+    report["trecho_ordem_referencia"] = 0.5
 
     x, y = _rows(test, "retake")
     predicted = [int(p >= 0.5) for p in probabilities(trained.regravada if trained else None, x)]

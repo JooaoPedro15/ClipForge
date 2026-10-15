@@ -47,6 +47,16 @@ class ModelsTest(unittest.TestCase):
         self.assertLess(report["pausa_erro_ms"], report["pausa_erro_ms_referencia"])
         self.assertEqual(report["zoom_f1_referencia"], 0.0)
 
+    def test_report_says_how_well_the_weakest_phrases_are_ranked(self):
+        examples = [synthetic_recording(seed) for seed in range(4)]
+        all_kept = [{**example, "phrase": [{**row, "y": 1} for row in example["phrase"]]} for example in examples]
+
+        report = models.evaluate(examples)
+
+        self.assertGreater(report["trecho_ordem"], 0.9)
+        self.assertEqual(report["trecho_ordem_referencia"], 0.5)
+        self.assertIsNone(models.evaluate(all_kept)["trecho_ordem"])
+
     def test_save_load_needs_three_recordings(self):
         with tempfile.TemporaryDirectory() as tmp:
             directory = Path(tmp) / "longo"
