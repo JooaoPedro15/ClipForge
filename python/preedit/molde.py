@@ -1,13 +1,15 @@
 """Molde do Pre-editor: um video pronto do usuario exportado do Premiere (Final Cut Pro XML) com um zoom.
 
 Diferente do molde dos Cortes (que exige V1 filme, V2 webcam e V3 loop), aqui qualquer layout serve:
-as trilhas que recortam a gravacao viram prototipos e a trilha que tem um clipe com escala maior que
+a gravacao e o arquivo com mais clipes de video (uma vinheta antes dela nao conta), as trilhas que a
+recortam viram prototipos e a trilha que tem um clipe com escala maior que
 a do primeiro clipe dela e a trilha do zoom (centro do rosto ja nas unidades do XML).
 """
 
 import copy
 import re
 import xml.etree.ElementTree as ET
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -70,20 +72,25 @@ def parse_molde(root: ET.Element) -> PreeditMolde:
 
     tracks = [("video", i, t) for i, t in enumerate(sequence.findall("media/video/track"), 1)]
     tracks += [("audio", i, t) for i, t in enumerate(sequence.findall("media/audio/track"), 1)]
-    first = next(
-        (clip for kind, _, track in tracks if kind == "video" for clip in track.findall("clipitem") if _ref_id(clip, "file")),
-        None,
-    )
-    if first is None:
+    video_clips = [clip for kind, _, track in tracks if kind == "video" for clip in track.findall("clipitem") if _ref_id(clip, "file")]
+    if not video_clips:
         raise TemplateError("O molde precisa de pelo menos um clipe de video recortando a gravacao.")
-    source_file_id = _ref_id(first, "file")
-    first_start = _int(first, "start")
+    # Empate fica com o primeiro arquivo que aparece.
+    counts = Counter(_ref_id(clip, "file") for clip in video_clips)
+    source_file_id = max(counts, key=lambda file_id: counts[file_id])
+    first_start = min(_int(clip, "start") for clip in video_clips if _ref_id(clip, "file") == source_file_id)
 
     prototypes = []
     zoom: ZoomTrack | None = None
     for kind, index, track in tracks:
         clip = next((c for c in track.findall("clipitem") if _int(c, "start") == first_start), None)
         if clip is None:
+            # Trilha da gravacao fora de alinhamento sumiria do XML (ex.: o audio do microfone).
+            if any(_ref_id(c, "file") == source_file_id for c in track.findall("clipitem")):
+                raise TemplateError(
+                    f"No molde, a trilha de {kind} {index} usa a gravacao mas nao comeca junto com o primeiro clipe dela: "
+                    "alinhe o comeco das trilhas e exporte de novo."
+                )
             continue
         from_source = _ref_id(clip, "file") == source_file_id
         prototypes.append(Prototype(kind, index, _as_reference(clip), from_source))

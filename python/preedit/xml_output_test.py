@@ -25,6 +25,22 @@ def clipitems(root: ET.Element, kind: str) -> list[ET.Element]:
     return root.findall(f"sequence/media/{kind}/track/clipitem")
 
 
+def with_intro(root: ET.Element) -> ET.Element:
+    """Molde com uma vinheta de 3 s (video e audio) antes da gravacao."""
+    root = copy.deepcopy(root)
+    for clip in root.iter("clipitem"):
+        for tag in ("start", "end"):
+            clip.find(tag).text = str(int(clip.findtext(tag)) + 90)
+    for kind, number in (("video", 9), ("audio", 10)):
+        intro = ET.fromstring(
+            f"<clipitem id='clipitem-{number}'><name>vinheta.mp4</name><duration>90</duration>"
+            "<rate><timebase>30</timebase></rate><start>0</start><end>90</end><in>0</in><out>90</out>"
+            "<file id='file-9'><name>vinheta.mp4</name><pathurl>file://localhost/E%3a/vinheta.mp4</pathurl></file></clipitem>"
+        )
+        root.find(f"sequence/media/{kind}/track").insert(0, intro)
+    return root
+
+
 class MoldeTest(unittest.TestCase):
     def test_finds_the_zoom_track_center_and_normal_scale(self):
         molde = load_molde(FIXTURE)
@@ -42,6 +58,21 @@ class MoldeTest(unittest.TestCase):
 
         with self.assertRaises(TemplateError):
             parse_molde(ET.fromstring("<xmeml version='4'><sequence><rate><timebase>30</timebase></rate><media/></sequence></xmeml>"))
+
+    def test_intro_before_the_recording_is_not_the_source(self):
+        molde = parse_molde(with_intro(ET.parse(FIXTURE).getroot()))
+
+        self.assertEqual(molde.template.source_file_id, "file-1")
+        self.assertEqual([(p.kind, p.track, p.from_source) for p in molde.template.prototypes], [("video", 1, True), ("audio", 1, True)])
+        self.assertEqual(molde.zoom.track, 1)
+
+    def test_track_with_the_recording_not_lined_up_is_a_clear_error(self):
+        root = ET.parse(FIXTURE).getroot()
+        audio = root.find("sequence/media/audio/track/clipitem")
+        audio.find("start").text = "10"
+
+        with self.assertRaisesRegex(TemplateError, "audio 1"):
+            parse_molde(root)
 
 
 class BuildXmlTest(unittest.TestCase):
