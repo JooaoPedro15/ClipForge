@@ -359,6 +359,8 @@ class SequenceEdit:
     clips: list[ClipEdit]
     # Fim do ultimo item de qualquer trilha (video, grafico ou audio): a duracao do video exportado.
     duration: float = 0.0
+    # Ultima exportacao em video: (arquivo, inicio, fim) em segundos da sequencia; sem fim gravado, o fim e a duracao.
+    export: tuple[str, float, float] | None = None
 
 
 def _keyframe_values(param: ET.Element) -> list[float]:
@@ -450,5 +452,8 @@ def read_video_edits(project_path: str | Path) -> list[SequenceEdit]:
                     )
                 )
         if clips:
-            edits.append(SequenceEdit(sequence.findtext("Name") or "", _is_vertical(index, sequence), clips, _sequence_end(index, sequence)))
+            duration = _sequence_end(index, sequence)
+            found = _video_export(sequence)
+            export = (found[0], round(found[1], 3), round(duration if found[2] is None else found[2], 3)) if found else None
+            edits.append(SequenceEdit(sequence.findtext("Name") or "", _is_vertical(index, sequence), clips, duration, export))
     return edits

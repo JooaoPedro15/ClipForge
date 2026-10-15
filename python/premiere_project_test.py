@@ -326,6 +326,20 @@ class ReadVideoEditsTest(unittest.TestCase):
 
         self.assertEqual(edit.duration, 13.25)
 
+    def test_last_video_export_gives_the_file_and_the_range(self):
+        project = FakeProject()
+        bruto = r"E:\Bruto\a.mp4"
+        exported = Path(r"D:\Prontos\ela enfiou a mao.mp4")
+        project.sequence("Sequência 03", [[project.media_clip(0.0, 30.0, bruto, 0.0)]], export=export_settings(exported, 5.0, 20.5))
+        project.sequence("Sem fim", [[project.media_clip(0.0, 8.0, bruto, 0.0)]], export={"OutPath": r"D:\Prontos\todo.mp4"})
+        project.sequence("Nunca exportada", [[project.media_clip(0.0, 4.0, bruto, 0.0)]])
+
+        edits = {edit.name: edit for edit in premiere_project.read_video_edits(project.write(self.tmp / "p.prproj"))}
+
+        self.assertEqual(edits["Sequência 03"].export, (str(exported), 5.0, 20.5))
+        self.assertEqual(edits["Sem fim"].export, (r"D:\Prontos\todo.mp4", 0.0, 8.0))
+        self.assertIsNone(edits["Nunca exportada"].export)
+
     def test_images_and_clips_without_motion(self):
         project = FakeProject()
         project.sequence("Longo", [[project.media_clip(0.0, 2.0, r"E:\Bruto\a.mp4", 10.0, scale=None), project.media_clip(2.0, 3.0, r"E:\Bruto\capa.png", 0.0)]])
