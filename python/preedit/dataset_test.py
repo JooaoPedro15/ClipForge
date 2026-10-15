@@ -43,6 +43,16 @@ class DatasetTest(unittest.TestCase):
         self.assertEqual((stats["zooms"], stats["zoom_levels"]), (1, [1.7]))
         self.assertAlmostEqual(stats["zoom_durations"][0], 0.9)
 
+    def test_final_video_only_teaches_zoom(self):
+        labels = RecordingLabels("pronto.mp4", "longo", [Range(0.0, 7.5)], [Zoom(6.6, 7.5, 1.7)], sequences=["S"], final=True)
+
+        examples = build_examples(labels, WORDS, LOUD, {})
+
+        self.assertTrue(examples["final"])
+        self.assertEqual((examples["phrase"], examples["retake"], examples["pause"]), ([], [], []))
+        self.assertEqual([(row["y"], row["level"]) for row in examples["zoom"]], [(0, None), (0, None), (1, 1.7)])
+        self.assertFalse(build_examples(self.labels(), WORDS, LOUD, {})["final"])
+
     def test_overlap_and_coverage(self):
         ranges = [Range(0.0, 1.0), Range(2.0, 3.0)]
         self.assertAlmostEqual(overlap(0.5, 2.5, ranges), 1.0)

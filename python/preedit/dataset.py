@@ -33,16 +33,21 @@ def build_examples(labels: RecordingLabels, words: list[dict[str, Any]], loud: L
     kept = {p.index: coverage(p.start, p.end, labels.kept) >= KEEP_COVERAGE for p in phrases}
     inside = {p.index for p in in_span}
 
-    phrase_rows = [{"x": phrase_features(phrases, p.index, loud, interest, total), "y": int(kept[p.index])} for p in in_span]
+    # Video final: tudo o que esta no mp4 ficou e nao se sabe o que saiu; so o zoom ensina.
+    phrase_rows = [] if labels.final else [{"x": phrase_features(phrases, p.index, loud, interest, total), "y": int(kept[p.index])} for p in in_span]
 
-    retake_rows = [
-        {"x": retake_features(phrases, first, second, interest), "y": int(not kept[first] and kept[second])}
-        for first, second in retake_pairs(phrases)
-        if first in inside and second in inside
-    ]
+    retake_rows = (
+        []
+        if labels.final
+        else [
+            {"x": retake_features(phrases, first, second, interest), "y": int(not kept[first] and kept[second])}
+            for first, second in retake_pairs(phrases)
+            if first in inside and second in inside
+        ]
+    )
 
     pause_rows = []
-    if not labels.preedited:
+    if not labels.preedited and not labels.final:
         for index in range(len(words) - 1):
             word, following = words[index], words[index + 1]
             gap_start, gap_end = float(word["end"]), float(following["start"])
@@ -82,6 +87,7 @@ def build_examples(labels: RecordingLabels, words: list[dict[str, Any]], loud: L
     return {
         "recording": labels.recording,
         "format": labels.format,
+        "final": labels.final,
         "phrase": phrase_rows,
         "retake": retake_rows,
         "pause": pause_rows,
