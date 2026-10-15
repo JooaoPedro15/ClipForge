@@ -357,6 +357,8 @@ class SequenceEdit:
     name: str
     vertical: bool
     clips: list[ClipEdit]
+    # Fim do ultimo item de qualquer trilha (video, grafico ou audio): a duracao do video exportado.
+    duration: float = 0.0
 
 
 def _keyframe_values(param: ET.Element) -> list[float]:
@@ -415,6 +417,12 @@ def _is_vertical(index: _Index, sequence: ET.Element) -> bool:
     return False
 
 
+def _sequence_end(index: _Index, sequence: ET.Element) -> float:
+    items = [item for track in _tracks(index, sequence, "VideoTrackGroup") for item in _track_items(index, track, "VideoClipTrackItem")]
+    items += [item for track in _tracks(index, sequence, "AudioTrackGroup") for item in _track_items(index, track, "AudioClipTrackItem")]
+    return round(max((_seconds(item, "End") for item in items), default=0.0), 3)
+
+
 # Clipes de video de cada sequencia (sem legenda em grafico, imagem ou template): o que o usuario montou.
 def read_video_edits(project_path: str | Path) -> list[SequenceEdit]:
     root = load_root(project_path)
@@ -442,5 +450,5 @@ def read_video_edits(project_path: str | Path) -> list[SequenceEdit]:
                     )
                 )
         if clips:
-            edits.append(SequenceEdit(sequence.findtext("Name") or "", _is_vertical(index, sequence), clips))
+            edits.append(SequenceEdit(sequence.findtext("Name") or "", _is_vertical(index, sequence), clips, _sequence_end(index, sequence)))
     return edits

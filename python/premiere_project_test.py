@@ -106,6 +106,15 @@ class FakeProject:
             components.append(motion)
         return self._clip(start, end, components, subclip)
 
+    def audio(self, start: float, end: float) -> str:
+        item = self._next()
+        start_tag = f"<Start>{ticks(start)}</Start>" if start else ""
+        self.objects.append(
+            f'<AudioClipTrackItem ObjectID="{item}"><ClipTrackItem><TrackItem>{start_tag}<End>{ticks(end)}</End>'
+            f"</TrackItem></ClipTrackItem></AudioClipTrackItem>"
+        )
+        return item
+
     def graphic(self, start: float, end: float, text: str, digest: str | None = None, empty: bool = False) -> str:
         return self._clip(start, end, [self._text_component(text, digest or f"h{self._next()}", empty)])
 
@@ -141,11 +150,13 @@ class FakeProject:
         caption_tracks: list[list[str]] = (),
         export: dict | None = None,
         frame: str = "0,0,1920,1080",
+        audio_tracks: list[list[str]] = (),
     ):
         groups = []
         for tag, track_tag, tracks, wrapper in (
             ("VideoTrackGroup", "VideoClipTrack", video_tracks, ""),
             ("DataTrackGroup", "CaptionDataClipTrack", caption_tracks, "DataClipTrack"),
+            ("AudioTrackGroup", "AudioClipTrack", audio_tracks, ""),
         ):
             uids = [self._track(track_tag, items, wrapper) for items in tracks]
             group = self._next()
@@ -303,6 +314,17 @@ class ReadVideoEditsTest(unittest.TestCase):
             [(1, 0.0, 3.5, 71.91, 75.41, 100.0), (1, 3.5, 4.5, 93.93, 94.93, 170.0), (2, 0.0, 3.5, 71.91, 75.41, 62.7)],
         )
         self.assertEqual(edit.clips[0].source, bruto)
+
+    def test_sequence_duration_is_the_last_item_of_any_track(self):
+        project = FakeProject()
+        bruto = r"E:\Bruto\a.mp4"
+        video = [project.media_clip(0.0, 10.0, bruto, 0.0)]
+        legenda = [project.graphic(9.0, 12.5, "fim")]
+        project.sequence("Longo", [video, legenda], audio_tracks=[[project.audio(0.0, 13.25)]])
+
+        (edit,) = premiere_project.read_video_edits(project.write(self.tmp / "p.prproj"))
+
+        self.assertEqual(edit.duration, 13.25)
 
     def test_images_and_clips_without_motion(self):
         project = FakeProject()
