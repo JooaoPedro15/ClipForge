@@ -13,6 +13,7 @@ import json
 import struct
 import unicodedata
 import xml.etree.ElementTree as ET
+import zlib
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -116,7 +117,8 @@ def load_root(project_path: str | Path) -> ET.Element:
         if raw[:2] == b"\x1f\x8b":
             raw = gzip.decompress(raw)
         return ET.fromstring(raw)
-    except (OSError, EOFError, ET.ParseError) as error:
+    # zlib.error: dado comprimido corrompido (o gzip so levanta OSError pra cabecalho/CRC ruim).
+    except (OSError, EOFError, ET.ParseError, zlib.error) as error:
         raise ProjectError("Nao deu pra ler o projeto (o Premiere pode estar salvando agora): salve e tente de novo.") from error
 
 

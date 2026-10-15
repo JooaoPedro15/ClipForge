@@ -287,6 +287,14 @@ class ReadSequencesTest(unittest.TestCase):
         with self.assertRaises(premiere_project.ProjectError):
             premiere_project.read_sequences(self.tmp / "nao-existe.prproj")
 
+    def test_corrupted_compressed_project_is_a_clear_error(self):
+        data = gzip.compress(b"<PremiereData>" + b"<a>texto qualquer</a>" * 400 + b"</PremiereData>")
+        corrupted = self.tmp / "corrompido.prproj"
+        corrupted.write_bytes(data[:40] + bytes(byte ^ 0x5A for byte in data[40:80]) + data[80:])
+
+        with self.assertRaises(premiere_project.ProjectError):
+            premiere_project.read_video_edits(corrupted)
+
 
 class ReadVideoEditsTest(unittest.TestCase):
     def setUp(self):
