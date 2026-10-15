@@ -77,15 +77,16 @@ def probabilities(model: Any, rows: list[list[float]]) -> list[float]:
 
 
 def compute_params(examples: list[dict]) -> dict[str, Any]:
-    # Gravacao sem nenhuma frase (sem fala na faixa) nao ensina nada e nao conta pro minimo.
-    examples = [example for example in examples if example.get("phrase")]
+    # Gravacao sem nenhuma frase (sem fala na faixa) nao ensina nada; video final ensina so o ritmo do zoom.
+    examples = [example for example in examples if example.get("phrase") or example.get("final")]
     stats = [example["stats"] for example in examples]
     final_sec = sum(item["final_sec"] for item in stats)
     durations = [value for item in stats for value in item["zoom_durations"]]
     levels = [value for item in stats for value in item["zoom_levels"]]
     gaps = [value for item in stats for value in item["zoom_gaps"]]
     return {
-        "recordings": len(examples),
+        # O minimo pro editor conta so gravacoes com bruto: o corte depende do modelo de trecho.
+        "recordings": sum(1 for example in examples if example.get("phrase")),
         "zooms_per_min": round(sum(item["zooms"] for item in stats) / final_sec * 60, 3) if final_sec else 0.0,
         "zoom_min_gap_s": percentile(gaps, 10) or DEFAULT_PARAMS["zoom_min_gap_s"],
         "zoom_duration_p10": percentile(durations, 10) or DEFAULT_PARAMS["zoom_duration_p10"],
@@ -128,15 +129,44 @@ def _ranking(truth: list[float], scores: list[float]) -> float | None:
     return round(float(roc_auc_score([int(y) for y in truth], scores)), 3)
 
 
-# Mede em gravacoes que ficaram fora do treino, ao lado do que o Pre-editor atual faria:
-# ele mantem todo o conteudo, nao tira regravada, nao da zoom e deixa uma pausa "padrao" (a mediana).
-def evaluate(examples: list[dict]) -> dict[str, Any]:
-    if len(examples) < TEST_EVERY:
-        return {"aviso": f"Poucas gravacoes pra medir (precisa de {TEST_EVERY})."}
+def _split(examples: list[dict]) -> tuple[list[dict], list[dict]]:
     ordered = sorted(examples, key=lambda example: example["recording"])
     test = ordered[TEST_EVERY - 1 :: TEST_EVERY]
-    train = [example for example in ordered if example not in test]
-    trained = train_format(train)
+    return [example for example in ordered if example not in test], test
+
+
+def _zoom_f1(train: list[dict], test: list[dict]) -> float | None:
+    x, y = _rows(test, "zoom")
+    predicted = [int(p >= 0.5) for p in probabilities(_classifier(*_rows(train, "zoom")), x)]
+    return _f1(y, predicted) if predicted else None
+
+
+# Mede em gravacoes que ficaram fora do treino, ao lado do que o Pre-editor atual faria:
+# ele mantem todo o conteudo, nao tira regravada, nao da zoom e deixa uma pausa "padrao" (a mediana).
+# Videos finais (sem bruto) so ensinam zoom: entram no treino do zoom e tem a medida deles.
+def evaluate(examples: list[dict]) -> dict[str, Any]:
+    raw = [example for example in examples if not example.get("final")]
+    finals = [example for example in examples if example.get("final")]
+    report: dict[str, Any] = {}
+    if len(raw) < TEST_EVERY:
+        report["aviso"] = f"Poucas gravacoes pra medir (precisa de {TEST_EVERY})."
+    else:
+        report.update(_raw_report(raw, finals))
+    if finals:
+        if len(finals) < TEST_EVERY:
+            report["aviso_finais"] = f"Poucos videos finais pra medir (precisa de {TEST_EVERY})."
+        else:
+            train_finals, test_finals = _split(finals)
+            _, y = _rows(test_finals, "zoom")
+            report.update({"finais_treino": len(train_finals), "finais_teste": len(test_finals)})
+            report["zoom_f1_finais"] = _zoom_f1(raw + train_finals, test_finals)
+            report["zoom_f1_finais_referencia"] = _f1(y, [0] * len(y))
+    return report
+
+
+def _raw_report(raw: list[dict], finals: list[dict]) -> dict[str, Any]:
+    train, test = _split(raw)
+    trained = train_format(train + finals)
     report: dict[str, Any] = {"gravacoes_treino": len(train), "gravacoes_teste": len(test)}
 
     x, y = _rows(test, "phrase")
@@ -164,6 +194,9 @@ def evaluate(examples: list[dict]) -> dict[str, Any]:
     predicted = [int(p >= 0.5) for p in probabilities(trained.zoom if trained else None, x)]
     report["zoom_f1"] = _f1(y, predicted) if predicted else None
     report["zoom_f1_referencia"] = _f1(y, [0] * len(y))
+    if finals:
+        # O mesmo zoom treinado so com os brutos: diz se misturar o audio dos videos finais ajuda no bruto.
+        report["zoom_f1_sem_finais"] = _zoom_f1(train, test)
     return report
 
 

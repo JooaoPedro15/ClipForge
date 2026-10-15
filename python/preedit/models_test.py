@@ -31,6 +31,14 @@ def synthetic_recording(seed: int) -> dict:
     }
 
 
+def final_video(seed: int) -> dict:
+    """Video final falso: so linhas de zoom, mesma regra (zoom quando o pico passa de 10 dB)."""
+    recording = synthetic_recording(seed)
+    # Ritmo diferente das gravacoes (6 zooms/min): mostra se o video final entrou nas estatisticas.
+    stats = {**recording["stats"], "zooms": 60}
+    return {**recording, "recording": f"final{seed}.mp4", "final": True, "phrase": [], "retake": [], "pause": [], "stats": stats}
+
+
 class ModelsTest(unittest.TestCase):
     def test_trains_learns_the_rule_and_reports_against_the_baseline(self):
         examples = [synthetic_recording(seed) for seed in range(4)]
@@ -84,6 +92,30 @@ class ModelsTest(unittest.TestCase):
         self.assertIn("aviso", models.evaluate([synthetic_recording(1)]))
         self.assertEqual(models.probabilities(None, []), [])
         self.assertIsNone(models.train_format([{**synthetic_recording(1), "phrase": []}]))
+
+    def test_final_videos_teach_zoom_but_do_not_count_as_recordings(self):
+        trained = models.train_format([synthetic_recording(1), synthetic_recording(2), final_video(3)])
+
+        self.assertEqual(trained.params["recordings"], 2)
+        self.assertAlmostEqual(trained.params["zooms_per_min"], 4.0)  # (30 + 30 + 60) zooms em 30 min
+        self.assertIsNotNone(trained.zoom)
+
+    def test_report_measures_zoom_on_final_videos_and_with_and_without_them(self):
+        examples = [synthetic_recording(seed) for seed in range(4)] + [final_video(seed) for seed in range(10, 14)]
+
+        report = models.evaluate(examples)
+
+        self.assertEqual((report["finais_treino"], report["finais_teste"]), (3, 1))
+        self.assertGreater(report["zoom_f1_finais"], 0.8)
+        self.assertEqual(report["zoom_f1_finais_referencia"], 0.0)
+        self.assertIn("zoom_f1_sem_finais", report)
+        self.assertEqual(report["gravacoes_treino"], 3)
+
+    def test_few_final_videos_only_warn_about_them(self):
+        report = models.evaluate([synthetic_recording(1), final_video(2)])
+
+        self.assertIn("aviso", report)
+        self.assertIn("aviso_finais", report)
 
 
 if __name__ == "__main__":
