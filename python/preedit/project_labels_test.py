@@ -103,6 +103,22 @@ class FinalLabelsTest(unittest.TestCase):
         self.assertEqual(labels.zooms, [Zoom(20.0, 21.5, 1.5)])
         self.assertEqual(labels.sequences, ["Sequência 03"])
 
+    def test_zoom_heavy_range_keeps_the_normal_scale_by_time(self):
+        # Short de 22 s cortado de uma sequencia longa: 6 zooms de 130%, cada um partido em 2 clipes.
+        # Por contagem a escala "normal" seria 130 (12 clipes x 6); pelo tempo e 100 (15 s x 7,2 s).
+        clips = [clip(1, 0.0, 40.0, 0.0)]
+        t = 40.0
+        for _ in range(6):
+            clips += [clip(1, t, t + 2.5, t), clip(1, t + 2.5, t + 3.1, t + 2.5, scale=130.0), clip(1, t + 3.1, t + 3.7, t + 3.1, scale=130.0)]
+            t += 3.7
+        clips.append(clip(1, t, 100.0, t))
+
+        labels = final_labels(SequenceEdit("Short cheio de zoom", True, clips, 100.0), FINAL, 40.0, t)
+
+        self.assertEqual(len(labels.zooms), 12)
+        self.assertEqual({zoom.level for zoom in labels.zooms}, {1.3})
+        self.assertEqual(labels.zooms[0].start, 2.5)
+
     def test_without_range_the_whole_sequence_and_without_zoom_nothing(self):
         whole = SequenceEdit("Inteira", True, [clip(1, 0.0, 10.0, 0.0), clip(1, 10.0, 11.0, 20.0, scale=130.0)], 12.0)
         self.assertEqual(final_labels(whole, FINAL).kept, [Range(0.0, 12.0)])

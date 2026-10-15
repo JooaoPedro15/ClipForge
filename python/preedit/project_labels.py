@@ -114,6 +114,16 @@ def collect_labels(sequences: list[SequenceEdit]) -> tuple[list[RecordingLabels]
     return labels, ignored
 
 
+# Escala normal pelo tempo: num Short curto cheio de zoom de corte (clipes de 0,2-1,4 s, as vezes partidos
+# em dois) os clipes com zoom podem ser maioria em numero, mas o tempo na escala normal e bem maior.
+def _time_baseline(clips: list[ClipEdit]) -> float:
+    seconds: Counter[float] = Counter()
+    for clip in clips:
+        if clip.scale:
+            seconds[round(clip.scale, 1)] += clip.end - clip.start
+    return float(seconds.most_common(1)[0][0]) if seconds else 100.0
+
+
 # Gabarito do trecho que a sequencia exportou (mp4 final, sem o bruto): os zooms em segundos do mp4.
 # Sem zoom nao ensina nada (so faria o modelo achar que quase nunca tem zoom).
 def final_labels(sequence: SequenceEdit, video: str, start: float = 0.0, end: float | None = None) -> RecordingLabels | None:
@@ -137,7 +147,7 @@ def final_labels(sequence: SequenceEdit, video: str, start: float = 0.0, end: fl
         if total < MAIN_SOURCE_SHARE * length:
             continue
         source_clips = [clip for clip in on_track if clip.source == source]
-        baseline = baseline_scale(source_clips)
+        baseline = _time_baseline(source_clips)
         zooms += [
             Zoom(round(clip.start, 2), round(clip.end, 2), round(_ratio(clip, baseline), 3))
             for clip in source_clips
