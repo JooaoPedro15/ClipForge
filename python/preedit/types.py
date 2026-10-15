@@ -33,6 +33,8 @@ class RecordingLabels:
     # Fonte que ja era saida do Pre-editor atual: silencios mexidos, nao ensina pausa.
     preedited: bool = False
     sequences: list[str] = field(default_factory=list)
+    # Gabarito de video final (sem bruto): tempos sao do mp4 e so o zoom ensina.
+    final: bool = False
 
     @property
     def span(self) -> Range:

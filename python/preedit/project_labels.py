@@ -4,6 +4,7 @@ O que saiu nao e guardado: e o que fica dentro do `span` sem estar em `kept`.
 """
 
 from collections import Counter, defaultdict
+from dataclasses import replace
 from pathlib import Path
 
 from premiere_project import ClipEdit, SequenceEdit
@@ -17,6 +18,8 @@ ZOOM_MIN_RATIO = 1.05
 SPEED_TOLERANCE = 0.02
 FRAME_TOLERANCE_SEC = 0.05
 MERGE_GAP = 0.05
+# No video final, fonte com pelo menos 10% do trecho na trilha principal e a gravacao (b-roll e meme ficam de fora).
+MAIN_SOURCE_SHARE = 0.1
 
 
 def merge_ranges(ranges: list[Range], gap: float = MERGE_GAP) -> list[Range]:
@@ -109,3 +112,44 @@ def collect_labels(sequences: list[SequenceEdit]) -> tuple[list[RecordingLabels]
             )
         )
     return labels, ignored
+
+
+# Gabarito do trecho que a sequencia exportou (mp4 final, sem o bruto): os zooms em segundos do mp4.
+# Sem zoom nao ensina nada (so faria o modelo achar que quase nunca tem zoom).
+def final_labels(sequence: SequenceEdit, video: str, start: float = 0.0, end: float | None = None) -> RecordingLabels | None:
+    end = sequence.duration if end is None else end
+    length = end - start
+    # Clipes que tocam o trecho, cortados nele e ja no tempo do mp4.
+    clips = [
+        replace(clip, start=max(clip.start, start) - start, end=min(clip.end, end) - start)
+        for clip in sequence.clips
+        if min(clip.end, end) > max(clip.start, start)
+    ]
+    if not clips or length <= 0:
+        return None
+    track = zoom_track(clips)
+    on_track = [clip for clip in clips if clip.track == track]
+    seconds: dict[str, float] = defaultdict(float)
+    for clip in on_track:
+        seconds[clip.source] += clip.end - clip.start
+    zooms: list[Zoom] = []
+    for source, total in seconds.items():
+        if total < MAIN_SOURCE_SHARE * length:
+            continue
+        source_clips = [clip for clip in on_track if clip.source == source]
+        baseline = baseline_scale(source_clips)
+        zooms += [
+            Zoom(round(clip.start, 2), round(clip.end, 2), round(_ratio(clip, baseline), 3))
+            for clip in source_clips
+            if _ratio(clip, baseline) >= ZOOM_MIN_RATIO
+        ]
+    if not zooms:
+        return None
+    return RecordingLabels(
+        recording=video,
+        format="short" if sequence.vertical else "longo",
+        kept=[Range(0.0, round(length, 3))],
+        zooms=sorted(zooms, key=lambda zoom: zoom.start),
+        sequences=[sequence.name],
+        final=True,
+    )

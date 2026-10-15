@@ -2,10 +2,11 @@ import unittest
 
 from premiere_project import ClipEdit, SequenceEdit
 
-from preedit.project_labels import collect_labels, labels_from_sequences, merge_ranges
+from preedit.project_labels import collect_labels, final_labels, labels_from_sequences, merge_ranges
 from preedit.types import Range, Zoom
 
 BRUTO = r"E:\Bruto\2026-10-05 14-50-31.mp4"
+FINAL = r"D:\Finais\video pronto.mp4"
 
 
 def clip(track, start, end, source_in, scale=100.0, source=BRUTO, speed=1.0):
@@ -80,6 +81,36 @@ class LabelsTest(unittest.TestCase):
     def test_merge_ranges(self):
         merged = merge_ranges([Range(5.0, 6.0), Range(0.0, 2.0), Range(2.03, 3.0)])
         self.assertEqual(merged, [Range(0.0, 3.0), Range(5.0, 6.0)])
+
+
+class FinalLabelsTest(unittest.TestCase):
+    def test_zooms_of_the_exported_range_in_video_time_and_only_on_the_recording(self):
+        meme = r"E:\Memes\meme.mp4"
+        v1 = [
+            clip(1, 0.0, 30.0, 100.0),
+            clip(1, 30.0, 31.5, 300.0, scale=150.0),
+            clip(1, 31.5, 50.0, 301.5),
+            clip(1, 50.0, 51.0, 0.0, scale=200.0, source=meme),  # meme curto na trilha principal: fora
+            clip(1, 51.0, 80.0, 400.0),
+            clip(1, 80.0, 81.0, 500.0, scale=170.0),  # depois do trecho exportado
+        ]
+        sequence = SequenceEdit("Sequência 03", False, v1, 100.0)
+
+        labels = final_labels(sequence, FINAL, 10.0, 55.0)
+
+        self.assertEqual((labels.recording, labels.format, labels.final), (FINAL, "longo", True))
+        self.assertEqual(labels.kept, [Range(0.0, 45.0)])
+        self.assertEqual(labels.zooms, [Zoom(20.0, 21.5, 1.5)])
+        self.assertEqual(labels.sequences, ["Sequência 03"])
+
+    def test_without_range_the_whole_sequence_and_without_zoom_nothing(self):
+        whole = SequenceEdit("Inteira", True, [clip(1, 0.0, 10.0, 0.0), clip(1, 10.0, 11.0, 20.0, scale=130.0)], 12.0)
+        self.assertEqual(final_labels(whole, FINAL).kept, [Range(0.0, 12.0)])
+        self.assertEqual(final_labels(whole, FINAL).format, "short")
+
+        flat = SequenceEdit("Sem zoom", False, [clip(1, 0.0, 30.0, 0.0), clip(1, 30.0, 60.0, 90.0)], 60.0)
+        self.assertIsNone(final_labels(flat, FINAL))
+        self.assertIsNone(final_labels(SequenceEdit("Vazia", False, [], 10.0), FINAL))
 
 
 if __name__ == "__main__":
