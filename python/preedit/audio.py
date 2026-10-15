@@ -81,11 +81,15 @@ def extract_audio(recording: str, audio_track: int, out_wav: Path) -> Path:
 
 
 # Faixa da voz: a pedida ou, sem pedido, a 2 (o OBS do usuario grava o microfone na faixa 2, mesma
-# convencao do Pre-editor atual e dos Cortes); gravacao com uma faixa so usa ela.
-def resolve_audio_track(recording: str, requested: int | None) -> int:
+# convencao do Pre-editor atual e dos Cortes); gravacao com uma faixa so usa ela. Video final: a mistura
+# (faixa 1). Sem faixa nenhuma: erro claro (o ffmpeg so diria "matches no streams").
+def resolve_audio_track(recording: str, requested: int | None, prefer_mic: bool = True) -> int:
     if requested is not None:
         return requested
-    return 1 if probe_source(recording).audio_streams >= 2 else 0
+    streams = probe_source(recording).audio_streams
+    if streams == 0:
+        raise AudioError(f"{Path(recording).name} nao tem audio.")
+    return 1 if prefer_mic and streams >= 2 else 0
 
 
 def loudness_cache(recording: str, audio_track: int) -> Path:

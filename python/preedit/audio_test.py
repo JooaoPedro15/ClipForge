@@ -61,6 +61,15 @@ class LoudnessTest(unittest.TestCase):
         with streams(4):
             self.assertEqual(audio.resolve_audio_track("gravacao.mp4", 2), 2)
 
+    def test_final_video_uses_the_mix_and_a_video_without_audio_is_a_clear_error(self):
+        def streams(count):
+            return mock.patch.object(audio, "probe_source", return_value=SimpleNamespace(audio_streams=count))
+
+        with streams(2):
+            self.assertEqual(audio.resolve_audio_track("pronto.mp4", None, prefer_mic=False), 0)
+        with streams(0), self.assertRaisesRegex(audio.AudioError, "captura.mp4 nao tem audio"):
+            audio.resolve_audio_track(r"D:\jogo\captura.mp4", None)
+
     def test_without_cache_or_wav(self):
         with self.assertRaises(audio.AudioError):
             audio.load_loudness(r"C:\nao\existe.mp4", 0, None)
