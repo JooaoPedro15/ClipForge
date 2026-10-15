@@ -211,16 +211,21 @@ def teach_projects(
     return {"taught": taught, "skipped": ignored + skipped, "failed": failed, "models": trained, "warnings": warnings}
 
 
-def _read_candidates(projects: list[str]) -> list[finals.Candidate]:
-    candidates = []
-    for project in projects:
+# Um projeto que nao abre (Auto-Save truncado) vai pra lista de falhas e os outros seguem; so e erro se nenhum abrir.
+def _read_candidates(projects: list[str]) -> tuple[list[finals.Candidate], list[dict]]:
+    candidates, failed = [], []
+    for number, project in enumerate(projects):
+        emit("status", "processing", "reading-project", f"Projeto [{number + 1}/{len(projects)}] {Path(project).name}", progress=2)
         try:
             sequences = premiere_project.read_video_edits(project)
         except (premiere_project.ProjectError, OSError, EOFError) as error:
-            raise PreeditError(f"Nao consegui ler {Path(project).name}: {error}") from error
+            failed.append({"recording": project, "error": f"Nao consegui ler {Path(project).name}: {error}"})
+            continue
         modified = Path(project).stat().st_mtime
         candidates += [finals.Candidate(project, sequence, modified) for sequence in sequences]
-    return candidates
+    if failed and len(failed) == len(projects):
+        raise PreeditError(failed[0]["error"])
+    return candidates, failed
 
 
 # Ensina zoom com projetos antigos (bruto offline) e os videos que as sequencias exportaram.
@@ -240,11 +245,9 @@ def teach_finals(
     files = finals.scan_videos(folder) if folder.is_dir() else {}
     if not files:
         raise PreeditError(f"Nenhum video (.mp4, .mov, .mkv) em {videos_dir}.")
-    emit("status", "processing", "reading-project", "Lendo os projetos do Premiere...", progress=2)
-    candidates = _read_candidates(projects)
+    candidates, failed = _read_candidates(projects)
 
     emit("status", "processing", "pairing", "Procurando os videos exportados...", progress=4)
-    failed: list[dict] = []
     measured: dict[str, float] = {}
 
     def duration_of(path: str) -> float:

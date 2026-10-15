@@ -293,6 +293,23 @@ class TeachFinalsTest(unittest.TestCase):
         with self.assertRaises(preedit_service.PreeditError):
             preedit_service.teach_finals([str(self.project())], str(self.tmp / "nao-existe"), str(self.store), "large-v3", "pt", 5, "cpu", "int8", 0, FakeClient)
 
+    def test_one_broken_project_among_many_is_reported_and_the_others_are_taught(self):
+        # Achado da validacao real: um Auto-Save truncado (desenho_1.prproj) derrubava o lote de 438 projetos.
+        broken = self.tmp / "truncado.prproj"
+        broken.write_bytes(b"isso nao e um projeto")
+
+        def probe(path):
+            return SourceMedia(path, self.durations[path], 30.0, 1920, 1080, 1)
+
+        with mock.patch.object(preedit_service, "probe_source", side_effect=probe), contextlib.redirect_stdout(io.StringIO()):
+            report = preedit_service.teach_finals(
+                [str(broken), str(self.project())], str(self.videos), str(self.store), "large-v3", "pt", 5, "cpu", "int8", 0, FakeClient
+            )
+
+        self.assertEqual(len(report["taught"]), 4)
+        (failure,) = report["failed"]
+        self.assertEqual(failure["recording"], str(broken))
+
     def test_bad_project_is_a_clear_error(self):
         broken = self.tmp / "quebrado.prproj"
         broken.write_bytes(b"isso nao e um projeto")
