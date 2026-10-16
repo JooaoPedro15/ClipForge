@@ -5,6 +5,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from unittest import mock
 
@@ -101,6 +102,22 @@ class PreeditServiceTest(unittest.TestCase):
         self.assertEqual(xml.name, "nova.preedicao.longo.xml")
         self.assertTrue(xml.exists())
         self.assertLessEqual(report["durationSec"], 0.8 * 60 * 1.05)
+
+    def test_edit_without_molde_uses_the_recording_layout(self):
+        self.teach(self.project())
+        target = self.tmp / "nova.mp4"
+        shutil.copy(self.recordings[0], target)
+        for suffix in (".words.a0.json", ".loudness.a0.json"):
+            shutil.copy(self.tmp / f"gravacao0{suffix}", self.tmp / f"nova{suffix}")
+        source = SourceMedia(str(target), 100.0, 60.0, 2560, 1440, 4)
+
+        with mock.patch.object(preedit_service, "probe_source", return_value=source), contextlib.redirect_stdout(io.StringIO()):
+            report = preedit_service.edit_recording(str(target), None, str(self.store), 0.8, None, "large-v3", "pt", 5, "cpu", "int8", 0, FakeClient)
+
+        root = ET.parse(report["xmlPath"]).getroot()
+        self.assertEqual(root.findtext("sequence/media/video/format/samplecharacteristics/width"), "2560")
+        self.assertEqual(len(root.findall("sequence/media/audio/track")), 4)
+        self.assertTrue(any("molde" in warning for warning in report["warnings"]))
 
     def test_edit_without_enough_teaching_is_a_clear_error(self):
         with self.assertRaises(preedit_service.PreeditError):

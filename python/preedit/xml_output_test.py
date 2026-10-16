@@ -8,7 +8,7 @@ from cortes.media import SourceMedia
 from cortes.xmeml_template import TemplateError
 
 from preedit.editor import EditPlan, Segment
-from preedit.molde import load_molde, motion_scale, parse_molde
+from preedit.molde import default_molde, load_molde, motion_scale, parse_molde
 from preedit.xml_output import build_xml, write_xml
 
 FIXTURE = Path(__file__).parent / "fixtures" / "molde_preedit.xml"
@@ -73,6 +73,28 @@ class MoldeTest(unittest.TestCase):
 
         with self.assertRaisesRegex(TemplateError, "audio 1"):
             parse_molde(root)
+
+    def test_without_molde_the_sequence_is_the_recording_with_every_audio_track(self):
+        molde = default_molde(SOURCE)
+
+        root = build_xml(molde, SOURCE, PLAN, "sem molde")
+
+        self.assertIsNone(molde.zoom)
+        self.assertEqual([(p.kind, p.track, p.from_source) for p in molde.template.prototypes], [("video", 1, True), ("audio", 1, True), ("audio", 2, True)])
+        self.assertEqual(root.findtext("sequence/media/video/format/samplecharacteristics/width"), "1920")
+        self.assertEqual(root.findtext("sequence/media/video/format/samplecharacteristics/height"), "1080")
+        self.assertEqual(root.findtext("sequence/rate/timebase"), "30")
+        self.assertEqual((len(clipitems(root, "video")), len(clipitems(root, "audio"))), (3, 6))
+        self.assertEqual([item.findtext("sourcetrack/trackindex") for item in clipitems(root, "audio")[:4:3]], ["1", "2"])
+        self.assertIn("2026-10-14", root.find("sequence/media/video/track/clipitem/file/pathurl").text)
+
+    def test_default_molde_keeps_ntsc_frame_rates(self):
+        source = SourceMedia(path=r"E:\Bruto\celular.mp4", duration_sec=60.0, fps=29.97, width=1080, height=1920, audio_streams=1)
+
+        root = build_xml(default_molde(source), source, PLAN, "ntsc")
+
+        self.assertEqual((root.findtext("sequence/rate/timebase"), root.findtext("sequence/rate/ntsc")), ("30", "TRUE"))
+        self.assertEqual(len(clipitems(root, "audio")), 3)
 
 
 class BuildXmlTest(unittest.TestCase):

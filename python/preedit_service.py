@@ -3,7 +3,7 @@
 Uso (eventos JSON no stdout, como os outros servicos):
   python preedit_service.py teach-project --project P [--project P2] --store DIR [--model M] [--audio-track 0] [--cpu]
   python preedit_service.py teach-final --project P [--project P2] --videos PASTA --store DIR [--model M] [--cpu]
-  python preedit_service.py edit --recording R --molde M --store DIR --minutes 12 [--out X] [--audio-track 0] [--cpu]
+  python preedit_service.py edit --recording R [--molde M] --store DIR --minutes 12 [--out X] [--audio-track 0] [--cpu]
   python preedit_service.py report --store DIR
   python preedit_service.py forget --id ID --store DIR
 """
@@ -31,7 +31,7 @@ from preedit.audio import AudioError, extract_audio, load_loudness, loudness_cac
 from preedit.dataset import build_examples
 from preedit.editor import plan_long
 from preedit.interest import load_interest
-from preedit.molde import load_molde
+from preedit.molde import default_molde, load_molde
 from preedit.phrases import build_phrases
 from preedit.project_labels import collect_labels, final_labels
 from preedit.types import RecordingLabels
@@ -315,7 +315,7 @@ def teach_finals(
 
 def edit_recording(
     recording: str,
-    molde_path: str,
+    molde_path: str | None,
     store_path: str,
     minutes: float,
     out_path: str | None,
@@ -332,8 +332,10 @@ def edit_recording(
     trained = models.load_models(store.models_dir(Path(store_path), "longo"))
     if trained is None:
         raise PreeditError(f"Ensine pelo menos {models.MIN_RECORDINGS} gravacoes de video longo antes de editar.")
+    source = probe_source(recording)
     try:
-        molde = load_molde(molde_path)
+        # Sem molde: sequencia simples do tamanho da gravacao (o molde so muda algo com trilhas extras, efeitos ou zoom).
+        molde = load_molde(molde_path) if molde_path else default_molde(source)
     except (TemplateError, OSError) as error:
         raise PreeditError(f"Molde invalido: {error}") from error
 
@@ -349,12 +351,14 @@ def edit_recording(
     plan = plan_long(words, loud, interest, trained, minutes * 60)
     if not plan.segments:
         raise PreeditError("Nada pra montar: a gravacao nao tem fala reconhecida.")
-    if molde.zoom is None and plan.zooms:
+    if not molde_path:
+        warnings.append("Sem molde: sequencia do tamanho da gravacao e sem zoom (pra ter zoom, use --molde com um video seu que tenha um clipe com zoom).")
+    elif molde.zoom is None and plan.zooms:
         warnings.append("O molde nao tem clipe com zoom: o XML saiu sem zoom.")
 
     emit("status", "processing", "writing", "Montando o XML no molde...", progress=92)
     out = Path(out_path) if out_path else Path(recording).with_suffix(".preedicao.longo.xml")
-    write_xml(molde, probe_source(recording), plan, out, f"{Path(recording).stem} pre-edicao")
+    write_xml(molde, source, plan, out, f"{Path(recording).stem} pre-edicao")
     return {
         "xmlPath": str(out),
         "durationSec": plan.duration,
@@ -410,7 +414,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
     edit_parser = commands.add_parser("edit")
     edit_parser.add_argument("--recording", required=True)
-    edit_parser.add_argument("--molde", required=True)
+    edit_parser.add_argument("--molde", help="XML de um video seu exportado do Premiere (sem ele: sequencia do tamanho da gravacao, sem zoom)")
     edit_parser.add_argument("--minutes", type=float, required=True)
     edit_parser.add_argument("--out")
     _add_model_args(edit_parser)

@@ -11,8 +11,10 @@ import re
 import xml.etree.ElementTree as ET
 from collections import Counter
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
+from cortes.media import SourceMedia
+from cortes.timebase import Rate
 from cortes.xmeml_template import (
     Prototype,
     Template,
@@ -122,4 +124,64 @@ def load_molde(path: str | Path) -> PreeditMolde:
         root = ET.parse(path).getroot()
     except ET.ParseError as error:
         raise TemplateError(f"Nao consegui ler o XML do molde: {error}") from error
+    return parse_molde(root)
+
+
+def _rate(parent: ET.Element, rate: Rate) -> None:
+    element = ET.SubElement(parent, "rate")
+    ET.SubElement(element, "timebase").text = str(rate.timebase)
+    ET.SubElement(element, "ntsc").text = "TRUE" if rate.ntsc else "FALSE"
+
+
+def _size(parent: ET.Element, source: SourceMedia) -> None:
+    characteristics = ET.SubElement(parent, "samplecharacteristics")
+    ET.SubElement(characteristics, "width").text = str(source.width)
+    ET.SubElement(characteristics, "height").text = str(source.height)
+
+
+# Sem molde: sequencia do tamanho e do fps da gravacao, o video em V1 e cada faixa de audio numa trilha
+# (jogo, microfone...). Sem zoom: sem um clipe com zoom do usuario nao da pra saber onde fica o rosto.
+def default_molde(source: SourceMedia) -> PreeditMolde:
+    rate = Rate.from_fps(source.fps)
+    name = PureWindowsPath(source.path).name
+    root = ET.Element("xmeml", {"version": "4"})
+    sequence = ET.SubElement(root, "sequence", {"id": "sequence-1"})
+    ET.SubElement(sequence, "name").text = "Pre-edicao"
+    ET.SubElement(sequence, "duration").text = "0"
+    _rate(sequence, rate)
+    media = ET.SubElement(sequence, "media")
+    video = ET.SubElement(media, "video")
+    _size(ET.SubElement(video, "format"), source)
+    audio = ET.SubElement(media, "audio")
+
+    clips = [("video", 1)] + [("audio", index) for index in range(1, source.audio_streams + 1)]
+    ids = {clip: f"clipitem-{number}" for number, clip in enumerate(clips, 1)}
+    for kind, index in clips:
+        item = ET.SubElement(ET.SubElement(video if kind == "video" else audio, "track"), "clipitem", {"id": ids[(kind, index)]})
+        ET.SubElement(item, "name").text = name
+        ET.SubElement(item, "duration").text = "0"
+        _rate(item, rate)
+        for tag in ("start", "end", "in", "out"):
+            ET.SubElement(item, tag).text = "0"
+        file = ET.SubElement(item, "file", {"id": "file-1"})
+        if kind == "video":
+            # A primeira aparicao do arquivo traz a definicao; o XML final troca pelos dados da gravacao.
+            ET.SubElement(file, "name").text = name
+            ET.SubElement(file, "pathurl").text = ""
+            _rate(file, rate)
+            ET.SubElement(file, "duration").text = "0"
+            file_media = ET.SubElement(file, "media")
+            _size(ET.SubElement(file_media, "video"), source)
+            ET.SubElement(ET.SubElement(file_media, "audio"), "channelcount").text = "2"
+        else:
+            source_track = ET.SubElement(item, "sourcetrack")
+            ET.SubElement(source_track, "mediatype").text = "audio"
+            ET.SubElement(source_track, "trackindex").text = str(index)
+        # Video e audios ligados: no Premiere eles andam juntos.
+        for other_kind, other_index in clips:
+            link = ET.SubElement(item, "link")
+            ET.SubElement(link, "linkclipref").text = ids[(other_kind, other_index)]
+            ET.SubElement(link, "mediatype").text = other_kind
+            ET.SubElement(link, "trackindex").text = str(other_index)
+            ET.SubElement(link, "clipindex").text = "1"
     return parse_molde(root)
