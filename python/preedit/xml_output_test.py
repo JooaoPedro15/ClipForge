@@ -13,6 +13,8 @@ from preedit.xml_output import build_xml, write_xml
 
 FIXTURE = Path(__file__).parent / "fixtures" / "molde_preedit.xml"
 SOURCE = SourceMedia(path=r"E:\Bruto\2026-10-14 15-00-00.mp4", duration_sec=900.0, fps=30.0, width=1920, height=1080, audio_streams=2)
+# A mesma gravacao depois de uma pausa no OBS: outro arquivo.
+SOURCE2 = SourceMedia(path=r"E:\Bruto\2026-10-14 16-00-00.mp4", duration_sec=600.0, fps=30.0, width=1920, height=1080, audio_streams=2)
 PLAN = EditPlan(
     segments=[Segment(10.0, 12.0), Segment(12.0, 13.0, 1.5), Segment(20.0, 25.0)],
     markers=[(3.0, "sem graca")],
@@ -77,7 +79,7 @@ class MoldeTest(unittest.TestCase):
     def test_without_molde_the_sequence_is_the_recording_with_every_audio_track(self):
         molde = default_molde(SOURCE)
 
-        root = build_xml(molde, SOURCE, PLAN, "sem molde")
+        root = build_xml(molde, [(SOURCE, PLAN)], "sem molde")
 
         self.assertIsNone(molde.zoom)
         self.assertEqual([(p.kind, p.track, p.from_source) for p in molde.template.prototypes], [("video", 1, True), ("audio", 1, True), ("audio", 2, True)])
@@ -91,7 +93,7 @@ class MoldeTest(unittest.TestCase):
     def test_default_molde_keeps_ntsc_frame_rates(self):
         source = SourceMedia(path=r"E:\Bruto\celular.mp4", duration_sec=60.0, fps=29.97, width=1080, height=1920, audio_streams=1)
 
-        root = build_xml(default_molde(source), source, PLAN, "ntsc")
+        root = build_xml(default_molde(source), [(source, PLAN)], "ntsc")
 
         self.assertEqual((root.findtext("sequence/rate/timebase"), root.findtext("sequence/rate/ntsc")), ("30", "TRUE"))
         self.assertEqual(len(clipitems(root, "audio")), 3)
@@ -99,7 +101,7 @@ class MoldeTest(unittest.TestCase):
 
 class BuildXmlTest(unittest.TestCase):
     def test_segments_are_glued_and_the_zoom_goes_on_the_zoom_track(self):
-        root = build_xml(load_molde(FIXTURE), SOURCE, PLAN, "gravacao pre-edicao")
+        root = build_xml(load_molde(FIXTURE), [(SOURCE, PLAN)], "gravacao pre-edicao")
 
         video = clipitems(root, "video")
         audio = clipitems(root, "audio")
@@ -116,9 +118,27 @@ class BuildXmlTest(unittest.TestCase):
         definition = root.find(".//file[pathurl]")
         self.assertEqual(definition.findtext("name"), "2026-10-14 15-00-00.mp4")
 
+    def test_two_recordings_make_one_sequence(self):
+        root = build_xml(load_molde(FIXTURE), [(SOURCE, PLAN), (SOURCE2, PLAN)], "duas")
+
+        video = clipitems(root, "video")
+        self.assertEqual(len(video), 6)
+        self.assertEqual([clip.find("file").get("id") for clip in video], ["file-1"] * 3 + ["file-1-2"] * 3)
+        self.assertEqual([int(clip.findtext("start")) for clip in video][3:], [240, 300, 330])
+        names = {f.get("id"): f.findtext("name") for f in root.iter("file") if f.find("pathurl") is not None}
+        self.assertEqual(names, {"file-1": "2026-10-14 15-00-00.mp4", "file-1-2": "2026-10-14 16-00-00.mp4"})
+        self.assertEqual(root.findtext("sequence/duration"), "480")
+        self.assertEqual([marker.findtext("in") for marker in root.findall("sequence/marker")], ["90", "330"])
+
+    def test_source_with_fewer_audio_tracks_is_a_clear_error(self):
+        single = SourceMedia(path=r"E:\Bruto\celular.mp4", duration_sec=60.0, fps=30.0, width=1920, height=1080, audio_streams=1)
+
+        with self.assertRaisesRegex(ValueError, "celular.mp4"):
+            build_xml(default_molde(SOURCE), [(SOURCE, PLAN), (single, PLAN)], "faixas")
+
     def test_write_xml(self):
         with tempfile.TemporaryDirectory() as tmp:
-            out = write_xml(load_molde(FIXTURE), SOURCE, PLAN, Path(tmp) / "saida.xml", "teste")
+            out = write_xml(load_molde(FIXTURE), [(SOURCE, PLAN)], Path(tmp) / "saida.xml", "teste")
             self.assertTrue(out.read_text(encoding="utf-8").startswith('<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE xmeml>'))
 
 

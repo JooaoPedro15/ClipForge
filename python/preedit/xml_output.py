@@ -4,6 +4,7 @@ import copy
 import uuid
 import xml.etree.ElementTree as ET
 from pathlib import Path, PureWindowsPath
+from typing import Any
 
 from cortes.media import SourceMedia
 from cortes.xmeml_writer import (
@@ -43,15 +44,7 @@ def _marker(frame: int, name: str) -> ET.Element:
     return marker
 
 
-def build_xml(molde: PreeditMolde, source: SourceMedia, plan: EditPlan, sequence_name: str) -> ET.Element:
-    template = molde.template
-    if not plan.segments:
-        raise ValueError("Nenhum trecho pra montar o XML.")
-    needed = required_audio_streams(template)
-    if source.audio_streams < needed:
-        raise ValueError(f"O molde usa a faixa de audio {needed}, mas {PureWindowsPath(source.path).name} so tem {source.audio_streams}.")
-
-    rate = template.rate
+def _empty_sequence(template: Any) -> tuple[ET.Element, dict[tuple[str, int], ET.Element]]:
     sequence = copy.deepcopy(template.sequence)
     tracks = {("video", i): t for i, t in enumerate(sequence.findall("media/video/track"), 1)}
     tracks |= {("audio", i): t for i, t in enumerate(sequence.findall("media/audio/track"), 1)}
@@ -60,47 +53,71 @@ def build_xml(molde: PreeditMolde, source: SourceMedia, plan: EditPlan, sequence
             track.remove(child)
     for marker in sequence.findall("marker"):
         sequence.remove(marker)
+    return sequence, tracks
 
-    source_name = PureWindowsPath(source.path).name
-    source_duration = str(rate.to_frames(source.duration_sec))
+
+# Uma sequencia com os trechos de cada bruto na ordem (gravacao pausada no OBS vira varios arquivos).
+# O primeiro bruto usa o arquivo do molde; os outros ganham ids proprios com a definicao refeita.
+def build_xml(molde: PreeditMolde, parts: list[tuple[SourceMedia, EditPlan]], sequence_name: str, zoom_style: str = "seco") -> ET.Element:
+    template = molde.template
+    if not any(plan.segments for _, plan in parts):
+        raise ValueError("Nenhum trecho pra montar o XML.")
+    needed = required_audio_streams(template)
+    for source, _ in parts:
+        if source.audio_streams < needed:
+            raise ValueError(f"O molde usa a faixa de audio {needed}, mas {PureWindowsPath(source.path).name} so tem {source.audio_streams}.")
+
+    rate = template.rate
+    sequence, tracks = _empty_sequence(template)
+    definitions = dict(template.definitions)
+    base = definitions[f"file:{template.source_file_id}"]
     next_id = template.next_id
     timeline = 0
+    clip_number = 0
     from_source = [proto for proto in template.prototypes if proto.from_source]
-    for number, segment in enumerate(plan.segments, 1):
-        source_in, source_out = rate.to_frames(segment.start), rate.to_frames(segment.end)
-        length = source_out - source_in
-        if length <= 0:
-            continue
-        new_ids = {}
-        for proto in from_source:
-            new_ids[proto.element.get("id")] = f"clipitem-{next_id}"
-            next_id += 1
-        for proto in from_source:
-            item = copy.deepcopy(proto.element)
-            item.set("id", new_ids[proto.element.get("id")])
-            _set_times(item, rate, timeline, timeline + length, source_in, source_out)
-            _set_text(item, "name", source_name)
-            _set_text(item, "duration", source_duration)
-            if segment.zoom and molde.zoom and proto.kind == "video" and proto.track == molde.zoom.track:
-                _apply_zoom(item, molde.zoom, segment.zoom)
-            for link in item.findall("link"):
-                ref = link.findtext("linkclipref")
-                if ref in new_ids:
-                    _set_text(link, "linkclipref", new_ids[ref])
-                    _set_text(link, "clipindex", str(number))
-                else:
-                    item.remove(link)
-            _append_clip(tracks[(proto.kind, proto.track)], item)
-        timeline += length
+    for number, (source, plan) in enumerate(parts, 1):
+        file_id = template.source_file_id if number == 1 else f"{template.source_file_id}-{number}"
+        definition = copy.deepcopy(base)
+        definition.set("id", file_id)
+        definitions[f"file:{file_id}"] = _source_definition(definition, source)
+        source_name = PureWindowsPath(source.path).name
+        source_duration = str(rate.to_frames(source.duration_sec))
+        plan_start = timeline
+        for segment in plan.segments:
+            source_in, source_out = rate.to_frames(segment.start), rate.to_frames(segment.end)
+            length = source_out - source_in
+            if length <= 0:
+                continue
+            clip_number += 1
+            new_ids = {}
+            for proto in from_source:
+                new_ids[proto.element.get("id")] = f"clipitem-{next_id}"
+                next_id += 1
+            for proto in from_source:
+                item = copy.deepcopy(proto.element)
+                item.set("id", new_ids[proto.element.get("id")])
+                _set_times(item, rate, timeline, timeline + length, source_in, source_out)
+                _set_text(item, "name", source_name)
+                _set_text(item, "duration", source_duration)
+                for reference in item.findall("file"):
+                    if reference.get("id") == template.source_file_id:
+                        reference.set("id", file_id)
+                if segment.zoom and molde.zoom and proto.kind == "video" and proto.track == molde.zoom.track:
+                    _apply_zoom(item, molde.zoom, segment.zoom)
+                for link in item.findall("link"):
+                    ref = link.findtext("linkclipref")
+                    if ref in new_ids:
+                        _set_text(link, "linkclipref", new_ids[ref])
+                        _set_text(link, "clipindex", str(clip_number))
+                    else:
+                        item.remove(link)
+                _append_clip(tracks[(proto.kind, proto.track)], item)
+            timeline += length
+        sequence.extend(_marker(plan_start + rate.to_frames(at), name) for at, name in plan.markers)
 
     _set_text(sequence, "uuid", str(uuid.uuid4()))
     _set_text(sequence, "name", sequence_name)
     _set_text(sequence, "duration", str(timeline))
-    sequence.extend(_marker(rate.to_frames(at), name) for at, name in plan.markers)
-
-    definitions = dict(template.definitions)
-    source_key = f"file:{template.source_file_id}"
-    definitions[source_key] = _source_definition(definitions[source_key], source)
     _expand_first_references(sequence, definitions, set())
 
     root = ET.Element("xmeml", {"version": template.version})
@@ -108,8 +125,10 @@ def build_xml(molde: PreeditMolde, source: SourceMedia, plan: EditPlan, sequence
     return root
 
 
-def write_xml(molde: PreeditMolde, source: SourceMedia, plan: EditPlan, out_path: str | Path, sequence_name: str) -> Path:
-    root = build_xml(molde, source, plan, sequence_name)
+def write_xml(
+    molde: PreeditMolde, parts: list[tuple[SourceMedia, EditPlan]], out_path: str | Path, sequence_name: str, zoom_style: str = "seco"
+) -> Path:
+    root = build_xml(molde, parts, sequence_name, zoom_style)
     ET.indent(root, space="\t")
     text = '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE xmeml>\n' + ET.tostring(root, encoding="unicode") + "\n"
     out = Path(out_path)

@@ -2,7 +2,7 @@ import itertools
 import unittest
 
 from preedit.audio import Loudness
-from preedit.editor import plan_long
+from preedit.editor import plan_long, split_target
 from preedit.features import PHRASE_FEATURES, RETAKE_FEATURES, ZOOM_FEATURES
 from preedit.models import FormatModels
 
@@ -105,6 +105,12 @@ class PlanLongTest(unittest.TestCase):
         self.assertTrue(all(s.zoom == 1.5 and 0.6 <= s.end - s.start <= 1.3 + 1e-6 for s in zoomed))
         joined = sorted(plan.segments, key=lambda s: s.start)
         self.assertTrue(all(a.end <= b.start + 1e-6 for a, b in itertools.pairwise(joined)))
+
+
+    def test_split_target_follows_speech(self):
+        # Gravacao pausada no OBS: quem fala mais ganha mais tempo do video final.
+        self.assertEqual(split_target([600.0, 300.0, 0.0], 600.0), [400.0, 200.0, 0.0])
+        self.assertEqual(split_target([], 600.0), [])
 
 
 if __name__ == "__main__":

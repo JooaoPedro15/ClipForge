@@ -158,6 +158,14 @@ def _markers(phrases: list[Phrase], keep: dict[int, bool], reasons: dict[int, st
     return markers
 
 
+# Gravacao pausada no OBS (varios arquivos): o tempo do video final e dividido pela fala de cada um.
+def split_target(speech_sec: list[float], target_sec: float) -> list[float]:
+    total = sum(speech_sec)
+    if total <= 0:
+        return [0.0 for _ in speech_sec]
+    return [target_sec * seconds / total for seconds in speech_sec]
+
+
 def plan_long(
     words: list[dict[str, Any]], loud: Loudness, interest: dict[int, float], models: FormatModels, target_sec: float
 ) -> EditPlan:

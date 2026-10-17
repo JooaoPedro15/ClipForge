@@ -358,7 +358,7 @@ def edit_recording(
 
     emit("status", "processing", "writing", "Montando o XML no molde...", progress=92)
     out = Path(out_path) if out_path else Path(recording).with_suffix(".preedicao.longo.xml")
-    write_xml(molde, source, plan, out, f"{Path(recording).stem} pre-edicao")
+    write_xml(molde, [(source, plan)], out, f"{Path(recording).stem} pre-edicao")
     return {
         "xmlPath": str(out),
         "durationSec": plan.duration,
