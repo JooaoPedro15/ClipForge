@@ -107,7 +107,7 @@ describe('fluxo IPC da Pre-edicao que aprende', () => {
 
     expect(project(sent, KEYS).at(-1)).toEqual({
       ch: 'preedit:error',
-      title: 'Ensinar com videos prontos',
+      title: 'Ensinar com vídeos prontos',
       kind: 'teach-finals',
       status: 'cancelled',
       stage: 'cancelled',

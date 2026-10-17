@@ -2,10 +2,11 @@ import { Rail } from '@/components/layout/Rail'
 import { Titlebar } from '@/components/layout/Titlebar'
 import { useClipSplitter } from '@/hooks/useClipSplitter'
 import { useCortes } from '@/hooks/useCortes'
+import { usePreedit } from '@/hooks/usePreedit'
 import { useSubtitleForge } from '@/hooks/useSubtitleForge'
 import { getGpuStatus, subtitleGpuEntries } from '@/lib/gpuStatus'
-import { ClipSplitterPage } from '@/pages/ClipSplitter'
 import { CortesPage } from '@/pages/Cortes'
+import { PreEditPage } from '@/pages/PreEdit'
 import { SubtitleForgePage } from '@/pages/SubtitleForge'
 import { useAppStore } from '@/store/appStore'
 import type { ToolId } from '@/types/subtitle'
@@ -17,7 +18,7 @@ export const pageMeta: Record<ToolId, { title: string; description: string }> = 
   },
   'clip-splitter': {
     title: 'Pré-edição',
-    description: 'Encurta as pausas do vídeo bruto e entrega uma versão única, na ordem original, pronta pra revisar.',
+    description: 'Solte os brutos da gravação: ele corta e dá zoom no seu jeito (aprendido com os seus projetos) e entrega um XML pro Premiere.',
   },
   cortes: {
     title: 'Cortes',
@@ -31,30 +32,23 @@ export default function App() {
   const subtitleTasks = useAppStore((state) => state.subtitleTasks)
   const clipSplitterTasks = useAppStore((state) => state.clipSplitterTasks)
   const cortesTasks = useAppStore((state) => state.cortesTasks)
+  const preeditTasks = useAppStore((state) => state.preeditTasks)
   const clipSplitter = useClipSplitter()
   const subtitleForge = useSubtitleForge()
   const cortes = useCortes()
+  const preedit = usePreedit()
 
   // As ferramentas dividem a mesma fila de GPU, entao o status e global.
   const gpu = getGpuStatus(
     subtitleGpuEntries(subtitleTasks),
     clipSplitterTasks.map((task) => ({ fileName: task.sourceName, status: task.status })),
     cortesTasks.map((task) => ({ fileName: task.sourceName, status: task.status })),
+    preeditTasks.map((task) => ({ fileName: task.title, status: task.status })),
   )
 
   let content
   if (activeTool === 'clip-splitter') {
-    content = (
-      <ClipSplitterPage
-        {...pageMeta['clip-splitter']}
-        onCancelTask={clipSplitter.cancelTask}
-        onOpenOutput={clipSplitter.openOutput}
-        onPickOutputDir={clipSplitter.pickOutputDir}
-        onPickSourceFile={clipSplitter.pickSourceFile}
-        onRetryTask={clipSplitter.retryTask}
-        onStartSplit={() => clipSplitter.startSplit()}
-      />
-    )
+    content = <PreEditPage {...pageMeta['clip-splitter']} clipSplitter={clipSplitter} preedit={preedit} />
   } else if (activeTool === 'cortes') {
     content = (
       <CortesPage

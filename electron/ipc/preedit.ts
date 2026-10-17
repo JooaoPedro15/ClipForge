@@ -111,7 +111,7 @@ function titleFor(job: PreeditJobRequest): string {
     const count = job.request.projects.length
     return `Ensinar com ${count} projeto${count === 1 ? '' : 's'}`
   }
-  return 'Ensinar com videos prontos'
+  return 'Ensinar com vídeos prontos'
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -236,6 +236,36 @@ const demoClipTitles: Array<[string, number]> = [
 ]
 
 // Um react pronto (com lista de clipes) e outro esperando a mesma fila de GPU das outras ferramentas.
+// Pre-edicao que aprende: uma gravacao pausada (2 arquivos), um XML pronto e um ensino rodando.
+function seedPreeditQueue() {
+  const store = useAppStore.getState()
+  store.setPreeditSources(['D:\\Bruto\\2026-10-16 14-00-12.mkv', 'D:\\Bruto\\2026-10-16 14-41-55.mkv'])
+  store.setPreeditLibrary({ recordings: { longo: 3, short: 38 }, finals: { longo: 1, short: 21 }, editorReady: true })
+  store.upsertPreeditEvent({
+    taskId: 'demo-preedit-learn-done',
+    kind: 'edit',
+    title: '2026-10-15 20-02-40.mkv +2',
+    status: 'completed',
+    stage: 'done',
+    message: 'Pre-edicao pronta.',
+    progress: 100,
+    warnings: ['A IA nao respondeu direito em 1 trecho(s) de 2026-10-15 20-02-40.mkv: nota 5 neles.'],
+    result: { xmlPath: 'D:\\Bruto\\2026-10-15 20-02-40.preedicao.longo.xml', durationSec: 1_214, segments: 186, zooms: 23 },
+    startedAt: now - minutes(48),
+    completedAt: now - minutes(21),
+  })
+  store.upsertPreeditEvent({
+    taskId: 'demo-preedit-learn-teach',
+    kind: 'teach-finals',
+    title: 'Ensinar com vídeos prontos',
+    status: 'processing',
+    stage: 'transcribing',
+    message: 'Fala [4/18] Voltando nesse jogo de criar historias .mp4',
+    progress: 21,
+    warnings: [],
+  })
+}
+
 function seedCortesQueue() {
   const store = useAppStore.getState()
   const sourcePath = 'E:\\Bruto\\2026-07-28 23-40-19.mp4'
@@ -313,6 +343,7 @@ export function installDemo(params: URLSearchParams) {
   }
   seedSubtitleQueue()
   seedPreEditQueue()
+  seedPreeditQueue()
   seedCortesQueue()
 
   // ?demo=clip-splitter abre direto no Pre-Editor; ?demo=cortes, nos Cortes.

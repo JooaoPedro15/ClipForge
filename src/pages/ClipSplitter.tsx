@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { type ReactNode, useState } from 'react'
 
 import { PreEditInspector } from '@/components/clipSplitter/PreEditInspector'
 import { SourceCard } from '@/components/clipSplitter/SourceCard'
@@ -23,6 +23,8 @@ interface ClipSplitterPageProps {
   onOpenOutput: (outputDir: string | null) => void
   /** Re-executa uma tarefa que falhou, usando o mesmo sourcePath */
   onRetryTask: (sourcePath: string) => void
+  /** Controle no cabecalho (o seletor de modo da Pre-edicao) */
+  headerAction?: ReactNode
 }
 
 /**
@@ -38,6 +40,7 @@ export function ClipSplitterPage({
   onCancelTask,
   onOpenOutput,
   onRetryTask,
+  headerAction,
 }: ClipSplitterPageProps) {
   // Mensagem de feedback da ultima acao (ex.: falta escolher o video).
   const [actionMessage, setActionMessage] = useState<string | null>(null)
@@ -55,7 +58,7 @@ export function ClipSplitterPage({
   }
 
   return (
-    <Workspace description={description} inspector={<PreEditInspector />} title={title}>
+    <Workspace action={headerAction} description={description} inspector={<PreEditInspector />} title={title}>
       <SourceCard
         message={actionMessage}
         onDropSource={(path) => {
