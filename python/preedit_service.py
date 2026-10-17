@@ -27,12 +27,11 @@ from cortes.media import probe_source
 from cortes.xmeml_template import TemplateError
 from cortes.xmeml_writer import required_audio_streams
 from events import emit
-from llm_service import create_default_client
 from preedit import finals, models, store
 from preedit.audio import AudioError, extract_audio, load_loudness, loudness_cache, resolve_audio_track
 from preedit.dataset import build_examples
 from preedit.editor import plan_long, split_target
-from preedit.interest import load_interest
+from preedit.interest import create_interest_client, load_interest
 from preedit.molde import default_molde, load_molde
 from preedit.phrases import build_phrases
 from preedit.project_labels import collect_labels, final_labels
@@ -180,7 +179,7 @@ def teach_projects(
     device: str,
     compute_type: str,
     audio_track: int | None,
-    make_client: Callable[[], Any] = create_default_client,
+    make_client: Callable[[], Any] = create_interest_client,
 ) -> dict[str, Any]:
     store_dir = Path(store_path)
     emit("status", "processing", "reading-project", "Lendo os projetos do Premiere...", progress=2)
@@ -233,7 +232,7 @@ def teach_finals(
     device: str,
     compute_type: str,
     audio_track: int | None,
-    make_client: Callable[[], Any] = create_default_client,
+    make_client: Callable[[], Any] = create_interest_client,
 ) -> dict[str, Any]:
     folder = Path(videos_dir)
     files = finals.scan_videos(folder) if folder.is_dir() else {}
@@ -350,7 +349,7 @@ def edit_recordings(
     device: str,
     compute_type: str,
     audio_track: int | None,
-    make_client: Callable[[], Any] = create_default_client,
+    make_client: Callable[[], Any] = create_interest_client,
     zoom_style: str = "aproximando",
 ) -> dict[str, Any]:
     if not recordings:

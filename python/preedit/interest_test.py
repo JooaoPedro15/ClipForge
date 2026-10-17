@@ -1,4 +1,5 @@
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -73,6 +74,22 @@ class LoadInterestTest(unittest.TestCase):
             self.assertEqual(len(client.calls), 1)
             cached = json.loads((Path(tmp) / "gravacao.interest.longo.json").read_text(encoding="utf-8"))
             self.assertEqual(cached["model"], "qwen-falso")
+
+    def test_notes_from_another_model_are_scored_again(self):
+        # Treino e edicao com notas do mesmo modelo: nota de outro modelo no cache e refeita.
+        with tempfile.TemporaryDirectory() as tmp:
+            recording = str(Path(tmp) / "gravacao.mp4")
+            interest.load_interest(recording, phrases(2), "longo", lambda: FakeClient([]))
+            other = FakeClient([])
+            other.model = "qwen-outro"
+
+            interest.load_interest(recording, phrases(2), "longo", lambda: other)
+
+            self.assertEqual(len(other.calls), 1)
+
+    def test_preedit_uses_the_7b_model_unless_told_otherwise(self):
+        self.assertEqual(interest.INTEREST_MODEL, "qwen2.5:7b-instruct")
+        self.assertEqual(interest.create_interest_client().model, os.environ.get("CLIPFORGE_OLLAMA_MODEL", "qwen2.5:7b-instruct"))
 
     def test_window_the_ai_never_answers_warns_and_is_not_cached(self):
         client = FakeClient([{"oi": 1}] * 3)

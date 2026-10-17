@@ -6,15 +6,19 @@ frase, resposta JSON e nova tentativa com temperatura maior quando a resposta ve
 
 import hashlib
 import json
+import os
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from llm_service import LLMResponseError, LLMUnavailableError
+from llm_service import DEFAULT_BASE_URL, LLMResponseError, LLMUnavailableError, OllamaClient
 
 from preedit.phrases import Phrase
 
 # Janelas de 5 min: com um marcador por frase, 10 min de fala rapida chegam perto do contexto do modelo (8192).
+# Modelo das notas: o mesmo no ensino e na edicao (as arvores aprendem com as notas dele). O 7b cabe na placa
+# de 8 GB junto com o Whisper; o 14b nao.
+INTEREST_MODEL = "qwen2.5:7b-instruct"
 WINDOW_SEC = 300.0
 OVERLAP_SEC = 30.0
 NEUTRAL = 5.0
@@ -105,24 +109,45 @@ def interest_cache(recording: str, fmt: str) -> Path:
     return Path(recording).with_suffix(f".interest.{fmt}.json")
 
 
+def create_interest_client() -> OllamaClient:
+    return OllamaClient(
+        model=os.environ.get("CLIPFORGE_OLLAMA_MODEL", INTEREST_MODEL),
+        base_url=os.environ.get("CLIPFORGE_OLLAMA_URL", DEFAULT_BASE_URL),
+    )
+
+
+def _cached_scores(data: dict[str, Any]) -> dict[int, float]:
+    return {int(key): float(value) for key, value in data["scores"].items()}
+
+
 def load_interest(
     recording: str, phrases: list[Phrase], fmt: str, make_client: Callable[[], Any]
 ) -> tuple[dict[int, float], str | None]:
     cache = interest_cache(recording, fmt)
     digest = transcript_hash(phrases)
+    cached = None
     if cache.exists():
         data = json.loads(cache.read_text(encoding="utf-8"))
         if data.get("hash") == digest:
-            return {int(key): float(value) for key, value in data["scores"].items()}, None
+            cached = data
+    neutral = {phrase.index: NEUTRAL for phrase in phrases}
     try:
         client = make_client()
+    except LLMUnavailableError as error:
+        if cached:
+            return _cached_scores(cached), None
+        return neutral, f"IA local indisponivel ({error}): todas as frases ficaram com nota 5."
+    # Nota de outro modelo e refeita: as arvores aprenderam com as notas de um modelo so.
+    model = getattr(client, "model", "")
+    if cached and cached.get("model", model) == model:
+        return _cached_scores(cached), None
+    try:
         # Como os Cortes e a traducao: liga o Ollama se ele estiver fechado.
         ensure = getattr(client, "ensure_server_running", None)
         if callable(ensure):
             ensure()
         scores, fallbacks = score_phrases(client, phrases, fmt)
     except LLMUnavailableError as error:
-        neutral = {phrase.index: NEUTRAL for phrase in phrases}
         return neutral, f"IA local indisponivel ({error}): todas as frases ficaram com nota 5."
     if fallbacks:
         # Sem cache: na proxima vez a IA tenta de novo essas janelas.
