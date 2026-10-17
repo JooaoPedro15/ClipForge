@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
 
 import { addLoadedCortesTask, patchCortesXml, startCortesTask, upsertCortesTask, type CortesEvent } from '@/store/cortesTasks'
+import { attachPreeditRequest, defaultPreeditSettings, upsertPreeditTask } from '@/store/preeditState'
 import { createPreferenceStorage, pickPreferences, PREFERENCES_KEY, restorePreferences } from '@/store/preferences'
 
 import type {
@@ -12,6 +13,7 @@ import type {
   ClipSplitterTask,
 } from '@/types/clipSplitter'
 import type { CortesAnalyzeOptions, CortesProgressEvent, CortesSettings, CortesTask, CortesXmlState } from '@/types/cortes'
+import type { PreeditJobRequest, PreeditLibrary, PreeditSettings, PreeditTask, PreeditTaskEvent } from '@/types/preedit'
 import type {
   HardsubEvent,
   SubtitleDoneEvent,
@@ -101,6 +103,16 @@ interface AppState {
   startCortesEvent: (event: CortesProgressEvent, request: CortesAnalyzeOptions) => void
   addLoadedCortesTask: (task: CortesTask) => void
   setCortesXml: (taskId: string, xml: CortesXmlState) => void
+  preeditSettings: PreeditSettings
+  // Brutos de uma gravacao, na ordem em que entram na sequencia (nao e lembrado: vale pra um video so).
+  preeditSources: string[]
+  preeditTasks: PreeditTask[]
+  preeditLibrary: PreeditLibrary | null
+  patchPreeditSettings: (patch: Partial<PreeditSettings>) => void
+  setPreeditSources: (sources: string[]) => void
+  upsertPreeditEvent: (event: PreeditTaskEvent) => void
+  attachPreeditRequest: (taskId: string, title: string, request: PreeditJobRequest) => void
+  setPreeditLibrary: (library: PreeditLibrary | null) => void
 }
 
 // Insere ou atualiza uma tarefa de legenda conforme os eventos vindos do backend.
@@ -282,6 +294,16 @@ export const useAppStore = create<AppState>()(
   startCortesEvent: (event, request) => set((state) => ({ cortesTasks: startCortesTask(state.cortesTasks, event, request) })),
   addLoadedCortesTask: (task) => set((state) => ({ cortesTasks: addLoadedCortesTask(state.cortesTasks, task) })),
   setCortesXml: (taskId, xml) => set((state) => ({ cortesTasks: patchCortesXml(state.cortesTasks, taskId, xml) })),
+  preeditSettings: defaultPreeditSettings,
+  preeditSources: [],
+  preeditTasks: [],
+  preeditLibrary: null,
+  patchPreeditSettings: (patch) => set((state) => ({ preeditSettings: { ...state.preeditSettings, ...patch } })),
+  setPreeditSources: (sources) => set({ preeditSources: sources }),
+  upsertPreeditEvent: (event) => set((state) => ({ preeditTasks: upsertPreeditTask(state.preeditTasks, event) })),
+  attachPreeditRequest: (taskId, title, request) =>
+    set((state) => ({ preeditTasks: attachPreeditRequest(state.preeditTasks, taskId, title, request) })),
+  setPreeditLibrary: (library) => set({ preeditLibrary: library }),
     }),
     {
       name: PREFERENCES_KEY,

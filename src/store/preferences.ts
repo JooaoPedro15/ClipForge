@@ -11,12 +11,14 @@ const TOOL_IDS: ToolId[] = ['subtitle-forge', 'clip-splitter', 'cortes']
 
 type Settings = object
 
-interface PreferenceState<S extends Settings, C extends Settings, K extends Settings> {
+interface PreferenceState<S extends Settings, C extends Settings, K extends Settings, P extends Settings> {
   activeTool: ToolId
   subtitleSettings: S
   clipSplitterSettings: C
   // O molde dos Cortes entra junto: vale pra todo react, nao e saida de um video so.
   cortesSettings: K
+  // Modo, minutos, estilo do zoom e molde da Pre-edicao que aprende: valem pra toda gravacao.
+  preeditSettings: P
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -27,12 +29,13 @@ function without<T extends Settings, K extends string>(source: T, key: K): Omit<
   return Object.fromEntries(Object.entries(source).filter(([name]) => name !== key)) as Omit<T, K>
 }
 
-export function pickPreferences<S extends Settings, C extends Settings, K extends Settings>(state: PreferenceState<S, C, K>) {
+export function pickPreferences<S extends Settings, C extends Settings, K extends Settings, P extends Settings>(state: PreferenceState<S, C, K, P>) {
   return {
     activeTool: state.activeTool,
     subtitleSettings: without(state.subtitleSettings, 'outputPath'),
     clipSplitterSettings: without(state.clipSplitterSettings, 'outputDir'),
     cortesSettings: state.cortesSettings,
+    preeditSettings: state.preeditSettings,
   }
 }
 
@@ -59,7 +62,13 @@ function mergeKnown<T extends Settings>(base: T, saved: unknown): T {
   return result as T
 }
 
-export function restorePreferences<S extends Settings, C extends Settings, K extends Settings, D extends PreferenceState<S, C, K>>(
+export function restorePreferences<
+  S extends Settings,
+  C extends Settings,
+  K extends Settings,
+  P extends Settings,
+  D extends PreferenceState<S, C, K, P>,
+>(
   saved: unknown,
   defaults: D,
 ): D {
@@ -73,6 +82,7 @@ export function restorePreferences<S extends Settings, C extends Settings, K ext
     subtitleSettings: mergeKnown(defaults.subtitleSettings, saved.subtitleSettings),
     clipSplitterSettings: mergeKnown(defaults.clipSplitterSettings, saved.clipSplitterSettings),
     cortesSettings: mergeKnown(defaults.cortesSettings, saved.cortesSettings),
+    preeditSettings: mergeKnown(defaults.preeditSettings, saved.preeditSettings),
   }
 }
 

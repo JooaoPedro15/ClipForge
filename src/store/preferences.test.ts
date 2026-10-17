@@ -7,6 +7,7 @@ const defaults = {
   subtitleSettings: { model: 'large-v3', format: 'long', uppercase: false, translateTo: [] as string[], outputPath: null as string | null },
   clipSplitterSettings: { preEditMode: 'balanced', silenceMinDurationSec: 0.45, outputDir: null as string | null },
   cortesSettings: { templatePath: '', minSec: 70, titlesWithAi: true },
+  preeditSettings: { mode: 'learn', minutes: 20, zoomStyle: 'aproximando', moldePath: '' },
 }
 
 describe('pickPreferences', () => {
@@ -24,6 +25,18 @@ describe('pickPreferences', () => {
   test('lembra o molde dos cortes: vale pra todo react', () => {
     const picked = pickPreferences({ ...defaults, cortesSettings: { ...defaults.cortesSettings, templatePath: 'D:\\molde.xml' } })
     expect(picked.cortesSettings).toEqual({ templatePath: 'D:\\molde.xml', minSec: 70, titlesWithAi: true })
+  })
+})
+
+describe('preeditSettings', () => {
+  test('lembra o modo, os minutos e o molde da pre-edicao', () => {
+    const picked = pickPreferences({ ...defaults, preeditSettings: { ...defaults.preeditSettings, minutes: 15, moldePath: 'D:\\molde.xml' } })
+    expect(picked.preeditSettings).toEqual({ mode: 'learn', minutes: 15, zoomStyle: 'aproximando', moldePath: 'D:\\molde.xml' })
+  })
+
+  test('restaura o salvo e ignora tipo errado', () => {
+    const restored = restorePreferences({ preeditSettings: { mode: 'voice', minutes: 'vinte' } }, defaults)
+    expect(restored.preeditSettings).toEqual({ ...defaults.preeditSettings, mode: 'voice' })
   })
 })
 

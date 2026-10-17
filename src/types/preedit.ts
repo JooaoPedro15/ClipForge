@@ -62,6 +62,7 @@ export interface PreeditLibrary {
 export type PreeditLibraryResult = { ok: true; library: PreeditLibrary } | { ok: false; error: string }
 
 export interface PreeditTask extends PreeditTaskEvent {
+  id: string
   request: PreeditJobRequest | null
   createdAt: number
 }
