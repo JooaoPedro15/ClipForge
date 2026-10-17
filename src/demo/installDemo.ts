@@ -92,6 +92,19 @@ function installFakeBridge() {
       onDone: off,
       onError: off,
     },
+    preedit: {
+      edit: async () => 'demo',
+      teachProjects: async () => 'demo',
+      teachFinals: async () => 'demo',
+      cancel: async () => false,
+      library: async () => ({
+        ok: true,
+        library: { recordings: { longo: 3, short: 38 }, finals: { longo: 1, short: 21 }, editorReady: true },
+      }),
+      onProgress: off,
+      onDone: off,
+      onError: off,
+    },
   }
 }
 

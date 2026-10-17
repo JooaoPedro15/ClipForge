@@ -15,6 +15,13 @@ import type {
   CortesXmlResult,
 } from './cortes'
 import type {
+  PreeditEditRequest,
+  PreeditLibraryResult,
+  PreeditTaskEvent,
+  PreeditTeachFinalsRequest,
+  PreeditTeachProjectsRequest,
+} from './preedit'
+import type {
   HardsubEvent,
   HardsubFormat,
   HardsubMode,
@@ -101,6 +108,18 @@ declare global {
         onProgress: (cb: (data: CortesProgressEvent) => void) => () => void
         onDone: (cb: (data: CortesDoneEvent) => void) => () => void
         onError: (cb: (data: CortesErrorEvent) => void) => () => void
+      }
+      preedit: {
+        // Pre-edicao que aprende: editar e ensinar entram na fila unica de GPU (devolvem o id do item).
+        edit: (request: PreeditEditRequest) => Promise<string>
+        teachProjects: (request: PreeditTeachProjectsRequest) => Promise<string>
+        teachFinals: (request: PreeditTeachFinalsRequest) => Promise<string>
+        cancel: (taskId: string) => Promise<boolean>
+        // Contagens da biblioteca (roda na hora, fora da fila).
+        library: () => Promise<PreeditLibraryResult>
+        onProgress: (cb: (data: PreeditTaskEvent) => void) => () => void
+        onDone: (cb: (data: PreeditTaskEvent) => void) => () => void
+        onError: (cb: (data: PreeditTaskEvent) => void) => () => void
       }
     }
   }

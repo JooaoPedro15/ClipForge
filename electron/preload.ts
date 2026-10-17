@@ -145,6 +145,35 @@ const api = {
       }
     },
   },
+  preedit: {
+    // Pre-edicao que aprende: editar varios brutos e ensinar (fila de GPU); a biblioteca responde na hora.
+    edit: (request: Record<string, unknown>) => ipcRenderer.invoke('preedit:edit', request),
+    teachProjects: (request: Record<string, unknown>) => ipcRenderer.invoke('preedit:teach-projects', request),
+    teachFinals: (request: Record<string, unknown>) => ipcRenderer.invoke('preedit:teach-finals', request),
+    cancel: (taskId: string) => ipcRenderer.invoke('preedit:cancel', taskId),
+    library: () => ipcRenderer.invoke('preedit:library'),
+    onProgress: (cb: (data: unknown) => void) => {
+      const listener = (_event: unknown, data: unknown) => cb(data)
+      ipcRenderer.on('preedit:progress', listener)
+      return () => {
+        ipcRenderer.removeListener('preedit:progress', listener)
+      }
+    },
+    onDone: (cb: (data: unknown) => void) => {
+      const listener = (_event: unknown, data: unknown) => cb(data)
+      ipcRenderer.on('preedit:done', listener)
+      return () => {
+        ipcRenderer.removeListener('preedit:done', listener)
+      }
+    },
+    onError: (cb: (data: unknown) => void) => {
+      const listener = (_event: unknown, data: unknown) => cb(data)
+      ipcRenderer.on('preedit:error', listener)
+      return () => {
+        ipcRenderer.removeListener('preedit:error', listener)
+      }
+    },
+  },
 } as const
 
 // Injeta a API no objeto window do renderer.
