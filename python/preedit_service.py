@@ -390,6 +390,29 @@ def forget(source: str, store_path: str) -> dict[str, Any]:
     return {"id": source, "format": fmt}
 
 
+# Projetos escolhidos um a um mais todos os .prproj de uma pasta (centenas de caminhos estourariam a linha
+# de comando do Windows). O mesmo projeto pelos dois caminhos entra uma vez so.
+def project_paths(projects: list[str] | None, projects_dir: str | None) -> list[str]:
+    found = list(projects or [])
+    if projects_dir:
+        found += sorted((str(path) for path in Path(projects_dir).glob("*.prproj")), key=lambda path: Path(path).name.casefold())
+    seen: set[str] = set()
+    unique = []
+    for path in found:
+        key = os.path.normcase(os.path.abspath(path))
+        if key not in seen:
+            seen.add(key)
+            unique.append(path)
+    if not unique:
+        raise PreeditError("Escolha pelo menos um projeto do Premiere.")
+    return unique
+
+
+def _add_projects_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--project", action="append")
+    parser.add_argument("--projects-dir", help="pasta: todos os .prproj dela")
+
+
 def _add_model_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--store", required=True)
     parser.add_argument("--model", default=subtitle_service.DEFAULT_MODEL)
@@ -404,11 +427,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     commands = parser.add_subparsers(dest="command", required=True)
 
     teach_parser = commands.add_parser("teach-project")
-    teach_parser.add_argument("--project", action="append", required=True)
+    _add_projects_args(teach_parser)
     _add_model_args(teach_parser)
 
     final_parser = commands.add_parser("teach-final")
-    final_parser.add_argument("--project", action="append", required=True)
+    _add_projects_args(final_parser)
     final_parser.add_argument("--videos", required=True, help="pasta com os videos exportados (procura em subpastas)")
     _add_model_args(final_parser)
 
@@ -434,10 +457,10 @@ def main(argv: list[str] | None = None) -> int:
     compute_type = "int8" if getattr(args, "cpu", False) else "float16"
     try:
         if args.command == "teach-project":
-            result = teach_projects(args.project, args.store, args.model, args.language, args.beam_size, device, compute_type, args.audio_track)
+            result = teach_projects(project_paths(args.project, args.projects_dir), args.store, args.model, args.language, args.beam_size, device, compute_type, args.audio_track)
             emit("done", "completed", "done", f"{len(result['taught'])} gravacoes ensinadas.", progress=100, report=result)
         elif args.command == "teach-final":
-            result = teach_finals(args.project, args.videos, args.store, args.model, args.language, args.beam_size, device, compute_type, args.audio_track)
+            result = teach_finals(project_paths(args.project, args.projects_dir), args.videos, args.store, args.model, args.language, args.beam_size, device, compute_type, args.audio_track)
             emit("done", "completed", "done", f"{len(result['taught'])} videos finais ensinados.", progress=100, report=result)
         elif args.command == "edit":
             result = edit_recording(

@@ -220,6 +220,28 @@ class PreeditServiceTest(unittest.TestCase):
             self.teach(project.write(self.tmp / "vazio.prproj"))
 
 
+class ProjectPathsTest(unittest.TestCase):
+    def test_projects_dir_adds_every_project_of_the_folder(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            for name in ("b.prproj", "a.prproj", "notas.txt"):
+                (folder / name).write_bytes(b"x")
+            extra = str(folder / "outra" / "c.prproj")
+
+            self.assertEqual(preedit_service.project_paths([extra], tmp), [extra, str(folder / "a.prproj"), str(folder / "b.prproj")])
+            # O mesmo projeto pela lista e pela pasta entra uma vez so.
+            self.assertEqual(preedit_service.project_paths([str(folder / "A.prproj")], tmp), [str(folder / "A.prproj"), str(folder / "b.prproj")])
+
+    def test_teach_without_projects_is_a_clear_error(self):
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            code = preedit_service.main(["teach-final", "--videos", "X", "--store", "Y"])
+
+        event = json.loads(output.getvalue().strip().splitlines()[-1])
+        self.assertEqual(code, 1)
+        self.assertIn("pelo menos um projeto", event["message"])
+
+
 class TeachFinalsTest(unittest.TestCase):
     """Videos finais com caches prontos; a duracao vem de um probe falso."""
 
