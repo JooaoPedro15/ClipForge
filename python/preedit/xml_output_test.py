@@ -127,6 +127,27 @@ class ZoomKeyframesTest(unittest.TestCase):
         self.assertEqual(len(approaching.findall("filter/effect/parameter[parameterid='center']/keyframe")), 3)
         self.assertEqual(still.findall(".//keyframe"), [])
 
+    def test_zoom_level_different_from_the_molde_stays_on_the_molde_line(self):
+        # Molde: 100% em (0, 0) -> 150% em (0,12, -0,21). Zoom previsto de 1,2x: o centro vai 40% do caminho,
+        # e o ponto que o molde mantem parado (o rosto) continua parado em todos os keyframes.
+        plan = EditPlan(segments=[Segment(10.0, 12.0), Segment(12.0, 15.0, 1.2)], markers=[], duration=5.0, zooms=1)
+        d = ((0.0 - 0.12) / 50, (0.0 + 0.21) / 50)
+        face = (round(0.0 + 100 * d[0], 6), round(0.0 + 100 * d[1], 6))
+
+        for style in ("aproximando", "seco"):
+            zoomed = clipitems(build_xml(load_molde(FIXTURE), [(SOURCE, plan)], "zoom", zoom_style=style), "video")[1]
+            center = zoomed.find("filter/effect/parameter[parameterid='center']/value")
+            self.assertEqual((float(center.findtext("horiz")), float(center.findtext("vert"))), (0.048, -0.084), style)
+
+        zoomed = clipitems(build_xml(load_molde(FIXTURE), [(SOURCE, plan)], "zoom", zoom_style="aproximando"), "video")[1]
+        scales = [float(key.findtext("value")) for key in zoomed.findall("filter/effect/parameter[parameterid='scale']/keyframe")]
+        centers = [
+            (float(key.findtext("value/horiz")), float(key.findtext("value/vert")))
+            for key in zoomed.findall("filter/effect/parameter[parameterid='center']/keyframe")
+        ]
+        fixed = {(round(c[0] + s * d[0], 3), round(c[1] + s * d[1], 3)) for s, c in zip(scales, centers, strict=True)}
+        self.assertEqual(fixed, {(round(face[0], 3), round(face[1], 3))})
+
 
 class BuildXmlTest(unittest.TestCase):
     def test_segments_are_glued_and_the_zoom_goes_on_the_zoom_track(self):

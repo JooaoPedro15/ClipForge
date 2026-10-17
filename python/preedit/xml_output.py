@@ -78,15 +78,32 @@ def _write_keyframes(motion: ET.Element, keys: list[tuple[int, Motion]]) -> None
         ET.SubElement(value, "vert").text = _number(vert)
 
 
+# Enquadramento do zoom na forca prevista: na reta do molde (normal -> zoom do molde), pra que o ponto que o
+# molde mantem parado (o rosto) continue no lugar mesmo quando o nivel previsto e outro que o do molde.
+def _zoomed(normal: Motion, zoom: ZoomTrack, level: float) -> Motion:
+    (s0, (h0, v0)) = normal
+    molde_scale = motion_scale_of(zoom.filter, zoom.base_scale)
+    target = zoom.base_scale * level
+    if molde_scale <= s0:
+        return target, zoom.center
+    t = (target - s0) / (molde_scale - s0)
+    return target, (h0 + t * (zoom.center[0] - h0), v0 + t * (zoom.center[1] - v0))
+
+
 def _apply_zoom(item: ET.Element, zoom: ZoomTrack, level: float, frames: int = 0, fps: float = 0.0, style: str = "seco") -> None:
     current = basic_motion(item)
     normal = _motion(current, zoom.base_scale)
+    zoomed = _zoomed(normal, zoom, level)
     motion = copy.deepcopy(zoom.filter)
     scale = motion.find("effect/parameter[parameterid='scale']/value")
     if scale is not None:
-        scale.text = f"{zoom.base_scale * level:g}"
+        scale.text = _number(zoomed[0])
+    center = motion.find("effect/parameter[parameterid='center']/value")
+    if center is not None:
+        _set_text(center, "horiz", _number(zoomed[1][0]))
+        _set_text(center, "vert", _number(zoomed[1][1]))
     if style == "aproximando":
-        keys = zoom_keyframes(normal, (zoom.base_scale * level, zoom.center), frames, fps)
+        keys = zoom_keyframes(normal, zoomed, frames, fps)
         if keys:
             _write_keyframes(motion, keys)
     if current is None:
