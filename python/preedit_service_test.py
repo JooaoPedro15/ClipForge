@@ -96,7 +96,7 @@ class PreeditServiceTest(unittest.TestCase):
         source = SourceMedia(str(target), 100.0, 30.0, 1920, 1080, 1)
 
         with mock.patch.object(preedit_service, "probe_source", return_value=source), contextlib.redirect_stdout(io.StringIO()):
-            report = preedit_service.edit_recording(str(target), str(FIXTURE), str(self.store), 0.8, None, "large-v3", "pt", 5, "cpu", "int8", 0, FakeClient)
+            report = preedit_service.edit_recordings([str(target)], str(FIXTURE), str(self.store), 0.8, None, "large-v3", "pt", 5, "cpu", "int8", 0, FakeClient)
 
         xml = Path(report["xmlPath"])
         self.assertEqual(xml.name, "nova.preedicao.longo.xml")
@@ -112,16 +112,57 @@ class PreeditServiceTest(unittest.TestCase):
         source = SourceMedia(str(target), 100.0, 60.0, 2560, 1440, 4)
 
         with mock.patch.object(preedit_service, "probe_source", return_value=source), contextlib.redirect_stdout(io.StringIO()):
-            report = preedit_service.edit_recording(str(target), None, str(self.store), 0.8, None, "large-v3", "pt", 5, "cpu", "int8", 0, FakeClient)
+            report = preedit_service.edit_recordings([str(target)], None, str(self.store), 0.8, None, "large-v3", "pt", 5, "cpu", "int8", 0, FakeClient)
 
         root = ET.parse(report["xmlPath"]).getroot()
         self.assertEqual(root.findtext("sequence/media/video/format/samplecharacteristics/width"), "2560")
         self.assertEqual(len(root.findall("sequence/media/audio/track")), 4)
         self.assertTrue(any("molde" in warning for warning in report["warnings"]))
 
+    def edit(self, recordings: list[Path], minutes: float = 0.8) -> dict:
+        def probe(path):
+            return SourceMedia(path, 100.0, 30.0, 1920, 1080, 1)
+
+        with mock.patch.object(preedit_service, "probe_source", side_effect=probe), contextlib.redirect_stdout(io.StringIO()):
+            return preedit_service.edit_recordings(
+                [str(path) for path in recordings], str(FIXTURE), str(self.store), minutes, None, "large-v3", "pt", 5, "cpu", "int8", 0, FakeClient
+            )
+
+    def test_edit_joins_recordings_in_name_order(self):
+        self.teach(self.project())
+
+        report = self.edit([self.recordings[1], self.recordings[0]])
+
+        self.assertEqual([Path(item["path"]).name for item in report["recordings"]], ["gravacao0.mp4", "gravacao1.mp4"])
+        self.assertEqual(Path(report["xmlPath"]).name, "gravacao0.preedicao.longo.xml")
+        names = [clip.findtext("name") for clip in ET.parse(report["xmlPath"]).getroot().findall("sequence/media/video/track/clipitem")]
+        self.assertEqual((names[0], names[-1]), ("gravacao0.mp4", "gravacao1.mp4"))
+
+    def test_edit_skips_a_recording_without_speech(self):
+        self.teach(self.project())
+        (self.tmp / "gravacao2.words.a0.json").write_text("[]", encoding="utf-8")
+
+        report = self.edit([self.recordings[0], self.recordings[2]])
+
+        self.assertEqual([Path(item["path"]).name for item in report["recordings"]], ["gravacao0.mp4"])
+        self.assertTrue(any("gravacao2.mp4" in warning for warning in report["warnings"]))
+
+    def test_more_minutes_than_speech_keeps_everything(self):
+        self.teach(self.project())
+
+        report = self.edit([self.recordings[0], self.recordings[1]], minutes=600)
+
+        self.assertTrue(any("mais curta" in warning for warning in report["warnings"]))
+
+    def test_main_edit_accepts_many_recordings_and_zoom_style(self):
+        args = preedit_service.parse_args(["edit", "--recording", "a.mkv", "--recording", "b.mkv", "--minutes", "20", "--zoom-style", "seco", "--store", "S"])
+
+        self.assertEqual((args.recording, args.zoom_style), (["a.mkv", "b.mkv"], "seco"))
+        self.assertEqual(preedit_service.parse_args(["edit", "--recording", "a.mkv", "--minutes", "20", "--store", "S"]).zoom_style, "aproximando")
+
     def test_edit_without_enough_teaching_is_a_clear_error(self):
         with self.assertRaises(preedit_service.PreeditError):
-            preedit_service.edit_recording(str(self.recordings[0]), str(FIXTURE), str(self.store), 10, None, "large-v3", "pt", 5, "cpu", "int8", 0, FakeClient)
+            preedit_service.edit_recordings([str(self.recordings[0])], str(FIXTURE), str(self.store), 10, None, "large-v3", "pt", 5, "cpu", "int8", 0, FakeClient)
 
     def test_main_report_and_forget(self):
         self.teach(self.project())

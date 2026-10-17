@@ -1,9 +1,10 @@
 """Pre-editor que aprende: ensina com projetos do Premiere e edita gravacoes do OBS em XML no molde.
 
 Uso (eventos JSON no stdout, como os outros servicos):
-  python preedit_service.py teach-project --project P [--project P2] --store DIR [--model M] [--audio-track 0] [--cpu]
-  python preedit_service.py teach-final --project P [--project P2] --videos PASTA --store DIR [--model M] [--cpu]
-  python preedit_service.py edit --recording R [--molde M] --store DIR --minutes 12 [--out X] [--audio-track 0] [--cpu]
+  python preedit_service.py teach-project (--project P ... | --projects-dir PASTA) --store DIR [--model M] [--audio-track 0] [--cpu]
+  python preedit_service.py teach-final (--project P ... | --projects-dir PASTA) --videos PASTA --store DIR [--model M] [--cpu]
+  python preedit_service.py edit --recording R [--recording R2 ...] [--molde M] --store DIR --minutes 12 [--zoom-style aproximando|seco]
+      [--out X] [--audio-track 0] [--cpu]
   python preedit_service.py report --store DIR
   python preedit_service.py forget --id ID --store DIR
 """
@@ -29,7 +30,7 @@ from llm_service import create_default_client
 from preedit import finals, models, store
 from preedit.audio import AudioError, extract_audio, load_loudness, loudness_cache, resolve_audio_track
 from preedit.dataset import build_examples
-from preedit.editor import plan_long
+from preedit.editor import plan_long, split_target
 from preedit.interest import load_interest
 from preedit.molde import default_molde, load_molde
 from preedit.phrases import build_phrases
@@ -67,14 +68,6 @@ def prepare_audio(
             "escolha a faixa do microfone com --audio-track (0 = primeira faixa)."
         )
     return words, loud
-
-
-def prepare_recording(
-    recording: str, audio_track: int, get_model: Callable[[], Any], language: str, beam_size: int, fmt: str, make_client: Callable[[], Any]
-) -> tuple[list[dict[str, Any]], Any, dict[int, float], list[str]]:
-    words, loud = prepare_audio(recording, audio_track, get_model, language, beam_size)
-    interest, warning = load_interest(recording, build_phrases(words), fmt, make_client)
-    return words, loud, interest, [warning] if warning else []
 
 
 def _failure_message(error: Exception) -> str:
@@ -313,8 +306,28 @@ def teach_finals(
     }
 
 
-def edit_recording(
-    recording: str,
+def _hear_recordings(
+    recordings: list[str], audio_track: int | None, get_model: Callable[[], Any], language: str, beam_size: int, warnings: list[str]
+) -> list[tuple[str, list[dict[str, Any]], Any]]:
+    """Fala e volume de cada bruto (so o Whisper na GPU). Bruto sem fala (parte que travou, so ruido) sai com aviso."""
+    heard = []
+    for number, path in enumerate(recordings):
+        progress = round(10 + 50 * number / max(1, len(recordings)))
+        emit("status", "processing", "transcribing", f"Fala [{number + 1}/{len(recordings)}] {Path(path).name}", progress=progress)
+        try:
+            track = resolve_audio_track(path, audio_track)
+            words, loud = prepare_audio(path, track, get_model, language, beam_size)
+        except AudioError as error:
+            warnings.append(f"{Path(path).name} ficou de fora: {error}")
+            continue
+        heard.append((path, words, loud))
+    return heard
+
+
+# Uma gravacao pausada no OBS vira varios arquivos: todos entram numa sequencia so, na ordem do nome
+# (o OBS nomeia pela data e hora), e os minutos se dividem pela fala de cada um.
+def edit_recordings(
+    recordings: list[str],
     molde_path: str | None,
     store_path: str,
     minutes: float,
@@ -326,45 +339,69 @@ def edit_recording(
     compute_type: str,
     audio_track: int | None,
     make_client: Callable[[], Any] = create_default_client,
+    zoom_style: str = "aproximando",
 ) -> dict[str, Any]:
-    if not Path(recording).exists():
-        raise PreeditError(f"Gravacao nao encontrada: {recording}")
+    if not recordings:
+        raise PreeditError("Escolha pelo menos uma gravacao.")
+    ordered = sorted(recordings, key=lambda path: Path(path).name.casefold())
+    for path in ordered:
+        if not Path(path).exists():
+            raise PreeditError(f"Gravacao nao encontrada: {path}")
     trained = models.load_models(store.models_dir(Path(store_path), "longo"))
     if trained is None:
         raise PreeditError(f"Ensine pelo menos {models.MIN_RECORDINGS} gravacoes de video longo antes de editar.")
-    source = probe_source(recording)
+    sources = {path: probe_source(path) for path in ordered}
     try:
         # Sem molde: sequencia simples do tamanho da gravacao (o molde so muda algo com trilhas extras, efeitos ou zoom).
-        molde = load_molde(molde_path) if molde_path else default_molde(source)
+        molde = load_molde(molde_path) if molde_path else default_molde(sources[ordered[0]])
     except (TemplateError, OSError) as error:
         raise PreeditError(f"Molde invalido: {error}") from error
 
-    emit("status", "processing", "transcribing", "Lendo a gravacao (fala, volume e notas da IA)...", progress=10)
-    get_model = whisper_words.model_loader(model_size, device, compute_type)
-    try:
-        track = resolve_audio_track(recording, audio_track)
-        words, loud, interest, warnings = prepare_recording(recording, track, get_model, language, beam_size, "longo", make_client)
-    except AudioError as error:
-        raise PreeditError(str(error)) from error
+    warnings: list[str] = []
+    heard = _hear_recordings(ordered, audio_track, whisper_words.model_loader(model_size, device, compute_type), language, beam_size, warnings)
+    if not heard:
+        raise PreeditError("Nenhuma gravacao tem fala reconhecida. " + " ".join(warnings))
 
-    emit("status", "processing", "planning", "Escolhendo cortes e zooms...", progress=80)
-    plan = plan_long(words, loud, interest, trained, minutes * 60)
-    if not plan.segments:
-        raise PreeditError("Nada pra montar: a gravacao nao tem fala reconhecida.")
+    # Notas da IA depois de todo o Whisper (os dois juntos nao cabem numa placa de 8 GB).
+    scored = []
+    for number, (path, words, loud) in enumerate(heard):
+        emit("status", "processing", "scoring", f"Notas da IA [{number + 1}/{len(heard)}] {Path(path).name}", progress=round(60 + 20 * number / len(heard)))
+        phrases = build_phrases(words)
+        interest, note = load_interest(path, phrases, "longo", make_client)
+        if note and note not in warnings:
+            warnings.append(note)
+        scored.append((path, words, loud, interest, sum(phrase.duration for phrase in phrases)))
+
+    emit("status", "processing", "planning", "Escolhendo cortes e zooms...", progress=82)
+    parts, recordings_report = [], []
+    for (path, words, loud, interest, _), target in zip(scored, split_target([item[4] for item in scored], minutes * 60), strict=True):
+        plan = plan_long(words, loud, interest, trained, target)
+        warnings += [warning for warning in plan.warnings if warning not in warnings]
+        if plan.segments:
+            parts.append((sources[path], plan))
+        recordings_report.append({"path": path, "durationSec": sources[path].duration_sec, "keptSec": plan.duration})
+    if not parts:
+        raise PreeditError("Nada pra montar: as gravacoes nao tem fala reconhecida.")
+    planned_zooms = sum(plan.zooms for _, plan in parts)
     if not molde_path:
         warnings.append("Sem molde: sequencia do tamanho da gravacao e sem zoom (pra ter zoom, use --molde com um video seu que tenha um clipe com zoom).")
-    elif molde.zoom is None and plan.zooms:
+    elif molde.zoom is None and planned_zooms:
         warnings.append("O molde nao tem clipe com zoom: o XML saiu sem zoom.")
 
     emit("status", "processing", "writing", "Montando o XML no molde...", progress=92)
-    out = Path(out_path) if out_path else Path(recording).with_suffix(".preedicao.longo.xml")
-    write_xml(molde, [(source, plan)], out, f"{Path(recording).stem} pre-edicao")
+    first = parts[0][0].path
+    out = Path(out_path) if out_path else Path(first).with_suffix(".preedicao.longo.xml")
+    try:
+        write_xml(molde, parts, out, f"{Path(first).stem} pre-edicao", zoom_style)
+    except ValueError as error:
+        raise PreeditError(str(error)) from error
     return {
         "xmlPath": str(out),
-        "durationSec": plan.duration,
-        "segments": len(plan.segments),
-        "zooms": plan.zooms if molde.zoom else 0,
-        "warnings": warnings + plan.warnings,
+        "durationSec": sum(plan.duration for _, plan in parts),
+        "segments": sum(len(plan.segments) for _, plan in parts),
+        "zooms": planned_zooms if molde.zoom else 0,
+        "recordings": recordings_report,
+        "warnings": warnings,
     }
 
 
@@ -436,7 +473,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     _add_model_args(final_parser)
 
     edit_parser = commands.add_parser("edit")
-    edit_parser.add_argument("--recording", required=True)
+    edit_parser.add_argument("--recording", action="append", required=True, help="bruto (repita pra cada arquivo de uma gravacao pausada)")
+    edit_parser.add_argument("--zoom-style", choices=("aproximando", "seco"), default="aproximando")
     edit_parser.add_argument("--molde", help="XML de um video seu exportado do Premiere (sem ele: sequencia do tamanho da gravacao, sem zoom)")
     edit_parser.add_argument("--minutes", type=float, required=True)
     edit_parser.add_argument("--out")
@@ -463,8 +501,19 @@ def main(argv: list[str] | None = None) -> int:
             result = teach_finals(project_paths(args.project, args.projects_dir), args.videos, args.store, args.model, args.language, args.beam_size, device, compute_type, args.audio_track)
             emit("done", "completed", "done", f"{len(result['taught'])} videos finais ensinados.", progress=100, report=result)
         elif args.command == "edit":
-            result = edit_recording(
-                args.recording, args.molde, args.store, args.minutes, args.out, args.model, args.language, args.beam_size, device, compute_type, args.audio_track
+            result = edit_recordings(
+                args.recording,
+                args.molde,
+                args.store,
+                args.minutes,
+                args.out,
+                args.model,
+                args.language,
+                args.beam_size,
+                device,
+                compute_type,
+                args.audio_track,
+                zoom_style=args.zoom_style,
             )
             emit("done", "completed", "done", "Pre-edicao pronta.", progress=100, report=result)
         elif args.command == "report":
