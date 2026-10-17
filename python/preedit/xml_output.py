@@ -181,6 +181,10 @@ def build_xml(molde: PreeditMolde, parts: list[tuple[SourceMedia, EditPlan]], se
                 for reference in item.findall("file"):
                     if reference.get("id") == template.source_file_id:
                         reference.set("id", file_id)
+                if number > 1:
+                    # Cada arquivo e um master clip: senao o Premiere pode tocar o primeiro bruto no lugar do segundo.
+                    for master in item.findall("masterclipid"):
+                        master.text = f"{master.text}-{number}"
                 if segment.zoom and molde.zoom and proto.kind == "video" and proto.track == molde.zoom.track:
                     _apply_zoom(item, molde.zoom, segment.zoom, length, rate.fps, zoom_style)
                 for link in item.findall("link"):

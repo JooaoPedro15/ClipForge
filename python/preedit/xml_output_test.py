@@ -180,6 +180,17 @@ class BuildXmlTest(unittest.TestCase):
         self.assertEqual(root.findtext("sequence/duration"), "480")
         self.assertEqual([marker.findtext("in") for marker in root.findall("sequence/marker")], ["90", "330"])
 
+    def test_each_recording_has_its_own_master_clip(self):
+        # Exportacao real do Premiere traz <masterclipid> em todo clipe: o segundo bruto nao pode dizer que e o primeiro.
+        molde = ET.parse(FIXTURE).getroot()
+        for clip in molde.iter("clipitem"):
+            ET.SubElement(clip, "masterclipid").text = "masterclip-1"
+
+        root = build_xml(parse_molde(molde), [(SOURCE, PLAN), (SOURCE2, PLAN)], "duas")
+
+        for kind in ("video", "audio"):
+            self.assertEqual([clip.findtext("masterclipid") for clip in clipitems(root, kind)], ["masterclip-1"] * 3 + ["masterclip-1-2"] * 3)
+
     def test_source_with_fewer_audio_tracks_is_a_clear_error(self):
         single = SourceMedia(path=r"E:\Bruto\celular.mp4", duration_sec=60.0, fps=30.0, width=1920, height=1080, audio_streams=1)
 
