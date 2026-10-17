@@ -9,7 +9,7 @@ from cortes.xmeml_template import TemplateError
 
 from preedit.editor import EditPlan, Segment
 from preedit.molde import default_molde, load_molde, motion_scale, parse_molde
-from preedit.xml_output import build_xml, write_xml
+from preedit.xml_output import build_xml, write_xml, zoom_keyframes
 
 FIXTURE = Path(__file__).parent / "fixtures" / "molde_preedit.xml"
 SOURCE = SourceMedia(path=r"E:\Bruto\2026-10-14 15-00-00.mp4", duration_sec=900.0, fps=30.0, width=1920, height=1080, audio_streams=2)
@@ -97,6 +97,35 @@ class MoldeTest(unittest.TestCase):
 
         self.assertEqual((root.findtext("sequence/rate/timebase"), root.findtext("sequence/rate/ntsc")), ("30", "TRUE"))
         self.assertEqual(len(clipitems(root, "audio")), 3)
+
+
+class ZoomKeyframesTest(unittest.TestCase):
+    def test_zoom_keyframes_enter_and_keep_approaching(self):
+        keys = zoom_keyframes((100.0, (0.0, 0.0)), (150.0, (0.12, -0.21)), 90, 30.0)
+
+        self.assertEqual([when for when, _ in keys], [0, 12, 89])
+        scale, center = keys[-1][1]
+        self.assertAlmostEqual(scale, 165.0)
+        self.assertEqual((round(center[0], 3), round(center[1], 3)), (0.156, -0.273))
+        # O ponto que nao se mexe entre o normal e o zoom (o rosto) continua parado enquanto aproxima.
+        d = ((0.0 - 0.12) / 50, (0.0 + 0.21) / 50)
+        fixed = {(round(c[0] + s * d[0], 6), round(c[1] + s * d[1], 6)) for _, (s, c) in keys}
+        self.assertEqual(len(fixed), 1)
+
+    def test_short_zoom_stays_still(self):
+        self.assertEqual(zoom_keyframes((100.0, (0.0, 0.0)), (150.0, (0.12, -0.21)), 12, 30.0), [])
+
+    def test_xml_with_approaching_zoom_has_keyframes(self):
+        plan = EditPlan(segments=[Segment(10.0, 12.0), Segment(12.0, 15.0, 1.5)], markers=[], duration=5.0, zooms=1)
+
+        approaching = clipitems(build_xml(load_molde(FIXTURE), [(SOURCE, plan)], "zoom", zoom_style="aproximando"), "video")[1]
+        still = clipitems(build_xml(load_molde(FIXTURE), [(SOURCE, plan)], "zoom", zoom_style="seco"), "video")[1]
+
+        scale_keys = approaching.findall("filter/effect/parameter[parameterid='scale']/keyframe")
+        self.assertEqual([key.findtext("when") for key in scale_keys], ["0", "12", "89"])
+        self.assertEqual([key.findtext("value") for key in scale_keys], ["100", "150", "165"])
+        self.assertEqual(len(approaching.findall("filter/effect/parameter[parameterid='center']/keyframe")), 3)
+        self.assertEqual(still.findall(".//keyframe"), [])
 
 
 class BuildXmlTest(unittest.TestCase):

@@ -20,13 +20,75 @@ from cortes.xmeml_writer import (
 from preedit.editor import EditPlan
 from preedit.molde import PreeditMolde, ZoomTrack, basic_motion
 
+# Escala e centro (horiz, vert) do Basic Motion.
+Motion = tuple[float, tuple[float, float]]
+# Zoom "aproximando": entra em 0,4 s e continua chegando perto (+10% de escala) ate o fim do clipe.
+ENTRY_SEC = 0.4
+CREEP = 0.10
+MIN_ANIMATED_SEC = 0.5
 
-def _apply_zoom(item: ET.Element, zoom: ZoomTrack, level: float) -> None:
+
+# Keyframes (quadro a partir do comeco do clipe, movimento) do zoom que vai se aproximando. Depois de entrar,
+# segue na mesma reta normal->zoom: o ponto que nao se mexe entre os dois (o rosto) continua parado.
+def zoom_keyframes(normal: Motion, zoomed: Motion, frames: int, fps: float) -> list[tuple[int, Motion]]:
+    (s0, (h0, v0)), (s1, (h1, v1)) = normal, zoomed
+    if fps <= 0 or frames / fps < MIN_ANIMATED_SEC or s1 <= s0:
+        return []
+    entry = min(round(ENTRY_SEC * fps), frames // 3)
+    t = (s1 * (1 + CREEP) - s0) / (s1 - s0)
+    beyond = (s0 + t * (s1 - s0), (h0 + t * (h1 - h0), v0 + t * (v1 - v0)))
+    return [(0, normal), (entry, zoomed), (frames - 1, beyond)]
+
+
+def _motion(filter_element: ET.Element | None, default_scale: float) -> Motion:
+    if filter_element is None:
+        return default_scale, (0.0, 0.0)
+    center = filter_element.find("effect/parameter[parameterid='center']/value")
+    if center is None:
+        return motion_scale_of(filter_element, default_scale), (0.0, 0.0)
+    return motion_scale_of(filter_element, default_scale), (float(center.findtext("horiz", "0")), float(center.findtext("vert", "0")))
+
+
+def motion_scale_of(filter_element: ET.Element, default_scale: float) -> float:
+    value = filter_element.findtext("effect/parameter[parameterid='scale']/value")
+    return float(value) if value else default_scale
+
+
+def _number(value: float) -> str:
+    return f"{round(value, 4):g}"
+
+
+def _write_keyframes(motion: ET.Element, keys: list[tuple[int, Motion]]) -> None:
+    effect = motion.find("effect")
+    params = {param.findtext("parameterid"): param for param in effect.findall("parameter")}
+    for name in ("scale", "center"):
+        if name not in params:
+            params[name] = ET.SubElement(effect, "parameter")
+            ET.SubElement(params[name], "parameterid").text = name
+        for old in params[name].findall("keyframe"):
+            params[name].remove(old)
+    for when, (scale, (horiz, vert)) in keys:
+        key = ET.SubElement(params["scale"], "keyframe")
+        ET.SubElement(key, "when").text = str(when)
+        ET.SubElement(key, "value").text = _number(scale)
+        key = ET.SubElement(params["center"], "keyframe")
+        ET.SubElement(key, "when").text = str(when)
+        value = ET.SubElement(key, "value")
+        ET.SubElement(value, "horiz").text = _number(horiz)
+        ET.SubElement(value, "vert").text = _number(vert)
+
+
+def _apply_zoom(item: ET.Element, zoom: ZoomTrack, level: float, frames: int = 0, fps: float = 0.0, style: str = "seco") -> None:
+    current = basic_motion(item)
+    normal = _motion(current, zoom.base_scale)
     motion = copy.deepcopy(zoom.filter)
     scale = motion.find("effect/parameter[parameterid='scale']/value")
     if scale is not None:
         scale.text = f"{zoom.base_scale * level:g}"
-    current = basic_motion(item)
+    if style == "aproximando":
+        keys = zoom_keyframes(normal, (zoom.base_scale * level, zoom.center), frames, fps)
+        if keys:
+            _write_keyframes(motion, keys)
     if current is None:
         item.append(motion)
         return
@@ -103,7 +165,7 @@ def build_xml(molde: PreeditMolde, parts: list[tuple[SourceMedia, EditPlan]], se
                     if reference.get("id") == template.source_file_id:
                         reference.set("id", file_id)
                 if segment.zoom and molde.zoom and proto.kind == "video" and proto.track == molde.zoom.track:
-                    _apply_zoom(item, molde.zoom, segment.zoom)
+                    _apply_zoom(item, molde.zoom, segment.zoom, length, rate.fps, zoom_style)
                 for link in item.findall("link"):
                     ref = link.findtext("linkclipref")
                     if ref in new_ids:
