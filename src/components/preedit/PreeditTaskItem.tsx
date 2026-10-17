@@ -2,7 +2,7 @@ import { FileCode2, FolderOpen, RotateCcw, Square, TriangleAlert } from 'lucide-
 
 import { Button } from '@/components/ui/Button'
 import { TaskStatusIcon, ThinProgress } from '@/components/ui/TaskStatusIcon'
-import { editSummary, teachSummary } from '@/lib/preeditSummary'
+import { editSummary, failureDetails, teachSummary } from '@/lib/preeditSummary'
 import { formatDuration, getFileName } from '@/lib/utils'
 import type { PreeditTask } from '@/types/preedit'
 
@@ -50,6 +50,8 @@ export function PreeditTaskItem({ task, onCancel, onRetry, onOpenPath }: Preedit
   const active = isActive(task)
   const running = task.status === 'preparing' || task.status === 'processing'
   const xmlPath = task.status === 'completed' && typeof task.result?.xmlPath === 'string' ? task.result.xmlPath : null
+  // Ensino pronto com falhas: o motivo (ex.: placa sem memoria) importa mais que a contagem.
+  const failures = task.status === 'completed' && task.kind !== 'edit' ? failureDetails(task.result ?? {}) : []
 
   return (
     <li className="flex gap-3 px-4 py-3.5">
@@ -75,6 +77,17 @@ export function PreeditTaskItem({ task, onCancel, onRetry, onOpenPath }: Preedit
               <li className="flex items-start gap-1.5 text-xs text-status-warn" key={warning}>
                 <TriangleAlert className="mt-px h-3.5 w-3.5 shrink-0" />
                 {warning}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+
+        {failures.length > 0 ? (
+          <ul className="mt-2 space-y-1 rounded-md border border-status-red/30 bg-status-red/10 px-2.5 py-2">
+            {failures.map((failure) => (
+              <li className="flex items-start gap-1.5 text-xs text-status-red" key={failure}>
+                <TriangleAlert className="mt-px h-3.5 w-3.5 shrink-0" />
+                {failure}
               </li>
             ))}
           </ul>

@@ -1,5 +1,6 @@
 // Textos curtos da Pre-edicao que aprende: o resumo de cada item pronto e o aviso do sistema.
 import type { Notice } from '@/lib/finishNotices'
+import { getFileName } from '@/lib/utils'
 import type { PreeditTaskEvent } from '@/types/preedit'
 
 function count(value: unknown): number {
@@ -34,6 +35,20 @@ export function teachSummary(result: Record<string, unknown>): string {
     parts.push(plural(failed, 'falha', 'falhas'))
   }
   return parts.join(', ')
+}
+
+// Motivo de cada falha do ensino (ex.: placa sem memoria), com os arquivos que cairam nele; ate 3 motivos.
+export function failureDetails(result: Record<string, unknown>): string[] {
+  const byError = new Map<string, string[]>()
+  for (const item of Array.isArray(result.failed) ? result.failed : []) {
+    if (typeof item !== 'object' || !item) {
+      continue
+    }
+    const error = 'error' in item ? String(item.error) : 'erro desconhecido'
+    const file = 'recording' in item ? getFileName(String(item.recording)) : ''
+    byError.set(error, [...(byError.get(error) ?? []), file].filter(Boolean))
+  }
+  return [...byError.entries()].slice(0, 3).map(([error, files]) => (files.length ? `${files.join(', ')}: ${error}` : error))
 }
 
 function clock(totalSeconds: number): string {

@@ -255,6 +255,23 @@ function seedPreeditQueue() {
     completedAt: now - minutes(21),
   })
   store.upsertPreeditEvent({
+    taskId: 'demo-preedit-learn-taught',
+    kind: 'teach-projects',
+    title: 'Ensinar com 2 projetos',
+    status: 'completed',
+    stage: 'done',
+    message: '41 gravacoes ensinadas.',
+    progress: 100,
+    warnings: [],
+    result: {
+      taught: Array.from({ length: 41 }, (_, index) => index),
+      skipped: [{ reason: 'gravacao nao encontrada' }],
+      failed: [{ recording: 'D:\\Projetos\\Jogos\\luleebet\\gravacoes\\jogo_2026-09-27_17-38-52.mp4', error: 'jogo_2026-09-27_17-38-52.mp4 nao tem audio.' }],
+    },
+    startedAt: now - minutes(90),
+    completedAt: now - minutes(60),
+  })
+  store.upsertPreeditEvent({
     taskId: 'demo-preedit-learn-teach',
     kind: 'teach-finals',
     title: 'Ensinar com vídeos prontos',

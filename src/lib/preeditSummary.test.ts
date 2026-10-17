@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 
-import { editSummary, preeditNotice, teachSummary } from '@/lib/preeditSummary'
+import { editSummary, failureDetails, preeditNotice, teachSummary } from '@/lib/preeditSummary'
 
 describe('teachSummary', () => {
   test('conta ensinados, pulados por motivo e falhas', () => {
@@ -36,5 +36,18 @@ describe('preeditNotice', () => {
     expect(preeditNotice({ ...base, kind: 'teach-finals', status: 'completed', result: { taught: [1] } })?.title).toBe('Ensino concluído')
     expect(preeditNotice({ ...base, kind: 'edit', status: 'error', error: 'Molde invalido: x\nTraceback' })?.body).toBe('A.mkv +1: Molde invalido: x')
     expect(preeditNotice({ ...base, kind: 'edit', status: 'cancelled' })).toBeNull()
+  })
+})
+
+describe('failureDetails', () => {
+  test('junta os arquivos que falharam pelo mesmo motivo e mostra ate 3 motivos', () => {
+    const memory = 'Placa de video sem memoria: feche outros programas que usam a GPU.'
+    const failed = [
+      { recording: 'D:/Bruto/a.mkv', error: memory },
+      { recording: 'D:/Bruto/b.mkv', error: memory },
+      { recording: 'D:/Projetos/proj.prproj', error: 'Nao consegui ler proj.prproj' },
+    ]
+    expect(failureDetails({ failed })).toEqual([`a.mkv, b.mkv: ${memory}`, 'proj.prproj: Nao consegui ler proj.prproj'])
+    expect(failureDetails({})).toEqual([])
   })
 })
