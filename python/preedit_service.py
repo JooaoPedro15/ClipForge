@@ -25,6 +25,7 @@ import subtitle_service
 import whisper_words
 from cortes.media import probe_source
 from cortes.xmeml_template import TemplateError
+from cortes.xmeml_writer import required_audio_streams
 from events import emit
 from llm_service import create_default_client
 from preedit import finals, models, store
@@ -306,6 +307,17 @@ def teach_finals(
     }
 
 
+def _probe_recordings(recordings: list[str], warnings: list[str]) -> dict[str, Any]:
+    """Duracao, tamanho e faixas de cada bruto. A parte que travou (MP4 sem indice, MKV sem duracao) sai com aviso."""
+    sources = {}
+    for path in recordings:
+        try:
+            sources[path] = probe_source(path)
+        except (RuntimeError, ValueError, KeyError) as error:
+            warnings.append(f"{Path(path).name} ficou de fora: nao consegui ler o arquivo ({error}).")
+    return sources
+
+
 def _hear_recordings(
     recordings: list[str], audio_track: int | None, get_model: Callable[[], Any], language: str, beam_size: int, warnings: list[str]
 ) -> list[tuple[str, list[dict[str, Any]], Any]]:
@@ -350,15 +362,23 @@ def edit_recordings(
     trained = models.load_models(store.models_dir(Path(store_path), "longo"))
     if trained is None:
         raise PreeditError(f"Ensine pelo menos {models.MIN_RECORDINGS} gravacoes de video longo antes de editar.")
-    sources = {path: probe_source(path) for path in ordered}
+    warnings: list[str] = []
+    sources = _probe_recordings(ordered, warnings)
+    readable = [path for path in ordered if path in sources]
+    if not readable:
+        raise PreeditError("Nenhuma gravacao deu pra ler. " + " ".join(warnings))
     try:
         # Sem molde: sequencia simples do tamanho da gravacao (o molde so muda algo com trilhas extras, efeitos ou zoom).
-        molde = load_molde(molde_path) if molde_path else default_molde(sources[ordered[0]])
+        molde = load_molde(molde_path) if molde_path else default_molde(sources[readable[0]])
     except (TemplateError, OSError) as error:
         raise PreeditError(f"Molde invalido: {error}") from error
+    # Antes do Whisper e da IA (que podem levar uma hora): bruto com menos faixas de audio que o molde.
+    needed = required_audio_streams(molde.template)
+    for path in readable:
+        if sources[path].audio_streams < needed:
+            raise PreeditError(f"O molde usa a faixa de audio {needed}, mas {Path(path).name} so tem {sources[path].audio_streams}.")
 
-    warnings: list[str] = []
-    heard = _hear_recordings(ordered, audio_track, whisper_words.model_loader(model_size, device, compute_type), language, beam_size, warnings)
+    heard = _hear_recordings(readable, audio_track, whisper_words.model_loader(model_size, device, compute_type), language, beam_size, warnings)
     if not heard:
         raise PreeditError("Nenhuma gravacao tem fala reconhecida. " + " ".join(warnings))
 

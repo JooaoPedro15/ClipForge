@@ -154,6 +154,37 @@ class PreeditServiceTest(unittest.TestCase):
 
         self.assertTrue(any("mais curta" in warning for warning in report["warnings"]))
 
+    def test_unreadable_recording_is_skipped_with_a_warning(self):
+        # A parte que travou no OBS pode ficar sem indice (o ffprobe nao le): as outras seguem.
+        self.teach(self.project())
+
+        def probe(path):
+            if path.endswith("gravacao1.mp4"):
+                raise RuntimeError("ffprobe falhou para gravacao1.mp4: moov atom not found")
+            return SourceMedia(path, 100.0, 30.0, 1920, 1080, 1)
+
+        with mock.patch.object(preedit_service, "probe_source", side_effect=probe), contextlib.redirect_stdout(io.StringIO()):
+            report = preedit_service.edit_recordings(
+                [str(self.recordings[0]), str(self.recordings[1])], str(FIXTURE), str(self.store), 0.8, None, "large-v3", "pt", 5, "cpu", "int8", 0, FakeClient
+            )
+
+        self.assertEqual([Path(item["path"]).name for item in report["recordings"]], ["gravacao0.mp4"])
+        self.assertTrue(any("gravacao1.mp4" in warning and "ler o arquivo" in warning for warning in report["warnings"]))
+
+    def test_fewer_audio_tracks_than_the_molde_fails_before_transcribing(self):
+        self.teach(self.project())
+        molde = ET.parse(FIXTURE).getroot()
+        molde.find("sequence/media/audio/track/clipitem/sourcetrack/trackindex").text = "2"
+        molde_path = self.tmp / "molde2.xml"
+        ET.ElementTree(molde).write(molde_path, encoding="utf-8")
+
+        with (
+            mock.patch.object(preedit_service, "probe_source", return_value=SourceMedia(str(self.recordings[0]), 100.0, 30.0, 1920, 1080, 1)),
+            mock.patch.object(preedit_service, "prepare_audio", side_effect=AssertionError("nao devia transcrever")),
+            self.assertRaisesRegex(preedit_service.PreeditError, "faixa de audio 2"),
+        ):
+            preedit_service.edit_recordings([str(self.recordings[0])], str(molde_path), str(self.store), 0.8, None, "large-v3", "pt", 5, "cpu", "int8", 0, FakeClient)
+
     def test_main_edit_accepts_many_recordings_and_zoom_style(self):
         args = preedit_service.parse_args(["edit", "--recording", "a.mkv", "--recording", "b.mkv", "--minutes", "20", "--zoom-style", "seco", "--store", "S"])
 
